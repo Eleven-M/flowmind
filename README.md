@@ -209,53 +209,55 @@ sequenceDiagram
 
 ---
 
-## 🛣️ Roadmap
+## ✨ Features
 
-### Phase 1: Foundation ✅
-- [x] Core learning engine
-- [x] Scene mapping
-- [x] Basic skill system
-- [x] CLI interface
+### Core Capabilities
+- 🧠 **Smart Learning** - Learns from your corrections and remembers preferences
+- 🔄 **Auto Application** - Automatically uses learned workflows next time
+- 🎯 **Scene Mapping** - Maps specific requests to workflows
+- 📊 **Format Memory** - Remembers your preferred output formats
 
-### Phase 2: Intelligence (Q3 2026)
-- [ ] Multi-modal learning (screenshots, diagrams)
-- [ ] Natural language workflow definition
-- [ ] Smart suggestions
+### Skill System
+- 🔍 **Log Audit** - Log analysis, trace visualization
+- 🔌 **Resource Bind** - Database, Redis, API connections
+- 📝 **Code Review** - Code quality, security checks
+- ✅ **Data Validation** - Business logic verification
+- 📚 **API Sync** - Auto-generate and sync documentation
 
-### Phase 3: Collaboration (Q4 2026)
-- [ ] Team knowledge sharing
-- [ ] Workflow templates marketplace
-- [ ] Analytics dashboard
-
-### Phase 4: Enterprise (Q1 2027)
-- [ ] SSO integration
-- [ ] Audit logging
-- [ ] Custom skill SDK
-- [ ] Priority support
+### Learning Capabilities
+- 📚 **Correction Learning** - "No, use table format" → Auto-remembered
+- 🗺️ **Scene Learning** - "Check errors first then traces" → Workflow recorded
+- ⚙️ **Preference Learning** - "Reply in Chinese" → Language preference saved
 
 ---
 
-## 🏢 Enterprise & Commercial
+## 🌟 Community Building
 
-### Open Source (Free)
-- Core learning engine
-- Basic skills
-- Personal use
-- Community support
+**FlowMind's Core Philosophy: More Users, Smarter Together!**
 
-### Team ($29/user/month)
-- Team knowledge sharing
-- Workflow templates
-- Priority support
-- Analytics
+### Why We Need You?
 
-### Enterprise (Custom)
-- Custom skills development
-- SSO & audit logging
-- Dedicated support
-- SLA guarantees
+```
+Everyone's work habits → Combined into intelligent knowledge base
+Your every use → Makes FlowMind understand developers better
+Your every correction → Helps everyone improve efficiency
+```
 
-[Contact us](mailto:hello@flowmind.dev) for enterprise inquiries.
+### How to Participate?
+
+1. **Use & Feedback** - Use FlowMind daily, tell us what can be better
+2. **Share Workflows** - Share your workflows with team and community
+3. **Contribute Code** - Add skills, improve algorithms, optimize experience
+4. **Spread the Word** - Let more developers know about FlowMind
+
+### Benefits of Participation
+
+- 🚀 **Personal Efficiency** - Let FlowMind handle repetitive work
+- 🧠 **Collective Wisdom** - Combine experiences from millions of developers
+- 🌍 **Open Source Sharing** - All learning成果 shared openly
+- 🤝 **Community Recognition** - Contributors permanently recorded
+
+**Let's build smarter developer tools together!**
 
 ---
 
@@ -269,6 +271,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 - 📝 Improve docs
 - 🛠️ Add skills
 - 🌍 Translations
+- 🧪 Write tests
 
 ---
 
@@ -288,11 +291,8 @@ Built with:
 
 ## 📞 Contact
 
-- **Website**: [flowmind.dev](https://flowmind.dev)
-- **GitHub**: [github.com/flowmind](https://github.com/flowmind)
-- **Twitter**: [@flowmindai](https://twitter.com/flowmindai)
-- **Email**: hello@flowmind.dev
-- **Discord**: [Join community](https://discord.gg/flowmind)
+- **GitHub**: [github.com/Eleven-M/flowmind](https://github.com/Eleven-M/flowmind)
+- **Email**: 13060993305@163.com
 
 ---
 
