@@ -220,6 +220,42 @@ FlowMind is built on **enterprise-grade architecture design standards**, incorpo
 - 💾 **Data Persistence** - All learning records and configurations stored locally
 - ⚙️ **Global Config Initialization** - One-time setup, permanent effect, no repeated configuration
 
+### 🔌 MCP Integration Ecosystem
+
+FlowMind deeply integrates mainstream development platforms for a **one-stop development workflow**:
+
+| Platform | Integration Capabilities |
+|----------|--------------------------|
+| 📖 **Yuque** | Design doc sync, knowledge base management, OpenSpec archiving |
+| 📊 **Alibaba Cloud SLS** | Real-time log query, TraceID tracing, anomaly detection & analysis |
+| 🗄️ **Alibaba Cloud RDS** | Database connection, data reading & validation, SQL execution analysis |
+| 📋 **YApi** | API doc sync, interface testing, Swagger import/export |
+| 🐙 **GitHub** | Code repo management, PR review, Issue tracking, auto-archiving |
+
+### 🚀 One-Stop Problem Solving Flow
+
+```
+Code Locate → Data Verify → Problem Analyze → One-Click Fix → Auto Deploy → Archive
+    ↓              ↓              ↓               ↓              ↓            ↓
+Local+MCP      RDS Read      SLS Analysis    Code Modify    Pipeline     OpenSpec+Yuque
+```
+
+**Core Advantages:**
+- 🔍 **Multi-Source Code Location** - Local code + MCP remote + SSH mode, auto read and locate
+- 📊 **Real Data Validation** - Direct RDS connection for real data, verify business logic
+- 🎯 **Precise Problem Analysis** - SLS intelligent log analysis, quick root cause identification
+- ⚡ **One-Click Fix & Deploy** - From problem discovery to fix deployment, fully automated
+- 📝 **Auto Archiving** - OpenSpec design standards + Yuque docs, automatic archiving
+- 🧠 **RAG Data Building** - Auto-generate RAG training data, continuously optimize intelligence
+
+### 🎯 Smarter with Every Use
+
+- 📈 **Learning Accumulation** - Every use accumulates experience, understands your code and thinking better
+- 🔄 **Scene Coordination** - Skills auto-coordinate across different scenarios, forming complete workflows
+- 💰 **Token Optimization** - Reduce token consumption through mapping files, lower AI costs
+- ⏱️ **Efficiency Boost** - Reduce repetitive waiting, 10x efficiency through automation
+- 🎓 **Experience Retention** - Architect and senior developer design thinking, permanently preserved
+
 ### 🔧 Skill System (11 Core Skills)
 
 #### 📊 Analysis Skills
