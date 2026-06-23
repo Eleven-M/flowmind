@@ -211,23 +211,94 @@ sequenceDiagram
 
 ## ✨ Features
 
-### Core Capabilities
-- 🧠 **Smart Learning** - Learns from your corrections and remembers preferences
-- 🔄 **Auto Application** - Automatically uses learned workflows next time
-- 🎯 **Scene Mapping** - Maps specific requests to workflows
-- 📊 **Format Memory** - Remembers your preferred output formats
+### 🏗️ Core Architecture
 
-### Skill System
-- 🔍 **Log Audit** - Log analysis, trace visualization
-- 🔌 **Resource Bind** - Database, Redis, API connections
-- 📝 **Code Review** - Code quality, security checks
-- ✅ **Data Validation** - Business logic verification
-- 📚 **API Sync** - Auto-generate and sync documentation
+FlowMind is built on **enterprise-grade architecture design standards**, incorporating extensive experience from architects and senior developers:
 
-### Learning Capabilities
-- 📚 **Correction Learning** - "No, use table format" → Auto-remembered
-- 🗺️ **Scene Learning** - "Check errors first then traces" → Workflow recorded
-- ⚙️ **Preference Learning** - "Reply in Chinese" → Language preference saved
+- 📐 **OpenSpec Design Standards** - Standardized skill definitions and interface specifications
+- 🧠 **RAG Business Logic** - Intelligent retrieval and generation based on historical data
+- 💾 **Data Persistence** - All learning records and configurations stored locally
+- ⚙️ **Global Config Initialization** - One-time setup, permanent effect, no repeated configuration
+
+### 🔧 Skill System (11 Core Skills)
+
+#### 📊 Analysis Skills
+
+| Skill | Description |
+|-------|-------------|
+| 🔍 **log-audit** | Log Audit - Time filtering, service filtering, level filtering, keyword search, TraceID tracing, performance analysis |
+| 🔎 **project-review** | Project Review - Dependency analysis, security audit, license compliance, code complexity, test coverage, technical debt assessment |
+| 📋 **git-review** | Git Review - Commit quality analysis, change size assessment, impact analysis, risk evaluation, dependency change detection |
+
+#### 🔌 Integration Skills
+
+| Skill | Description |
+|-------|-------------|
+| 🔗 **resource-bind** | Resource Bind - MySQL/PostgreSQL connection management, Redis operations, REST API integration, authentication management |
+| 📚 **api-sync** | API Sync - Generate docs from code annotations, OpenAPI/Swagger spec generation, client SDK generation, version management |
+| ✅ **data-validation** | Data Validation - Referential integrity checks, data type validation, business logic verification, state machine validation, duplicate detection |
+
+#### 🛠️ Quality Skills
+
+| Skill | Description |
+|-------|-------------|
+| 🔒 **code-review** | Code Review - SQL injection detection, XSS vulnerability scanning, authentication issues, code style, complexity analysis, design pattern checks |
+| 📝 **archive-change** | Archive Change - Archive completed changes, auto-generate change summary, update changelog, create knowledge base entries, link Issue/PR |
+
+#### ⚡ Automation Skills
+
+| Skill | Description |
+|-------|-------------|
+| 🔄 **auto-flow** | Auto Flow - Sequential execution, parallel execution, conditional branching, error handling, workflow templates, team sharing |
+
+#### 🧠 Intelligence Skills
+
+| Skill | Description |
+|-------|-------------|
+| 🎯 **learning-engine** | Learning Engine - Correction learning, scene learning, preference learning, auto-application, learning loop, knowledge graph construction |
+
+### 🎯 Core Capabilities Explained
+
+#### 1️⃣ OpenSpec Design Standards
+```
+Standardized skill definitions → Unified interface specifications → Plug and play
+```
+- Each skill has a standard SKILL.md definition file
+- Unified trigger conditions, feature descriptions, and examples
+- Support for custom skill extensions
+
+#### 2️⃣ RAG Business Logic
+```
+Historical data collection → Intelligent retrieval matching → Context generation → Auto application
+```
+- Intelligent matching based on historical learning records
+- Scene similarity calculation and recommendations
+- Context-aware workflow application
+
+#### 3️⃣ Data Persistence
+```
+Learning records → Local storage → Permanent retention → Cross-session reuse
+```
+- All learning records stored locally and persistently
+- Configuration information permanently retained
+- Support import/export for team sharing
+
+#### 4️⃣ Global Config Initialization
+```
+flowmind init → One-time configuration → Permanent effect
+```
+- Run `flowmind init` to complete initialization
+- Configure resource connections, learning preferences, output formats
+- No need to repeat setup each time
+
+#### 5️⃣ Learning Feedback Mechanism (Self-Evolution)
+```
+User correction → Record learning → Auto apply → Continuous optimization
+```
+- **Correction Learning**: "No, use table format" → Auto-remembered
+- **Scene Learning**: "Check errors first then traces" → Workflow recorded
+- **Preference Learning**: "Reply in Chinese" → Language preference saved
+- **Auto Application**: Automatically uses learned workflows next time
 
 ---
 
