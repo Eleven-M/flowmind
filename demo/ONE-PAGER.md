@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # FlowMind
 
@@ -201,4 +201,3 @@ flowmind "验证订单数据"
 *FlowMind - The AI Agent That Learns How You Work*
 
 </div>
-]]>

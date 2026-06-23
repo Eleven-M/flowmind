@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # FlowMind Demo Script
 
@@ -308,4 +308,3 @@ Focus on:
 *Remember: The best demo shows the "wow" moment - when FlowMind applies learning automatically.*
 
 </div>
-]]>

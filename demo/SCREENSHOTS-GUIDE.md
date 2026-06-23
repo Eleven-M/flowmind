@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # FlowMind Screenshots & Visual Guide
 
@@ -330,4 +330,3 @@ demo/
 *The best screenshot shows learning in action.*
 
 </div>
-]]>
