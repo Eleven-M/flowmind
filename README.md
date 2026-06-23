@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # 🧠 FlowMind
 
@@ -303,4 +303,3 @@ Made with ❤️ by the FlowMind team
 *"Learn once, flow forever"*
 
 </div>
-]]>

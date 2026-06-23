@@ -1,4 +1,4 @@
-<![CDATA[# Contributing to FlowMind
+# Contributing to FlowMind
 
 Thank you for your interest in contributing to FlowMind! 🎉
 
@@ -234,4 +234,3 @@ By contributing, you agree your contributions will be licensed under MIT License
 ---
 
 Thank you for contributing to FlowMind! 🚀
-]]>

@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: flowmind
 description: FlowMind - The AI Agent That Learns How You Work. Use for any development workflow task. FlowMind learns your preferences and applies them automatically.
 metadata:
@@ -322,4 +322,3 @@ flowmind config --list
 ## License
 
 MIT License - see [LICENSE](LICENSE)
-]]>
