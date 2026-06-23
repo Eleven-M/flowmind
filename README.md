@@ -2,9 +2,9 @@
 
 # 🧠 FlowMind
 
-### **Your AI Mentor for Code, Career & Beyond**
+### **The AI Agent That Learns How You Work**
 
-*Stop repeating yourself. FlowMind learns your workflows, understands your projects, and guides your growth.*
+*Stop repeating yourself. FlowMind learns your workflows and applies them automatically.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -51,15 +51,6 @@ Enter complete conditions for every log query
 Manually execute multiple steps for each deployment
 ```
 
-### 5. Lack of Mentorship
-```
-❌ No one to guide your growth:
-Join a new project → Spend weeks understanding the codebase
-Make technical decisions → No experienced mentor to consult
-Career development → No personalized guidance
-Architecture design → Learn only from mistakes
-```
-
 ---
 
 ## 💡 The Solution
@@ -80,16 +71,6 @@ Architecture design → Learn only from mistakes
 Code Locate → Data Verify → Problem Analyze → One-Click Fix → Auto Deploy → Archive
     ↓              ↓              ↓               ↓              ↓            ↓
 Local+MCP      RDS Read      SLS Analysis    Code Modify    Pipeline     OpenSpec+Yuque
-```
-
-### Your AI Mentor
-
-```
-🎓 Project Onboarding    → Understand codebase in hours, not weeks
-🧭 Technical Guidance    → Architecture advice based on your context
-📈 Career Growth         → Personalized learning paths and skill development
-💡 Decision Support      → Data-driven insights for technical choices
-🔍 Code Understanding    → Deep dive into any codebase with expert explanations
 ```
 
 ### Smarter with Every Use
@@ -285,37 +266,26 @@ flowmind "审查项目整体状况"
 # → Dependency analysis → Security audit → Code complexity → Test coverage → Technical debt
 ```
 
-### Scenario 6: Project Onboarding (As Your Mentor)
+### Scenario 6: Project Onboarding
 
 ```bash
-# New to a project? FlowMind guides you
+# New to a project? FlowMind helps you understand fast
 flowmind "帮我理解这个项目的整体架构"
 
-# Auto execute:
+# FlowMind learns from senior devs' patterns:
 # → Project structure analysis → Core module explanation → Data flow mapping
 # → Key design decisions → Development guidelines → Suggested learning path
 ```
 
-### Scenario 7: Technical Decision Support
+### Scenario 7: Design & Architecture Guidance
 
 ```bash
-# Facing a technical choice? Ask your mentor
+# Facing a design choice? FlowMind draws from accumulated experience
 flowmind "这个功能应该用 Redis 还是 MongoDB？"
 
-# FlowMind analyzes:
+# FlowMind applies learned design thinking:
 # → Your project context → Current tech stack → Performance requirements
-# → Team expertise → Maintenance cost → Provides data-driven recommendation
-```
-
-### Scenario 8: Career Growth Guidance
-
-```bash
-# Want to improve? FlowMind guides your growth
-flowmind "分析我的代码风格，给出改进建议"
-
-# FlowMind provides:
-# → Code pattern analysis → Best practice comparison → Skill gap identification
-# → Personalized learning resources → Practice exercises → Progress tracking
+# → Historical similar decisions → Trade-off analysis → Data-driven recommendation
 ```
 
 ---
@@ -564,9 +534,7 @@ User correction → Record learning → Auto apply → Continuous optimization
 | Onboarding new devs | 2 weeks | 2 days |
 | Token consumption | High | Reduce 60%+ |
 | Experience retention | Cannot preserve | Permanent reuse |
-| Project understanding | Weeks of reading | Hours with guidance |
-| Technical decision confidence | Gut feeling | Data-driven insights |
-| Code quality improvement | Slow, trial-error | Fast, mentor-guided |
+| Design decision quality | Trial and error | Experience-backed |
 
 ---
 
@@ -588,7 +556,6 @@ Your every correction → Helps everyone improve efficiency
 2. **Share Workflows** - Share your workflows with team and community
 3. **Contribute Code** - Add skills, improve algorithms, optimize experience
 4. **Spread the Word** - Let more developers know about FlowMind
-5. **Be a Mentor** - Share your expertise, help FlowMind learn from your experience
 
 ### Benefits of Participation
 
@@ -596,7 +563,6 @@ Your every correction → Helps everyone improve efficiency
 - 🧠 **Collective Wisdom** - Combine experiences from millions of developers
 - 🌍 **Open Source Sharing** - All learning成果 shared openly
 - 🤝 **Community Recognition** - Contributors permanently recorded
-- 🎓 **Mentorship Impact** - Your expertise helps thousands of developers grow
 
 **Let's build smarter developer tools together!**
 
@@ -622,31 +588,15 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-## 🎓 FlowMind as Your Mentor
+## 🎓 Design, Analysis & Coding Mentor
 
-FlowMind is more than a tool—it's your **AI mentor** that grows with you:
+As FlowMind learns from your team's accumulated experience, it naturally becomes a mentor in **design, analysis, and coding**:
 
-### For New Team Members
-- **Project Onboarding**: Understand complex codebases in hours, not weeks
-- **Architecture Guidance**: Learn why things are designed the way they are
-- **Best Practices**: Get mentored on coding standards and patterns
+- **Design Thinking** - Learns architectural patterns and design rationale from senior developers, guides similar decisions
+- **Analysis Capability** - Absorbs debugging methodologies and problem-solving paths, helps you analyze issues systematically
+- **Coding Standards** - Absorbs team's coding best practices, provides contextual code guidance
 
-### For Experienced Developers
-- **Technical Decisions**: Get data-driven advice on architecture choices
-- **Code Review**: Receive expert-level feedback on your code
-- **Skill Development**: Identify areas for improvement and track progress
-
-### For Tech Leads & Architects
-- **Team Mentoring**: Share your expertise through FlowMind's learning system
-- **Knowledge Transfer**: Preserve architectural decisions and design rationale
-- **Growth Tracking**: Monitor team skill development over time
-
-### For Everyone
-- **24/7 Availability**: Your mentor is always ready to help
-- **No Judgment**: Ask any question without fear of criticism
-- **Personalized**: Learns your style and adapts to your level
-
-> *"FlowMind doesn't just execute tasks—it teaches you why and how, making you a better developer with every interaction."*
+> *FlowMind doesn't replace your mentor—it preserves and transmits your team's design wisdom, analysis skills, and coding expertise across time and people.*
 
 ---
 
@@ -673,6 +623,6 @@ Built with:
 
 Made with ❤️ by the FlowMind team
 
-*"Learn once, flow forever. Mentor always by your side."*
+*"Learn once, flow forever"*
 
 </div>
