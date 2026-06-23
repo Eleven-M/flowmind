@@ -311,17 +311,24 @@ flowmind/
 │   ├── scene-matcher.js          # Scene matching
 │   ├── skill-loader.js           # Skill loading
 │   └── config-manager.js         # Config management
-├── skills/                        # Skill Modules (11 core skills)
+├── skills/                        # Skill Modules (17 core skills)
 │   ├── log-audit/                # Log audit
+│   ├── sls-log-audit/            # SLS log audit (chain tracing)
 │   ├── resource-bind/            # Resource binding
 │   ├── code-review/              # Code review
+│   ├── code-review-audit/        # Code review audit (3D review)
 │   ├── data-validation/          # Data validation
+│   ├── data-logic-validation/    # Data logic validation
 │   ├── api-sync/                 # API sync
+│   ├── yapi-sync-interface/      # YApi interface sync
+│   ├── yuque-sync-design/        # Yuque design doc sync
 │   ├── project-review/           # Project review
 │   ├── git-review/               # Git review
 │   ├── archive-change/           # Change archiving
 │   ├── auto-flow/                # Workflow automation
-│   └── learning-engine/          # Learning engine
+│   ├── learning-engine/          # Learning engine
+│   ├── learning-feedback/        # Learning feedback (global)
+│   └── requirement-analyst/      # Requirement analyst (6D analysis)
 ├── learning/                      # Learning Storage
 │   ├── records/                  # Learning records
 │   └── scenes.json               # Scene mappings
@@ -406,15 +413,17 @@ FlowMind is built on **enterprise-grade architecture design standards**, incorpo
 - 💾 **Data Persistence** - All learning records and configurations stored locally
 - ⚙️ **Global Config Initialization** - One-time setup, permanent effect, no repeated configuration
 
-### 🔧 Skill System (11 Core Skills)
+### 🔧 Skill System (17 Core Skills)
 
 #### 📊 Analysis Skills
 
 | Skill | Description |
 |-------|-------------|
 | 🔍 **log-audit** | Log Audit - Time filtering, service filtering, level filtering, keyword search, TraceID tracing, performance analysis |
+| 🔗 **sls-log-audit** | SLS Log Audit - Alibaba Cloud SLS log query, TraceID chain analysis, Feign call chain extraction, response time analysis |
 | 🔎 **project-review** | Project Review - Dependency analysis, security audit, license compliance, code complexity, test coverage, technical debt assessment |
 | 📋 **git-review** | Git Review - Commit quality analysis, change size assessment, impact analysis, risk evaluation, dependency change detection |
+| 📐 **requirement-analyst** | Requirement Analyst - Historical design principles, iteration rationale, extensibility, market roadmap, req-code deviation, upgrade vulnerabilities |
 
 #### 🔌 Integration Skills
 
@@ -422,13 +431,17 @@ FlowMind is built on **enterprise-grade architecture design standards**, incorpo
 |-------|-------------|
 | 🔗 **resource-bind** | Resource Bind - MySQL/PostgreSQL connection management, Redis operations, REST API integration, authentication management |
 | 📚 **api-sync** | API Sync - Generate docs from code annotations, OpenAPI/Swagger spec generation, client SDK generation, version management |
+| 📋 **yapi-sync-interface** | YApi Interface Sync - Sync Controller interfaces to YApi, Swagger import/export, interface management |
+| 📖 **yuque-sync-design** | Yuque Design Sync - Sync OpenSpec design docs to Yuque, knowledge base management, document archiving |
 | ✅ **data-validation** | Data Validation - Referential integrity checks, data type validation, business logic verification, state machine validation, duplicate detection |
+| 🔬 **data-logic-validation** | Data Logic Validation - Verify actual SQL queries and Redis logic via MCP database/Redis connections |
 
 #### 🛠️ Quality Skills
 
 | Skill | Description |
 |-------|-------------|
 | 🔒 **code-review** | Code Review - SQL injection detection, XSS vulnerability scanning, authentication issues, code style, complexity analysis, design pattern checks |
+| 🛡️ **code-review-audit** | Code Review Audit - Three-dimensional review: security audit, design compliance, mandatory constraint validation before merge/test |
 | 📝 **archive-change** | Archive Change - Archive completed changes, auto-generate change summary, update changelog, create knowledge base entries, link Issue/PR |
 
 #### ⚡ Automation Skills
@@ -442,6 +455,7 @@ FlowMind is built on **enterprise-grade architecture design standards**, incorpo
 | Skill | Description |
 |-------|-------------|
 | 🎯 **learning-engine** | Learning Engine - Correction learning, scene learning, preference learning, auto-application, learning loop, knowledge graph construction |
+| 📝 **learning-feedback** | Learning Feedback (Global) - Capture user corrections, scene mapping, auto-bind to relevant skills, continuous optimization |
 
 ### 🎯 Core Capabilities Explained
 
