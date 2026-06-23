@@ -10,6 +10,8 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Version](https://img.shields.io/badge/version-1.0.0-blue)](CHANGELOG.md)
 
+**English** | [中文](README_CN.md)
+
 [Quick Start](#-quick-start) • [How It Works](#-how-it-works) • [Use Cases](#-use-cases) • [Architecture](#-architecture) • [Roadmap](#-roadmap)
 
 </div>
