@@ -10,9 +10,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Version](https://img.shields.io/badge/version-1.0.0-blue)](CHANGELOG.md)
 
-**English** | [中文](README_CN.md)
-
-[Quick Start](#-quick-start) • [How It Works](#-how-it-works) • [Use Cases](#-use-cases) • [Architecture](#-architecture) • [Roadmap](#-roadmap)
+[中文](README_CN.md) | [Quick Start](#-quick-start) | [How It Works](#-how-it-works) | [Use Cases](#-use-cases) | [Architecture](#-architecture)
 
 </div>
 
@@ -20,24 +18,68 @@
 
 ## 🎯 The Problem
 
-Developers waste **20-30% of their time** repeating the same instructions to AI tools:
+Developers face numerous pain points in daily work:
 
+### 1. Repetitive Labor
 ```
-❌ Every single time:
+❌ Same instructions every single time:
 "Format output as table..."
 "Use sequential list..."
 "Check errors first then..."
 "Connect using source_id..."
 ```
 
+### 2. Scattered Tools
+```
+❌ Constantly switching between platforms:
+SLS for logs → RDS for data → Code repo → YApi for APIs → Yuque for docs
+```
+
+### 3. Lost Experience
+```
+❌ Valuable experience cannot be preserved:
+Architect's design thinking → Lost with project end
+Debugging paths → Have to摸索 again next time
+Best practices → Cannot be reused or传承
+```
+
+### 4. Low Efficiency
+```
+❌ Repetitive waiting and inefficient operations:
+Configure database connection every time
+Enter complete conditions for every log query
+Manually execute multiple steps for each deployment
+```
+
+---
+
 ## 💡 The Solution
 
 **FlowMind learns once, applies forever.**
 
+### Core Philosophy
+
 ```
 ✅ First time: You teach FlowMind
 ✅ Every time after: FlowMind remembers
+✅ Smarter with use: AI self-evolution
 ```
+
+### One-Stop Solution
+
+```
+Code Locate → Data Verify → Problem Analyze → One-Click Fix → Auto Deploy → Archive
+    ↓              ↓              ↓               ↓              ↓            ↓
+Local+MCP      RDS Read      SLS Analysis    Code Modify    Pipeline     OpenSpec+Yuque
+```
+
+### Smarter with Every Use
+
+- 🧠 **Learning Accumulation** - Every use accumulates experience, understands your code and thinking better
+- 🔄 **Scene Coordination** - Skills auto-coordinate across different scenarios, forming complete workflows
+- 💰 **Token Optimization** - Reduce token consumption through mapping files, lower AI costs
+- ⏱️ **Efficiency Boost** - Reduce repetitive waiting, 10x efficiency through automation
+- 🎓 **Experience Retention** - Architect and senior developer design thinking, permanently preserved
 
 ---
 
@@ -55,6 +97,8 @@ npm install -g flowmind
 flowmind init
 ```
 
+> One-time configuration, permanent effect. Configure resource connections, learning preferences, output formats - no need to repeat setup.
+
 ### Start Using
 
 ```bash
@@ -71,7 +115,44 @@ FlowMind: [Automatically uses sequential list format] ✓
 
 ## 🧠 How It Works
 
-### 1. Learning from Corrections
+### 1. Multi-Source Code Location
+
+```mermaid
+graph LR
+    A[Your Request] --> B{Code Location}
+    B -->|Local| C[Local Codebase]
+    B -->|MCP| D[Remote Repository]
+    B -->|SSH| E[Server Code]
+    C --> F[Smart Matching]
+    D --> F
+    E --> F
+    F --> G[Precise Location]
+```
+
+**Supported Modes:**
+- 📁 **Local Mode** - Directly read local codebase
+- 🔌 **MCP Mode** - Connect remote repositories via MCP protocol
+- 🔐 **SSH Mode** - SSH connection to read server code
+
+### 2. RAG Intelligent Retrieval
+
+```mermaid
+graph TD
+    A[Historical Data Collection] --> B[Knowledge Base Building]
+    B --> C[Intelligent Retrieval Matching]
+    C --> D[Context Generation]
+    D --> E[Auto Application]
+    E --> F[Continuous Optimization]
+    F --> A
+```
+
+**RAG Process:**
+- 📚 **Data Collection** - Collect historical learning records, workflows, best practices
+- 🔍 **Smart Matching** - Based on scene similarity calculation, recommend best matching workflows
+- 📝 **Context Generation** - Auto-generate context, reduce repetitive input
+- 🔄 **Continuous Optimization** - Every use optimizes matching algorithms
+
+### 3. Learning Feedback Mechanism
 
 ```mermaid
 graph LR
@@ -80,132 +161,237 @@ graph LR
     C -->|Yes| D[Record Learning]
     C -->|No| E[Continue]
     D --> F[Apply Next Time]
+    F --> G[Self Evolution]
 ```
 
-**Example:**
+**Learning Types:**
+- 📚 **Correction Learning** - "No, use table format" → Auto-remembered
+- 🗺️ **Scene Learning** - "Check errors first then traces" → Workflow recorded
+- ⚙️ **Preference Learning** - "Reply in Chinese" → Language preference saved
+- 🔄 **Auto Application** - Automatically uses learned workflows next time
+
+### 4. MCP Integration Ecosystem
+
+```mermaid
+graph TB
+    A[FlowMind] --> B[Yuque]
+    A --> C[Alibaba Cloud SLS]
+    A --> D[Alibaba Cloud RDS]
+    A --> E[YApi]
+    A --> F[GitHub]
+    B --> G[Design Doc Sync]
+    C --> H[Log Analysis]
+    D --> I[Data Validation]
+    E --> J[API Management]
+    F --> K[Code Management]
 ```
-You: "查询日志"
-FlowMind: [Returns tree format]
-You: "不对，用顺序列表"
-FlowMind: [Records preference]
 
-You: [Next time] "查询日志"
-FlowMind: [Uses sequential list automatically] ✓
-```
+**Integration Capabilities:**
 
-### 2. Scene Mapping
-
-Map specific request patterns to workflows:
-
-```
-You: "查询线上日志用 SLS 技能，格式用顺序列表"
-FlowMind: [Records scene mapping]
-
-You: [Any time] "查询线上日志..."
-FlowMind: [Auto-applies your workflow] ✓
-```
-
-### 3. Skill System
-
-Modular skills for different tasks:
-
-| Skill | What It Does |
-|-------|--------------|
-| 🔍 **Log Audit** | Log analysis, trace visualization |
-| 🔌 **Resource Bind** | Database, Redis, API connections |
-| 📝 **Code Review** | Code quality, security checks |
-| ✅ **Data Validation** | Business logic verification |
-| 📚 **API Sync** | Documentation synchronization |
+| Platform | Integration Capabilities |
+|----------|--------------------------|
+| 📖 **Yuque** | Design doc sync, knowledge base management, OpenSpec archiving |
+| 📊 **Alibaba Cloud SLS** | Real-time log query, TraceID tracing, anomaly detection & analysis |
+| 🗄️ **Alibaba Cloud RDS** | Database connection, data reading & validation, SQL execution analysis |
+| 📋 **YApi** | API doc sync, interface testing, Swagger import/export |
+| 🐙 **GitHub** | Code repo management, PR review, Issue tracking, auto-archiving |
 
 ---
 
 ## 📊 Use Cases
 
-### 1. Automated Log Analysis
+### Scenario 1: Online Problem Investigation
 
 ```bash
-# Teach once
-flowmind "查询 traceId 日志用顺序列表，显示 URL、入参、响应"
+# Traditional way (10+ steps):
+1. Login to SLS console
+2. Enter query conditions
+3. Find traceId
+4. Copy traceId
+5. Search traces
+6. Locate error
+7. Connect RDS
+8. Query data
+9. Analyze cause
+10. Modify code
+11. Submit deployment
+12. Write documentation
 
-# Use forever
-flowmind "查询 traceId abc123"
-# → Automatically uses your preferred format
+# FlowMind way (1 command):
+flowmind "排查线上问题 traceId abc123"
+# → Auto complete: SLS query → Trace tracking → RDS data validation → Code location → Fix suggestion
 ```
 
-### 2. Consistent Code Review
+### Scenario 2: Code Review
 
 ```bash
-# Set your standards
-flowmind "代码审查先检查安全漏洞，再检查代码质量"
+# Set your standards (only once)
+flowmind "代码审查先检查安全漏洞，再检查代码质量，最后检查性能"
 
-# Every review follows your order
+# Every review follows your standards
 flowmind "审查这个 PR"
-# → Security first, then quality
+# → Security first → Quality check → Performance analysis
 ```
 
-### 3. Streamlined Debugging
+### Scenario 3: API Documentation Sync
 
 ```bash
-# Define your workflow
-flowmind "排查问题先查错误日志，再查链路，最后查代码"
+# Generate docs from code
+flowmind "从代码注释生成 API 文档"
 
-# Consistent debugging every time
-flowmind "排查线上问题 xxx"
-# → Follows your defined workflow
+# Sync to YApi
+flowmind "同步接口到 YApi"
+
+# Auto update Yuque
+flowmind "同步 API 文档到语雀"
+```
+
+### Scenario 4: Data Validation
+
+```bash
+# Connect RDS to validate data
+flowmind "验证订单表数据完整性"
+
+# Auto execute checks
+# → Referential integrity → Data types → Business logic → State machine
+```
+
+### Scenario 5: Project Health Check
+
+```bash
+# Full review
+flowmind "审查项目整体状况"
+
+# Auto execute:
+# → Dependency analysis → Security audit → Code complexity → Test coverage → Technical debt
 ```
 
 ---
 
 ## 🏗️ Architecture
 
+### System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      FlowMind Agent                        │
+├─────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│  │ Scene Matcher│  │Learning Engine│  │ Skill Loader │    │
+│  └──────────────┘  └──────────────┘  └──────────────┘    │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │                   Skill System                       │  │
+│  ├─────────────┬─────────────┬─────────────┬───────────┤  │
+│  │ Analysis    │ Integration │ Quality     │Automation │  │
+│  └─────────────┴─────────────┴─────────────┴───────────┘  │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │                 MCP Integration Layer                │  │
+│  ├─────────┬─────────┬─────────┬─────────┬─────────────┤  │
+│  │  Yuque  │   SLS   │   RDS   │   YApi  │   GitHub   │  │
+│  └─────────┴─────────┴─────────┴─────────┴─────────────┘  │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │                  Data Persistence Layer              │  │
+│  ├─────────────┬─────────────┬─────────────────────────┤  │
+│  │Learning     │Scene        │Configuration            │  │
+│  │Records      │Mappings     │Info                     │  │
+│  └─────────────┴─────────────┴─────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Directory Structure
+
 ```
 flowmind/
-├── core/                      # Core engine
-│   ├── agent.js              # Main agent logic
-│   ├── learning.js           # Learning engine
-│   └── matcher.js            # Scene matching
-├── skills/                    # Skill modules
-│   ├── log-audit/           # Log analysis
-│   ├── resource-bind/       # Resource management
-│   ├── code-review/         # Code review
-│   └── learning-engine/     # Learning system
-├── learning/                  # Learning storage
-│   ├── records/             # Learning records
-│   └── scenes.json          # Scene mappings
-└── templates/                # Output templates
+├── core/                          # Core Engine
+│   ├── index.js                  # Main entry
+│   ├── learning-engine.js        # Learning engine
+│   ├── scene-matcher.js          # Scene matching
+│   ├── skill-loader.js           # Skill loading
+│   └── config-manager.js         # Config management
+├── skills/                        # Skill Modules (11 core skills)
+│   ├── log-audit/                # Log audit
+│   ├── resource-bind/            # Resource binding
+│   ├── code-review/              # Code review
+│   ├── data-validation/          # Data validation
+│   ├── api-sync/                 # API sync
+│   ├── project-review/           # Project review
+│   ├── git-review/               # Git review
+│   ├── archive-change/           # Change archiving
+│   ├── auto-flow/                # Workflow automation
+│   └── learning-engine/          # Learning engine
+├── learning/                      # Learning Storage
+│   ├── records/                  # Learning records
+│   └── scenes.json               # Scene mappings
+├── templates/                     # Output templates
+└── config/                        # Configuration files
 ```
 
 ### Learning Flow
 
 ```mermaid
 sequenceDiagram
-    participant U as You
-    participant F as FlowMind
+    participant U as User
+    participant A as FlowMind Agent
+    participant M as Scene Matcher
     participant L as Learning Engine
-    participant S as Skills
+    participant S as Skill System
+    participant MCP as MCP Integration
+    participant D as Data Persistence
 
-    U->>F: Make request
-    F->>L: Check scene mappings
-    L-->>F: Return matching workflow
-    F->>S: Execute skills
-    S-->>F: Return results
-    F->>U: Present results
+    U->>A: Send request
+    A->>M: Check scene mappings
+    M->>D: Read history records
+    D-->>M: Return matching workflows
+    M-->>A: Return recommended plan
 
-    U->>F: Provide feedback
-    F->>L: Record learning
-    L->>L: Update mappings
+    A->>S: Execute skills
+    S->>MCP: Call external services
+    MCP-->>S: Return results
+    S-->>A: Return execution results
+
+    A->>U: Present results
+
+    U->>A: Provide feedback
+    A->>L: Record learning
+    L->>D: Persist storage
+    L->>L: Optimize matching algorithm
 ```
 
----
+### One-Stop Problem Solving Flow
 
-## 📈 Impact & Metrics
+```mermaid
+graph TB
+    A[Problem Discovery] --> B[Code Location]
+    B --> C[Data Validation]
+    C --> D[Problem Analysis]
+    D --> E[One-Click Fix]
+    E --> F[Auto Deploy]
+    F --> G[Archive Record]
 
-| Metric | Before FlowMind | After FlowMind |
-|--------|-----------------|----------------|
-| Repetitive instructions | 100% | ~5% |
-| Workflow consistency | Variable | 98%+ |
-| Debugging time | 30 min | 10 min |
-| Onboarding new devs | 2 weeks | 2 days |
+    B --> B1[Local Code]
+    B --> B2[MCP Remote]
+    B --> B3[SSH Mode]
+
+    C --> C1[RDS Data Read]
+    C --> C2[Data Integrity Validation]
+
+    D --> D1[SLS Log Analysis]
+    D --> D2[TraceID Tracing]
+    D --> D3[Root Cause Location]
+
+    E --> E1[Code Modification]
+    E --> E2[Unit Tests]
+
+    F --> F1[Pipeline Execution]
+    F --> F2[Auto Deployment]
+
+    G --> G1[OpenSpec Archive]
+    G --> G2[Yuque Doc Sync]
+    G --> G3[RAG Data Building]
+```
 
 ---
 
@@ -219,42 +405,6 @@ FlowMind is built on **enterprise-grade architecture design standards**, incorpo
 - 🧠 **RAG Business Logic** - Intelligent retrieval and generation based on historical data
 - 💾 **Data Persistence** - All learning records and configurations stored locally
 - ⚙️ **Global Config Initialization** - One-time setup, permanent effect, no repeated configuration
-
-### 🔌 MCP Integration Ecosystem
-
-FlowMind deeply integrates mainstream development platforms for a **one-stop development workflow**:
-
-| Platform | Integration Capabilities |
-|----------|--------------------------|
-| 📖 **Yuque** | Design doc sync, knowledge base management, OpenSpec archiving |
-| 📊 **Alibaba Cloud SLS** | Real-time log query, TraceID tracing, anomaly detection & analysis |
-| 🗄️ **Alibaba Cloud RDS** | Database connection, data reading & validation, SQL execution analysis |
-| 📋 **YApi** | API doc sync, interface testing, Swagger import/export |
-| 🐙 **GitHub** | Code repo management, PR review, Issue tracking, auto-archiving |
-
-### 🚀 One-Stop Problem Solving Flow
-
-```
-Code Locate → Data Verify → Problem Analyze → One-Click Fix → Auto Deploy → Archive
-    ↓              ↓              ↓               ↓              ↓            ↓
-Local+MCP      RDS Read      SLS Analysis    Code Modify    Pipeline     OpenSpec+Yuque
-```
-
-**Core Advantages:**
-- 🔍 **Multi-Source Code Location** - Local code + MCP remote + SSH mode, auto read and locate
-- 📊 **Real Data Validation** - Direct RDS connection for real data, verify business logic
-- 🎯 **Precise Problem Analysis** - SLS intelligent log analysis, quick root cause identification
-- ⚡ **One-Click Fix & Deploy** - From problem discovery to fix deployment, fully automated
-- 📝 **Auto Archiving** - OpenSpec design standards + Yuque docs, automatic archiving
-- 🧠 **RAG Data Building** - Auto-generate RAG training data, continuously optimize intelligence
-
-### 🎯 Smarter with Every Use
-
-- 📈 **Learning Accumulation** - Every use accumulates experience, understands your code and thinking better
-- 🔄 **Scene Coordination** - Skills auto-coordinate across different scenarios, forming complete workflows
-- 💰 **Token Optimization** - Reduce token consumption through mapping files, lower AI costs
-- ⏱️ **Efficiency Boost** - Reduce repetitive waiting, 10x efficiency through automation
-- 🎓 **Experience Retention** - Architect and senior developer design thinking, permanently preserved
 
 ### 🔧 Skill System (11 Core Skills)
 
@@ -338,6 +488,19 @@ User correction → Record learning → Auto apply → Continuous optimization
 
 ---
 
+## 📈 Impact & Metrics
+
+| Metric | Before FlowMind | After FlowMind |
+|--------|-----------------|----------------|
+| Repetitive instructions | 100% | ~5% |
+| Workflow consistency | Variable | 98%+ |
+| Problem investigation time | 30+ min | 5 min |
+| Onboarding new devs | 2 weeks | 2 days |
+| Token consumption | High | Reduce 60%+ |
+| Experience retention | Cannot preserve | Permanent reuse |
+
+---
+
 ## 🌟 Community Building
 
 **FlowMind's Core Philosophy: More Users, Smarter Together!**
@@ -392,6 +555,8 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 Built with:
 - Claude AI - Intelligence backbone
+- MCP Protocol - Tool integration
+- OpenSpec - Design standards
 - Open source community - Inspiration and support
 
 ---
@@ -405,7 +570,7 @@ Built with:
 
 <div align="center">
 
-**[⬆ back to top](#flowmind)**
+**[⬆ back to top](#-flowmind)**
 
 Made with ❤️ by the FlowMind team
 
