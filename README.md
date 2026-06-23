@@ -588,15 +588,29 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-## 🎓 Design, Analysis & Coding Mentor
+## 🎓 Your Team Mentor
 
-As FlowMind learns from your team's accumulated experience, it naturally becomes a mentor in **design, analysis, and coding**:
+FlowMind becomes a valuable assistant for every role through continuous learning from team experience:
 
-- **Design Thinking** - Learns architectural patterns and design rationale from senior developers, guides similar decisions
-- **Analysis Capability** - Absorbs debugging methodologies and problem-solving paths, helps you analyze issues systematically
-- **Coding Standards** - Absorbs team's coding best practices, provides contextual code guidance
+### 👨‍💻 For Developers: Quality Control & End-to-End Design
 
-> *FlowMind doesn't replace your mentor—it preserves and transmits your team's design wisdom, analysis skills, and coding expertise across time and people.*
+- **Full-Process Design Guidance** - From requirements analysis to architecture design, FlowMind learns team design patterns and provides experience-backed guidance at every step
+- **Code Quality Control** - Absorbs team Code Review standards and best practices, providing real-time feedback during development
+- **Technical Decision Support** - Based on historical project experience, provides data-backed support for tech stack and architecture decisions
+
+### 🧪 For Testers: Review-Driven Quality & Requirements Alignment
+
+- **Code Review Quality Control** - Learns team review standards, helping testers identify potential issues at the code level
+- **Requirements Tracing** - Automatically links requirements to code implementation, ensuring complete test coverage without missing edge cases
+- **Historical Defect Learning** - Learns from past Bug patterns, identifies high-risk areas proactively for precise test resource allocation
+
+### 📦 For Product Managers: Learn from History, Plan for the Future
+
+- **Historical Design Analysis** - Traces historical resources and design evolution, helping product understand "why it was designed this way"
+- **Upgrade Path Planning** - Based on historical iteration patterns and technical architecture constraints, derives reasonable feature evolution directions
+- **Feasibility Assessment** - Combines technical implementation costs with historical experience to inform product decisions
+
+> *FlowMind doesn't replace anyone—it preserves and transmits team design wisdom, quality standards, and product experience across time and roles, enabling every role to make better decisions standing on the shoulders of those before them.*
 
 ---
 
