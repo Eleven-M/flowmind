@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: code-review
 description: Code review and quality analysis skill for FlowMind. Analyze code for security vulnerabilities, style violations, and best practices.
 metadata:
@@ -204,4 +204,3 @@ Exclude files from review:
   }
 }
 ```
-]]>

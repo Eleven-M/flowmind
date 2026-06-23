@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: project-review
 description: Project-level review and analysis skill for FlowMind. Analyze project health, dependencies, and overall quality.
 metadata:
@@ -194,4 +194,3 @@ FlowMind:
 - [ ] Documentation complete
 - [ ] License compliant
 - [ ] No secrets in code
-]]>

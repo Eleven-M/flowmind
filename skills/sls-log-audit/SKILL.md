@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: sls-log-audit
 description: SLS log audit skill for FlowMind. Query Alibaba Cloud SLS logs, trace ID chain analysis, Feign call chain extraction, response time analysis, and error log investigation.
 metadata:
@@ -183,4 +183,3 @@ FlowMind:
   }
 }
 ```
-]]>

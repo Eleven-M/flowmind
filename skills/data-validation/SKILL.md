@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: data-validation
 description: Data validation and logic verification skill for FlowMind. Verify business logic, data integrity, and processing correctness.
 metadata:
@@ -208,4 +208,3 @@ FlowMind:
   }
 }
 ```
-]]>

@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: auto-flow
 description: Automated workflow orchestration skill for FlowMind. Define, execute, and manage complex multi-step workflows.
 metadata:
@@ -275,4 +275,3 @@ steps:
         params:
           message: "Deploy failed!"
 ```
-]]>

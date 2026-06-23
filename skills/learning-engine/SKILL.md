@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: learning-engine
 description: Core learning engine that powers FlowMind's ability to learn from user corrections and preferences. This is the heart of FlowMind's intelligence.
 metadata:
@@ -350,4 +350,3 @@ flowmind learn import <file>
 1. Limit learning records per skill
 2. Archive old learnings
 3. Clean up unused scenes
-]]>

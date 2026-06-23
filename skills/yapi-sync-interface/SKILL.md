@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: yapi-sync-interface
 description: YApi interface sync skill for FlowMind. Sync Controller interfaces to YApi, import/export Swagger, manage API documentation lifecycle.
 metadata:
@@ -133,4 +133,3 @@ FlowMind:
   }
 }
 ```
-]]>

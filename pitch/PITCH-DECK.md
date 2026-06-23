@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # FlowMind Pitch Deck
 
@@ -413,4 +413,3 @@ Year 4: +$8M (Scaling)
 *Learn once, flow forever.*
 
 </div>
-]]>

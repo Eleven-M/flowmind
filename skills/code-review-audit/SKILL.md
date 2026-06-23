@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: code-review-audit
 description: Code review and security audit skill for FlowMind. Three-dimensional review: security audit, design compliance check, and mandatory constraint validation before merge or test.
 metadata:
@@ -148,4 +148,3 @@ FlowMind:
   }
 }
 ```
-]]>

@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # FlowMind Business Model
 
@@ -372,4 +372,3 @@ Business → Enterprise: Custom (Full platform)
 *Sustainable growth through value creation*
 
 </div>
-]]>

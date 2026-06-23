@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: git-review
 description: Git repository and commit review skill for FlowMind. Review commit history, analyze changes, and ensure code quality.
 metadata:
@@ -188,4 +188,3 @@ Types:
 - `refactor`: Code refactoring
 - `test`: Adding tests
 - `chore`: Maintenance
-]]>

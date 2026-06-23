@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: requirement-analyst
 description: Requirement analyst skill for FlowMind. Six-dimensional analysis: historical design principles, iteration rationale, extensibility, market roadmap, requirement-code deviation, and upgrade vulnerabilities.
 metadata:
@@ -273,4 +273,3 @@ FlowMind:
   }
 }
 ```
-]]>

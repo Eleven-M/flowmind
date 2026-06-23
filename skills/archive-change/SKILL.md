@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: archive-change
 description: Archive completed changes and maintain project history. Use when a feature, fix, or change is complete and needs to be documented and archived.
 metadata:
@@ -170,4 +170,3 @@ Before archiving, FlowMind checks:
 - [ ] Code reviewed
 - [ ] No open issues
 - [ ] Deployment verified
-]]>

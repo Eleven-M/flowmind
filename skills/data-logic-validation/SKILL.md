@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: data-logic-validation
 description: Data logic validation skill for FlowMind. Verify actual SQL queries, Redis operations, and data processing logic against real data via MCP database and Redis connections.
 metadata:
@@ -144,4 +144,3 @@ FlowMind:
   }
 }
 ```
-]]>

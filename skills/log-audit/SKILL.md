@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: log-audit
 description: Log analysis and trace visualization skill for FlowMind. Analyze application logs, trace requests, debug performance issues.
 metadata:
@@ -212,4 +212,3 @@ duration > 1000
   }
 }
 ```
-]]>

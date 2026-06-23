@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: learning-feedback
 description: Global learning skill for FlowMind. Captures user corrections, feedback, and refined processing logic. Automatically binds learning to relevant skills for future application.
 metadata:
@@ -172,4 +172,3 @@ FlowMind:
   }
 }
 ```
-]]>

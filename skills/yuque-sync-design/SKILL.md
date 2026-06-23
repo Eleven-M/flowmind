@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: yuque-sync-design
 description: Yuque design document sync skill for FlowMind. Sync design documents to Yuque knowledge base, manage OpenSpec archives, and maintain design documentation lifecycle.
 metadata:
@@ -144,4 +144,3 @@ FlowMind:
   }
 }
 ```
-]]>

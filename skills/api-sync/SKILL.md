@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: api-sync
 description: API documentation synchronization skill for FlowMind. Sync API definitions, generate documentation, and maintain API consistency.
 metadata:
@@ -201,4 +201,3 @@ Shows what would be synced without making changes.
   }
 }
 ```
-]]>

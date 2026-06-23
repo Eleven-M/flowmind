@@ -1,4 +1,4 @@
-<![CDATA[---
+---
 name: resource-bind
 description: Resource binding and connection management skill for FlowMind. Manage database, Redis, API, and other external resource connections.
 metadata:
@@ -220,4 +220,3 @@ FlowMind:
 - Connections use TLS when available
 - Credentials are never logged
 - Connection pooling prevents exhaustion
-]]>
