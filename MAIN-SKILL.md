@@ -314,10 +314,8 @@ flowmind config --list
 
 ## Support
 
-- **Documentation**: [docs.flowmind.dev](https://docs.flowmind.dev)
-- **Issues**: [github.com/flowmind/issues](https://github.com/flowmind/issues)
-- **Discord**: [discord.gg/flowmind](https://discord.gg/flowmind)
-- **Email**: support@flowmind.dev
+- **GitHub**: [github.com/Eleven-M/flowmind](https://github.com/Eleven-M/flowmind)
+- **Email**: 13060993305@163.com
 
 ## License
 
