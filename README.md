@@ -586,6 +586,155 @@ User correction → Record learning → Auto apply → Continuous optimization
 - **Preference Learning**: "Reply in Chinese" → Language preference saved
 - **Auto Application**: Automatically uses learned workflows next time
 
+#### 6️⃣ Pluggable Component Architecture (Full Configuration)
+```
+Component Type → Provider Interface → Cloud Service Adapter → Switch via Config
+```
+
+**Key Design Principles:**
+- 🔌 **Provider Abstraction** - Each component type defines a standard interface; providers implement the interface
+- ⚙️ **Config-Driven Switching** - Switch cloud providers by modifying JSON config, zero code changes
+- 🔗 **MCP Backward Compatibility** - Existing MCP server configurations continue to work seamlessly
+- 🧩 **Custom Extensibility** - Register your own adapters for proprietary or third-party services
+
+**Component Lifecycle:**
+```
+flowmind init → Load component-config.json → Register adapters → Activate default providers
+                              ↓
+                   Skills call ComponentRegistry.getAdapter(type)
+                              ↓
+                   Adapter delegates to MCP server or custom implementation
+```
+
+**MCP Server to Component Mapping:**
+
+| MCP Server | Component Type | Provider |
+|------------|----------------|----------|
+| `friday-sls-logs` | `logService` | `aliyun-sls` |
+| `aliyun-dms-mcp-server` | `databaseManager` | `aliyun-dms` |
+| `friday-rds-redis-query` | `databaseQuery` | `aliyun-rds-query` |
+| `friday-aliyun-sz-rds-redis` | `redisMonitor` | `aliyun-redis` |
+| `aomi-yapi-mcp` | `apiDoc` | `yapi` |
+| `aomi-yuque-mcp` | `knowledgeBase` | `yuque` |
+| `friday-auto-flow` | `workflow` | `friday-flow` |
+| `friday-auto-report` | `report` | `friday-report` |
+
+### 🛠️ Custom Adapter Development
+
+Create your own adapter to integrate proprietary or third-party services.
+
+**Step 1: Extend the Base Adapter**
+
+```javascript
+// core/providers/custom/my-sls-adapter.js
+const LogServiceAdapter = require('../../adapters/log-service-adapter');
+
+class MyCustomSlsAdapter extends LogServiceAdapter {
+  constructor(config = {}) {
+    super('my-custom-sls', config);
+    // Register MCP tool name mappings
+    this.registerTool('queryLogs', 'myQueryLogsTool');
+  }
+
+  get mcpServer() {
+    return 'my-custom-mcp-server';
+  }
+
+  async queryLogs(params) {
+    // Custom implementation
+    return { mcpServer: this.mcpServer, tool: this.resolveTool('queryLogs'), params };
+  }
+}
+
+module.exports = MyCustomSlsAdapter;
+```
+
+**Step 2: Register the Provider Factory**
+
+```javascript
+// In your initialization code
+const registry = new ComponentRegistry(config);
+
+registry.registerFactory('my-custom-sls', () => {
+  const MyCustomSlsAdapter = require('./providers/custom/my-sls-adapter');
+  return new MyCustomSlsAdapter(config.get('components.logService.providers.my-custom-sls'));
+});
+```
+
+**Step 3: Configure the Provider**
+
+```json
+{
+  "components": {
+    "logService": {
+      "default": "my-custom-sls",
+      "providers": {
+        "my-custom-sls": {
+          "adapter": "my-custom-sls-adapter",
+          "enabled": true,
+          "mcpServer": "my-custom-mcp-server",
+          "config": {
+            "endpoint": "my-sls.example.com"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+**Adapter Interface Requirements by Component Type:**
+
+| Component Type | Required Methods | Required Capabilities |
+|----------------|------------------|----------------------|
+| `logService` | `queryLogs()`, `listProjects()` | Log querying and project listing |
+| `databaseManager` | `listInstances()`, `executeScript()`, `searchDatabase()` | Instance management and SQL execution |
+| `databaseQuery` | `queryExec()`, `fetchSource()`, `fetchTables()` | Direct SQL queries |
+| `redisMonitor` | `query()`, `queryRange()`, `getLabelValues()` | Prometheus metric queries |
+| `apiDoc` | `searchApis()`, `saveApi()`, `getCategories()` | API doc CRUD |
+| `knowledgeBase` | `getRepos()`, `getDocs()`, `createDoc()`, `updateDoc()` | Knowledge base CRUD |
+| `workflow` | `listPipelines()`, `startPipelineRun()` | Pipeline management |
+| `report` | `listBuilds()`, `getBuildInfo()` | Build report retrieval |
+
+### 📦 Configuration Migration Tool
+
+Migrate existing MCP server configurations to the new component architecture.
+
+```bash
+# Preview migration (dry run)
+node scripts/migrate-config.js --dry-run
+
+# Generate migration config
+node scripts/migrate-config.js
+
+# Specify custom output path
+node scripts/migrate-config.js --output ./my-config.json
+```
+
+**What it does:**
+1. Reads existing MCP server configuration from `.claude/settings.local.json`
+2. Maps MCP servers to component types using the default mapping table
+3. Generates a `component-config.json` with proper structure
+
+**Migration output example:**
+```json
+{
+  "version": "1.0.0",
+  "components": {
+    "logService": {
+      "default": "aliyun-sls",
+      "providers": {
+        "aliyun-sls": {
+          "adapter": "aliyun-sls-adapter",
+          "enabled": true,
+          "mcpServer": "friday-sls-logs"
+        }
+      }
+    }
+  }
+}
+```
+
 ---
 
 ## 📈 Impact & Metrics

@@ -585,6 +585,155 @@ flowmind init → 一次性配置 → 永久生效
 - **偏好学习**: "用中文回复" → 记录语言偏好
 - **自动应用**: 下次自动使用学习到的工作流
 
+#### 6️⃣ 可插拔组件架构（完整配置化）
+```
+组件类型 → 提供者接口 → 云服务适配器 → 通过配置切换
+```
+
+**核心设计原则：**
+- 🔌 **提供者抽象** - 每种组件类型定义标准接口，提供者实现该接口
+- ⚙️ **配置驱动切换** - 修改 JSON 配置即可切换云服务商，零代码改动
+- 🔗 **MCP 向后兼容** - 现有 MCP 服务器配置可无缝继续使用
+- 🧩 **自定义扩展** - 注册自定义适配器，接入私有或第三方服务
+
+**组件生命周期：**
+```
+flowmind init → 加载 component-config.json → 注册适配器 → 激活默认提供者
+                              ↓
+                   技能调用 ComponentRegistry.getAdapter(type)
+                              ↓
+                   适配器委托给 MCP 服务器或自定义实现
+```
+
+**MCP 服务器与组件映射：**
+
+| MCP 服务器 | 组件类型 | 提供者 |
+|------------|----------|--------|
+| `friday-sls-logs` | `logService` | `aliyun-sls` |
+| `aliyun-dms-mcp-server` | `databaseManager` | `aliyun-dms` |
+| `friday-rds-redis-query` | `databaseQuery` | `aliyun-rds-query` |
+| `friday-aliyun-sz-rds-redis` | `redisMonitor` | `aliyun-redis` |
+| `aomi-yapi-mcp` | `apiDoc` | `yapi` |
+| `aomi-yuque-mcp` | `knowledgeBase` | `yuque` |
+| `friday-auto-flow` | `workflow` | `friday-flow` |
+| `friday-auto-report` | `report` | `friday-report` |
+
+### 🛠️ 自定义适配器开发
+
+创建自定义适配器，接入私有或第三方服务。
+
+**第一步：继承基础适配器**
+
+```javascript
+// core/providers/custom/my-sls-adapter.js
+const LogServiceAdapter = require('../../adapters/log-service-adapter');
+
+class MyCustomSlsAdapter extends LogServiceAdapter {
+  constructor(config = {}) {
+    super('my-custom-sls', config);
+    // 注册 MCP 工具名称映射
+    this.registerTool('queryLogs', 'myQueryLogsTool');
+  }
+
+  get mcpServer() {
+    return 'my-custom-mcp-server';
+  }
+
+  async queryLogs(params) {
+    // 自定义实现
+    return { mcpServer: this.mcpServer, tool: this.resolveTool('queryLogs'), params };
+  }
+}
+
+module.exports = MyCustomSlsAdapter;
+```
+
+**第二步：注册提供者工厂**
+
+```javascript
+// 在初始化代码中
+const registry = new ComponentRegistry(config);
+
+registry.registerFactory('my-custom-sls', () => {
+  const MyCustomSlsAdapter = require('./providers/custom/my-sls-adapter');
+  return new MyCustomSlsAdapter(config.get('components.logService.providers.my-custom-sls'));
+});
+```
+
+**第三步：配置提供者**
+
+```json
+{
+  "components": {
+    "logService": {
+      "default": "my-custom-sls",
+      "providers": {
+        "my-custom-sls": {
+          "adapter": "my-custom-sls-adapter",
+          "enabled": true,
+          "mcpServer": "my-custom-mcp-server",
+          "config": {
+            "endpoint": "my-sls.example.com"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+**各组件类型的适配器接口要求：**
+
+| 组件类型 | 必须实现的方法 | 必须具备的能力 |
+|----------|----------------|----------------|
+| `logService` | `queryLogs()`, `listProjects()` | 日志查询与项目列表 |
+| `databaseManager` | `listInstances()`, `executeScript()`, `searchDatabase()` | 实例管理与 SQL 执行 |
+| `databaseQuery` | `queryExec()`, `fetchSource()`, `fetchTables()` | 数据库直查 |
+| `redisMonitor` | `query()`, `queryRange()`, `getLabelValues()` | Prometheus 指标查询 |
+| `apiDoc` | `searchApis()`, `saveApi()`, `getCategories()` | API 文档 CRUD |
+| `knowledgeBase` | `getRepos()`, `getDocs()`, `createDoc()`, `updateDoc()` | 知识库 CRUD |
+| `workflow` | `listPipelines()`, `startPipelineRun()` | 流水线管理 |
+| `report` | `listBuilds()`, `getBuildInfo()` | 构建报告获取 |
+
+### 📦 配置迁移工具
+
+将现有 MCP 服务器配置迁移到新的组件架构。
+
+```bash
+# 预览迁移（干运行）
+node scripts/migrate-config.js --dry-run
+
+# 生成迁移配置
+node scripts/migrate-config.js
+
+# 指定自定义输出路径
+node scripts/migrate-config.js --output ./my-config.json
+```
+
+**工具功能：**
+1. 从 `.claude/settings.local.json` 读取现有 MCP 服务器配置
+2. 使用默认映射表将 MCP 服务器映射到组件类型
+3. 生成结构化的 `component-config.json`
+
+**迁移输出示例：**
+```json
+{
+  "version": "1.0.0",
+  "components": {
+    "logService": {
+      "default": "aliyun-sls",
+      "providers": {
+        "aliyun-sls": {
+          "adapter": "aliyun-sls-adapter",
+          "enabled": true,
+          "mcpServer": "friday-sls-logs"
+        }
+      }
+    }
+  }
+}
+```
+
 ---
 
 ## 📈 影响与指标
