@@ -2,9 +2,13 @@
 name: data-logic-validation
 description: Data logic validation skill for FlowMind. Verify actual SQL queries, Redis operations, and data processing logic against real data via MCP database and Redis connections.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: flowmind
   category: quality
+componentDependencies:
+  - databaseManager
+  - databaseQuery
+  - redisMonitor
 ---
 
 # Data Logic Validation Skill
@@ -75,6 +79,18 @@ Verify actual data processing logic by connecting to databases and Redis via MCP
 4. Result Comparison → Compare expected vs actual
 5. Report Generation → Output validation results
 ```
+
+## Component Integration
+
+This skill uses the **databaseManager**, **databaseQuery**, and **redisMonitor** components.
+
+| Component | Provider | MCP Server | Description |
+|-----------|----------|------------|-------------|
+| databaseManager | aliyun-dms | aliyun-dms-mcp-server | Alibaba Cloud DMS |
+| databaseQuery | aliyun-rds-query | friday-rds-redis-query | Direct SQL queries |
+| redisMonitor | aliyun-redis | friday-aliyun-sz-rds-redis | Redis Prometheus metrics |
+
+Configuration is managed in `flowmind.config.json` under `components`.
 
 ## Learning Integration
 

@@ -7,9 +7,10 @@ const fs = require('fs-extra');
 const path = require('path');
 
 class SkillLoader {
-  constructor(config, learning) {
+  constructor(config, learning, componentRegistry = null) {
     this.config = config;
     this.learning = learning;
+    this.componentRegistry = componentRegistry;
     this.skills = new Map();
     this.skillPath = config.get('skills.path', path.join(__dirname, '..', 'skills'));
   }
@@ -102,6 +103,16 @@ class SkillLoader {
       }
     }
 
+    // Parse YAML list fields (componentDependencies, etc.)
+    const listFieldMatch = frontmatter.match(/componentDependencies:\s*\n((?:\s+-\s+.+\n?)*)/);
+    if (listFieldMatch) {
+      definition.componentDependencies = listFieldMatch[1]
+        .split('\n')
+        .map(line => line.match(/^\s+-\s+(.+)$/))
+        .filter(Boolean)
+        .map(m => m[1].trim());
+    }
+
     // Extract trigger patterns
     const triggerMatch = content.match(/## Trigger Conditions\n([\s\S]*?)(?=\n##|$)/);
     if (triggerMatch) {
@@ -154,10 +165,31 @@ class SkillLoader {
    * Create default execute function from definition
    */
   createDefaultExecute(definition) {
+    const registry = this.componentRegistry;
     return async (input, context) => {
+      // Enrich context with component registry info
+      const enrichedContext = { ...context };
+      if (registry) {
+        enrichedContext.componentRegistry = registry;
+        // Add resolved MCP server info for skills that declare component dependencies
+        const componentDeps = definition.componentDependencies || [];
+        enrichedContext.resolvedComponents = {};
+        for (const dep of componentDeps) {
+          const adapter = registry.getAdapter(dep);
+          if (adapter) {
+            enrichedContext.resolvedComponents[dep] = {
+              provider: registry.getActiveProvider(dep),
+              mcpServer: adapter.mcpServer,
+              tools: adapter.getProvidedTools()
+            };
+          }
+        }
+      }
+
       return {
         skill: definition.name,
         input: input,
+        context: enrichedContext,
         message: `Executed skill: ${definition.name || 'unknown'}`,
         timestamp: new Date().toISOString()
       };

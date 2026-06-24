@@ -1,10 +1,12 @@
 ---
 name: sls-log-audit
-description: SLS log audit skill for FlowMind. Query Alibaba Cloud SLS logs, trace ID chain analysis, Feign call chain extraction, response time analysis, and error log investigation.
+description: SLS log audit skill for FlowMind. Query cloud log service (SLS, ELK, etc.), trace ID chain analysis, Feign call chain extraction, response time analysis, and error log investigation.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: flowmind
   category: monitoring
+componentDependencies:
+  - logService
 ---
 
 # SLS Log Audit Skill
@@ -92,9 +94,19 @@ Query and analyze Alibaba Cloud SLS (Simple Log Service) logs for troubleshootin
 └─────────────────────────────────────────────────────┘
 ```
 
-## MCP Integration
+## Component Integration
 
-This skill uses the `friday-sls-logs` MCP server for SLS log queries:
+This skill uses the **logService** component. The actual log service provider is determined by configuration.
+
+| Provider | MCP Server | Description |
+|----------|------------|-------------|
+| aliyun-sls | friday-sls-logs | Alibaba Cloud SLS |
+| baidu-sls | baidu-sls-logs | Baidu Cloud Log Service |
+| elk | (direct) | Elasticsearch |
+
+Configuration is managed in `flowmind.config.json` under `components.logService`.
+
+**Default endpoints** (aliyun-sls provider):
 
 | Environment | Endpoint | Region |
 |-------------|----------|--------|
@@ -169,16 +181,42 @@ FlowMind:
 
 ## Configuration
 
+Skill-specific configuration:
+
 ```json
 {
   "sls-log-audit": {
-    "defaultEndpoint": "cn-shenzhen.log.aliyuncs.com",
     "defaultProject": "your-project",
     "defaultLogstore": "your-logstore",
     "queryLimit": 100,
     "timeRange": {
       "default": "1h",
       "max": "24h"
+    }
+  }
+}
+```
+
+Component provider configuration (in `flowmind.config.json`):
+
+```json
+{
+  "components": {
+    "logService": {
+      "default": "aliyun-sls",
+      "providers": {
+        "aliyun-sls": {
+          "adapter": "aliyun-sls-adapter",
+          "enabled": true,
+          "mcpServer": "friday-sls-logs",
+          "config": {
+            "endpoints": {
+              "test": "cn-shenzhen.log.aliyuncs.com",
+              "prod": "cn-hongkong.log.aliyuncs.com"
+            }
+          }
+        }
+      }
     }
   }
 }

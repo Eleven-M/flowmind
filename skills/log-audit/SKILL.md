@@ -2,9 +2,11 @@
 name: log-audit
 description: Log analysis and trace visualization skill for FlowMind. Analyze application logs, trace requests, debug performance issues.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: flowmind
   category: monitoring
+componentDependencies:
+  - logService
 ---
 
 # Log Audit Skill
@@ -81,6 +83,18 @@ Bottleneck: {service} - {url} ({duration}ms)
 └─────────────────────────────────────────┘
 ```
 
+## Component Integration
+
+This skill uses the **logService** component. The actual log service provider is determined by configuration.
+
+| Provider | MCP Server | Description |
+|----------|------------|-------------|
+| aliyun-sls | friday-sls-logs | Alibaba Cloud SLS |
+| baidu-sls | baidu-sls-logs | Baidu Cloud Log Service |
+| elk | (direct) | Elasticsearch |
+
+Configuration is managed in `flowmind.config.json` under `components.logService`.
+
 ## Learning Integration
 
 This skill supports FlowMind learning:
@@ -99,20 +113,18 @@ FlowMind: [Applies sequential list automatically]
 
 ## Configuration
 
+Skill-specific configuration:
+
 ```json
 {
   "log-audit": {
-    "source": {
-      "type": "sls",
-      "endpoint": "your-endpoint",
-      "project": "your-project",
-      "logstore": "your-logstore"
-    },
     "defaultFormat": "sequential-list",
     "excludeInfrastructure": true
   }
 }
 ```
+
+Log service provider is configured via `components.logService` in `flowmind.config.json`.
 
 ## Examples
 

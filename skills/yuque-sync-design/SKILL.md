@@ -1,10 +1,12 @@
 ---
 name: yuque-sync-design
-description: Yuque design document sync skill for FlowMind. Sync design documents to Yuque knowledge base, manage OpenSpec archives, and maintain design documentation lifecycle.
+description: Yuque design document sync skill for FlowMind. Sync design documents to knowledge base, manage OpenSpec archives, and maintain design documentation lifecycle.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: flowmind
   category: documentation
+componentDependencies:
+  - knowledgeBase
 ---
 
 # Yuque Design Document Sync Skill
@@ -61,9 +63,18 @@ Synchronize design documents between local OpenSpec artifacts and Yuque knowledg
 └─────────────────────────────────────────────────────┘
 ```
 
-## MCP Integration
+## Component Integration
 
-This skill uses the `aomi-yuque-mcp` MCP server:
+This skill uses the **knowledgeBase** component. The actual knowledge base provider is determined by configuration.
+
+| Provider | MCP Server | Description |
+|----------|------------|-------------|
+| yuque | aomi-yuque-mcp | Yuque knowledge base |
+| notion | notion-mcp | Notion workspace |
+
+Configuration is managed in `flowmind.config.json` under `components.knowledgeBase`.
+
+**Available MCP tools** (yuque provider):
 
 | Tool | Description |
 |------|-------------|

@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue)](CHANGELOG.md)
 
 [中文](README_CN.md) | [Quick Start](#-quick-start) | [How It Works](#-how-it-works) | [Use Cases](#-use-cases) | [Architecture](#-architecture)
 
@@ -170,31 +170,58 @@ graph LR
 - ⚙️ **Preference Learning** - "Reply in Chinese" → Language preference saved
 - 🔄 **Auto Application** - Automatically uses learned workflows next time
 
-### 4. MCP Integration Ecosystem
+### 4. Pluggable Component Architecture
+
+FlowMind uses a **pluggable component architecture** that supports switching between cloud providers (Alibaba Cloud, Baidu Cloud, ELK, etc.) through configuration, without modifying skill code.
 
 ```mermaid
 graph TB
-    A[FlowMind] --> B[Yuque]
-    A --> C[Alibaba Cloud SLS]
-    A --> D[Alibaba Cloud RDS]
-    A --> E[YApi]
-    A --> F[GitHub]
-    B --> G[Design Doc Sync]
-    C --> H[Log Analysis]
-    D --> I[Data Validation]
-    E --> J[API Management]
-    F --> K[Code Management]
+    A[FlowMind Core] --> R[ComponentRegistry]
+    R --> LS[logService]
+    R --> DB[databaseManager]
+    R --> DQ[databaseQuery]
+    R --> RD[redisMonitor]
+    R --> AP[apiDoc]
+    R --> KB[knowledgeBase]
+    R --> WF[workflow]
+    R --> RP[report]
+
+    LS --> LS1[Alibaba Cloud SLS]
+    LS --> LS2[Baidu Cloud Log]
+    LS --> LS3[ELK]
+    DB --> DB1[Alibaba Cloud DMS]
+    KB --> KB1[Yuque]
+    KB --> KB2[Notion]
+    AP --> AP1[YApi]
 ```
 
-**Integration Capabilities:**
+**8 Component Types:**
 
-| Platform | Integration Capabilities |
-|----------|--------------------------|
-| 📖 **Yuque** | Design doc sync, knowledge base management, OpenSpec archiving |
-| 📊 **Alibaba Cloud SLS** | Real-time log query, TraceID tracing, anomaly detection & analysis |
-| 🗄️ **Alibaba Cloud RDS** | Database connection, data reading & validation, SQL execution analysis |
-| 📋 **YApi** | API doc sync, interface testing, Swagger import/export |
-| 🐙 **GitHub** | Code repo management, PR review, Issue tracking, auto-archiving |
+| Component Type | Default Provider | Description |
+|----------------|------------------|-------------|
+| `logService` | aliyun-sls | Cloud log querying and analysis |
+| `databaseManager` | aliyun-dms | Database instance management |
+| `databaseQuery` | aliyun-rds-query | Direct database SQL queries |
+| `redisMonitor` | aliyun-redis | Redis monitoring via Prometheus |
+| `apiDoc` | yapi | API documentation management |
+| `knowledgeBase` | yuque | Knowledge base and documents |
+| `workflow` | friday-flow | Automated workflow and pipelines |
+| `report` | friday-report | Test and coverage reporting |
+
+**Switching providers is config-only:**
+
+```json
+{
+  "components": {
+    "logService": {
+      "default": "baidu-sls",
+      "providers": {
+        "baidu-sls": { "adapter": "baidu-sls-adapter", "enabled": true }
+      }
+    }
+  }
+}
+```
 
 ---
 
@@ -295,32 +322,41 @@ flowmind "这个功能应该用 Redis 还是 MongoDB？"
 ### System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      FlowMind Agent                        │
-├─────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │ Scene Matcher│  │Learning Engine│  │ Skill Loader │    │
-│  └──────────────┘  └──────────────┘  └──────────────┘    │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │                   Skill System                       │  │
-│  ├─────────────┬─────────────┬─────────────┬───────────┤  │
-│  │ Analysis    │ Integration │ Quality     │Automation │  │
-│  └─────────────┴─────────────┴─────────────┴───────────┘  │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │                 MCP Integration Layer                │  │
-│  ├─────────┬─────────┬─────────┬─────────┬─────────────┤  │
-│  │  Yuque  │   SLS   │   RDS   │   YApi  │   GitHub   │  │
-│  └─────────┴─────────┴─────────┴─────────┴─────────────┘  │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │                  Data Persistence Layer              │  │
-│  ├─────────────┬─────────────┬─────────────────────────┤  │
-│  │Learning     │Scene        │Configuration            │  │
-│  │Records      │Mappings     │Info                     │  │
-│  └─────────────┴─────────────┴─────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                        FlowMind Agent                            │
+├──────────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
+│  │ Scene Matcher│  │Learning Engine│  │ Skill Loader │          │
+│  └──────────────┘  └──────────────┘  └──────────────┘          │
+├──────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │               ComponentRegistry (Pluggable)               │  │
+│  ├──────────┬──────────┬──────────┬──────────┬──────────────┤  │
+│  │logService│database  │apiDoc    │knowledge │workflow/report│  │
+│  │Adapter   │Manager   │Adapter   │Base      │Adapters      │  │
+│  └──────────┴──────────┴──────────┴──────────┴──────────────┘  │
+├──────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │                     Skill System                          │  │
+│  ├─────────────┬─────────────┬─────────────┬────────────────┤  │
+│  │ Analysis    │ Integration │ Quality     │ Automation     │  │
+│  └─────────────┴─────────────┴─────────────┴────────────────┘  │
+├──────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │               Cloud Provider Adapters                     │  │
+│  ├──────────┬──────────┬──────────┬──────────┬──────────────┤  │
+│  │Aliyun SLS│Aliyun DMS│   YApi   │  Yuque   │Friday Flow   │  │
+│  │Baidu Log │Baidu DMS │ Swagger  │ Notion   │Friday Report │  │
+│  │ELK       │Custom DB │          │Confluence│              │  │
+│  └──────────┴──────────┴──────────┴──────────┴──────────────┘  │
+├──────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │                   Data Persistence Layer                   │  │
+│  ├─────────────┬─────────────┬───────────────────────────────┤  │
+│  │Learning     │Scene        │Component Config               │  │
+│  │Records      │Mappings     │& Settings                     │  │
+│  └─────────────┴─────────────┴───────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Directory Structure
@@ -332,7 +368,34 @@ flowmind/
 │   ├── learning-engine.js        # Learning engine
 │   ├── scene-matcher.js          # Scene matching
 │   ├── skill-loader.js           # Skill loading
-│   └── config-manager.js         # Config management
+│   ├── config-manager.js         # Config management
+│   ├── component-types.js        # Component type definitions
+│   ├── component-registry.js     # Pluggable component registry
+│   ├── mcp-compatibility.js      # MCP backward compatibility
+│   ├── adapters/                 # Adapter interfaces
+│   │   ├── base-adapter.js       # Abstract base adapter
+│   │   ├── mcp-adapter.js        # MCP adapter base
+│   │   ├── log-service-adapter.js
+│   │   ├── database-manager-adapter.js
+│   │   ├── database-query-adapter.js
+│   │   ├── knowledge-base-adapter.js
+│   │   ├── api-doc-adapter.js
+│   │   ├── workflow-adapter.js
+│   │   └── report-adapter.js
+│   └── providers/                # Provider implementations
+│       ├── aliyun/               # Alibaba Cloud adapters
+│       │   ├── sls-adapter.js
+│       │   ├── dms-adapter.js
+│       │   └── redis-adapter.js
+│       ├── yapi/                 # YApi adapter
+│       │   └── yapi-adapter.js
+│       ├── yuque/                # Yuque adapter
+│       │   └── yuque-adapter.js
+│       └── friday/               # Friday platform adapters
+│           ├── flow-adapter.js
+│           └── report-adapter.js
+├── scripts/                       # Migration tools
+│   └── migrate-config.js         # Config migration tool
 ├── skills/                        # Skill Modules (17 core skills)
 │   ├── log-audit/                # Log audit
 │   ├── sls-log-audit/            # SLS log audit (chain tracing)
@@ -434,6 +497,7 @@ FlowMind is built on **enterprise-grade architecture design standards**, incorpo
 - 🧠 **RAG Business Logic** - Intelligent retrieval and generation based on historical data
 - 💾 **Data Persistence** - All learning records and configurations stored locally
 - ⚙️ **Global Config Initialization** - One-time setup, permanent effect, no repeated configuration
+- 🔌 **Pluggable Components** - Switch cloud providers (Alibaba Cloud, Baidu Cloud, ELK, etc.) via config without code changes
 
 ### 🔧 Skill System (17 Core Skills)
 

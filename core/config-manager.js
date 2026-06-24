@@ -44,6 +44,9 @@ class ConfigManager {
     // Load learning config
     await this.loadLearningConfig();
 
+    // Load component config
+    await this.loadComponentConfig();
+
     this.initialized = true;
     return this.config;
   }
@@ -97,6 +100,64 @@ class ConfigManager {
         console.warn('Failed to load learning config:', error.message);
       }
     }
+  }
+
+  /**
+   * Load component configuration
+   * Supports loading from:
+   *   - ~/.flowmind/component-config.json (dedicated component config)
+   *   - flowmind.config.json (as part of main config under "components" key)
+   */
+  async loadComponentConfig() {
+    const componentConfigPaths = [
+      path.join(this.getHomeDir(), '.flowmind', 'component-config.json'),
+      path.join(process.cwd(), 'component-config.json')
+    ];
+
+    for (const configPath of componentConfigPaths) {
+      if (await fs.pathExists(configPath)) {
+        try {
+          const componentConfig = await fs.readJson(configPath);
+          if (componentConfig.components) {
+            this.mergeConfig({ components: componentConfig.components });
+          }
+        } catch (error) {
+          console.warn(`Failed to load component config from ${configPath}:`, error.message);
+        }
+      }
+    }
+  }
+
+  /**
+   * Get component configuration for a specific type.
+   * @param {string} componentType
+   * @returns {object|null}
+   */
+  getComponentConfig(componentType) {
+    const components = this.get('components', {});
+    return components[componentType] || null;
+  }
+
+  /**
+   * Get the default provider for a component type.
+   * @param {string} componentType
+   * @returns {string|null}
+   */
+  getDefaultProvider(componentType) {
+    const typeConfig = this.getComponentConfig(componentType);
+    return typeConfig ? typeConfig.default : null;
+  }
+
+  /**
+   * Get provider configuration.
+   * @param {string} componentType
+   * @param {string} providerName
+   * @returns {object|null}
+   */
+  getProviderConfig(componentType, providerName) {
+    const typeConfig = this.getComponentConfig(componentType);
+    if (!typeConfig || !typeConfig.providers) return null;
+    return typeConfig.providers[providerName] || null;
   }
 
   /**

@@ -2,9 +2,11 @@
 name: yapi-sync-interface
 description: YApi interface sync skill for FlowMind. Sync Controller interfaces to YApi, import/export Swagger, manage API documentation lifecycle.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: flowmind
   category: documentation
+componentDependencies:
+  - apiDoc
 ---
 
 # YApi Interface Sync Skill
@@ -60,9 +62,17 @@ Synchronize API interfaces between code and YApi platform for consistent API doc
 └─────────────────────────────────────────────────────┘
 ```
 
-## MCP Integration
+## Component Integration
 
-This skill uses the `aomi-yapi-mcp` MCP server:
+This skill uses the **apiDoc** component. The actual API documentation provider is determined by configuration.
+
+| Provider | MCP Server | Description |
+|----------|------------|-------------|
+| yapi | aomi-yapi-mcp | YApi API documentation platform |
+
+Configuration is managed in `flowmind.config.json` under `components.apiDoc`.
+
+**Available MCP tools** (yapi provider):
 
 | Tool | Description |
 |------|-------------|

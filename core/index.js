@@ -7,13 +7,15 @@ const SkillLoader = require('./skill-loader');
 const LearningEngine = require('./learning-engine');
 const SceneMatcher = require('./scene-matcher');
 const ConfigManager = require('./config-manager');
+const ComponentRegistry = require('./component-registry');
 
 class FlowMind {
   constructor(options = {}) {
     this.config = new ConfigManager(options.configPath);
     this.learning = new LearningEngine(this.config);
     this.matcher = new SceneMatcher(this.config, this.learning);
-    this.skills = new SkillLoader(this.config, this.learning);
+    this.components = new ComponentRegistry(this.config);
+    this.skills = new SkillLoader(this.config, this.learning, this.components);
     this.initialized = false;
   }
 
@@ -24,6 +26,8 @@ class FlowMind {
     if (this.initialized) return this;
 
     await this.config.load();
+    await this.components.init();
+    await this.components.initAll();
     await this.learning.init();
     await this.skills.loadAll();
     await this.matcher.loadScenes();
@@ -174,6 +178,31 @@ class FlowMind {
    */
   async getStats() {
     return this.learning.getStats();
+  }
+
+  /**
+   * Get the component registry
+   * @returns {ComponentRegistry}
+   */
+  getComponentRegistry() {
+    return this.components;
+  }
+
+  /**
+   * Get the active adapter for a component type
+   * @param {string} componentType
+   * @returns {BaseAdapter|null}
+   */
+  getAdapter(componentType) {
+    return this.components.getAdapter(componentType);
+  }
+
+  /**
+   * Get component status summary
+   * @returns {object}
+   */
+  getComponentStatus() {
+    return this.components.getStatus();
   }
 
   /**
