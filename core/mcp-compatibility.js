@@ -41,14 +41,14 @@ const McpServerMapping = Object.freeze({
   },
 
   // API Documentation
-  'aomi-yapi-mcp': {
+  'yapi-mcp': {
     type: ComponentType.API_DOC,
     provider: 'yapi',
     description: 'YApi API documentation management'
   },
 
   // Knowledge Base
-  'aomi-yuque-mcp': {
+  'yuque-mcp': {
     type: ComponentType.KNOWLEDGE_BASE,
     provider: 'yuque',
     description: 'Yuque knowledge base management'
@@ -77,8 +77,8 @@ const ProviderToMcp = Object.freeze({
   'databaseManager:aliyun-dms': 'aliyun-dms-mcp-server',
   'databaseQuery:aliyun-rds-query': 'friday-rds-redis-query',
   'redisMonitor:aliyun-redis': 'friday-aliyun-sz-rds-redis',
-  'apiDoc:yapi': 'aomi-yapi-mcp',
-  'knowledgeBase:yuque': 'aomi-yuque-mcp',
+  'apiDoc:yapi': 'yapi-mcp',
+  'knowledgeBase:yuque': 'yuque-mcp',
   'workflow:friday-flow': 'friday-auto-flow',
   'report:friday-report': 'friday-auto-report'
 });

@@ -317,6 +317,85 @@ flowmind "这个功能应该用 Redis 还是 MongoDB？"
 
 ---
 
+## 📖 CLI 命令参考
+
+### 技能管理
+
+```bash
+# 列出所有可用技能
+flowmind skills
+flowmind skills --verbose          # 显示详细信息
+flowmind skills --json             # JSON 输出（用于工具集成）
+flowmind skills --category quality # 按分类过滤
+
+# 查看单个技能信息
+flowmind skill log-audit
+flowmind skill log-audit --json    # JSON 输出
+flowmind skill log-audit --read    # 读取 SKILL.md 内容
+flowmind skill log-audit --config  # 显示配置
+
+# 修改技能配置
+flowmind skill log-audit --set defaultFormat sequential-list
+flowmind skill code-review --set security.enabled true
+```
+
+### 资源管理
+
+```bash
+# 列出资源文件
+flowmind resource --list
+flowmind resource --list learning
+flowmind resource --list --json    # JSON 输出
+
+# 查看/编辑文件
+flowmind resource --show config.json
+flowmind resource --edit config.json
+
+# 显示资源配置
+flowmind resource --config
+flowmind resource --config --json
+```
+
+### 其他命令
+
+```bash
+# 处理请求
+flowmind process "your request"
+flowmind process --skill log-audit "query logs"
+
+# 管理学习记录
+flowmind learn --list
+flowmind learn --export learnings.json
+
+# 场景管理
+flowmind scenes --list
+flowmind scenes --add
+
+# 显示统计信息
+flowmind stats
+
+# 配置管理
+flowmind config --list
+flowmind config --set learning.enabled true
+```
+
+### 工具集成（Codex/Claude）
+
+所有命令支持 `--json` 参数用于程序化访问：
+
+```bash
+# 获取技能列表 JSON
+flowmind skills --json
+
+# 获取技能信息 JSON
+flowmind skill log-audit --json
+
+# 获取资源列表 JSON
+flowmind resource --list --json
+```
+
+---
+
 ## 🏗️ 架构
 
 ### 系统架构
@@ -613,8 +692,8 @@ flowmind init → 加载 component-config.json → 注册适配器 → 激活默
 | `aliyun-dms-mcp-server` | `databaseManager` | `aliyun-dms` |
 | `friday-rds-redis-query` | `databaseQuery` | `aliyun-rds-query` |
 | `friday-aliyun-sz-rds-redis` | `redisMonitor` | `aliyun-redis` |
-| `aomi-yapi-mcp` | `apiDoc` | `yapi` |
-| `aomi-yuque-mcp` | `knowledgeBase` | `yuque` |
+| `yapi-mcp` | `apiDoc` | `yapi` |
+| `yuque-mcp` | `knowledgeBase` | `yuque` |
 | `friday-auto-flow` | `workflow` | `friday-flow` |
 | `friday-auto-report` | `report` | `friday-report` |
 

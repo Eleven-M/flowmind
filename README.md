@@ -317,6 +317,85 @@ flowmind "这个功能应该用 Redis 还是 MongoDB？"
 
 ---
 
+## 📖 CLI Reference
+
+### Skill Management
+
+```bash
+# List all available skills
+flowmind skills
+flowmind skills --verbose          # Show detailed info
+flowmind skills --json             # JSON output (for tool integration)
+flowmind skills --category quality # Filter by category
+
+# View single skill info
+flowmind skill log-audit
+flowmind skill log-audit --json    # JSON output
+flowmind skill log-audit --read    # Read SKILL.md content
+flowmind skill log-audit --config  # Show configuration
+
+# Modify skill configuration
+flowmind skill log-audit --set defaultFormat sequential-list
+flowmind skill code-review --set security.enabled true
+```
+
+### Resource Management
+
+```bash
+# List resource files
+flowmind resource --list
+flowmind resource --list learning
+flowmind resource --list --json    # JSON output
+
+# View/edit files
+flowmind resource --show config.json
+flowmind resource --edit config.json
+
+# Show resource configuration
+flowmind resource --config
+flowmind resource --config --json
+```
+
+### Other Commands
+
+```bash
+# Process request
+flowmind process "your request"
+flowmind process --skill log-audit "query logs"
+
+# Manage learning
+flowmind learn --list
+flowmind learn --export learnings.json
+
+# Scene management
+flowmind scenes --list
+flowmind scenes --add
+
+# Show statistics
+flowmind stats
+
+# Configuration
+flowmind config --list
+flowmind config --set learning.enabled true
+```
+
+### Tool Integration (Codex/Claude)
+
+All commands support `--json` flag for programmatic access:
+
+```bash
+# Get skills list as JSON
+flowmind skills --json
+
+# Get skill info as JSON
+flowmind skill log-audit --json
+
+# Get resource list as JSON
+flowmind resource --list --json
+```
+
+---
+
 ## 🏗️ Architecture
 
 ### System Architecture
@@ -614,8 +693,8 @@ flowmind init → Load component-config.json → Register adapters → Activate 
 | `aliyun-dms-mcp-server` | `databaseManager` | `aliyun-dms` |
 | `friday-rds-redis-query` | `databaseQuery` | `aliyun-rds-query` |
 | `friday-aliyun-sz-rds-redis` | `redisMonitor` | `aliyun-redis` |
-| `aomi-yapi-mcp` | `apiDoc` | `yapi` |
-| `aomi-yuque-mcp` | `knowledgeBase` | `yuque` |
+| `yapi-mcp` | `apiDoc` | `yapi` |
+| `yuque-mcp` | `knowledgeBase` | `yuque` |
 | `friday-auto-flow` | `workflow` | `friday-flow` |
 | `friday-auto-report` | `report` | `friday-report` |
 

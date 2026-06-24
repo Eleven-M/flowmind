@@ -69,7 +69,7 @@ This skill uses the **knowledgeBase** component. The actual knowledge base provi
 
 | Provider | MCP Server | Description |
 |----------|------------|-------------|
-| yuque | aomi-yuque-mcp | Yuque knowledge base |
+| yuque | yuque-mcp | Yuque knowledge base |
 | notion | notion-mcp | Notion workspace |
 
 Configuration is managed in `flowmind.config.json` under `components.knowledgeBase`.
@@ -105,12 +105,12 @@ FlowMind:
 ┌─────────────────────────────────────────────────────┐
 │ Yuque Design Sync Report                            │
 ├─────────────────────────────────────────────────────┤
-│ Repository: aomi-design-docs                        │
+│ Repository: design-docs                             │
 │ Document: 订单模块详细设计                           │
 ├─────────────────────────────────────────────────────┤
 │ Action: Update                                      │
 │ Status: ✅ Success                                   │
-│ URL: https://yuque.com/aomi/design/order-module      │
+│ URL: https://yuque.com/your-org/design/order-module │
 ├─────────────────────────────────────────────────────┤
 │ Sections Synced: 6                                  │
 │ • API Design: ✅                                    │
@@ -134,9 +134,9 @@ FlowMind:
 │ Keyword: 订单                                       │
 │ Results: 5 documents                                │
 ├─────────────────────────────────────────────────────┤
-│ 1. 订单模块详细设计 (aomi-design-docs)               │
+│ 1. 订单模块详细设计 (design-docs)                    │
 │    Updated: 2026-06-20                              │
-│ 2. 订单流程图 (aomi-design-docs)                     │
+│ 2. 订单流程图 (design-docs)                          │
 │    Updated: 2026-06-18                              │
 │ 3. 订单API文档 (api-docs)                           │
 │    Updated: 2026-06-15                              │
@@ -148,7 +148,7 @@ FlowMind:
 ```json
 {
   "yuque-sync-design": {
-    "defaultRepo": "aomi-design-docs",
+    "defaultRepo": "design-docs",
     "syncFormat": "markdown",
     "autoCreateToc": true,
     "archiveAfterSync": true

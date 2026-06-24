@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git config:*)",
+      "Bash(done)",
+      "Bash(curl:*)",
+      "Bash(git rm:*)",
+      "Bash(tree:*)",
+      "Bash(node -e:*)",
+      "Bash(npm install:*)",
+      "Bash(node scripts/migrate-config.js:*)",
+      "Bash(npm view:*)",
+      "Bash(npm whoami:*)",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(npm config set:*)",
+      "Bash(npm config list:*)",
+      "Bash(npm pack:*)",
+      "Bash(npm publish:*)",
+      "Bash(node bin/flowmind.js skills:*)",
+      "Bash(node:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "yuque-mcp",
+    "yapi-mcp",
+    "friday-aliyun-sz-rds-redis",
+    "aliyun-dms-mcp-server",
+    "friday-rds-redis-query",
+    "friday-auto-flow",
+    "friday-auto-report",
+    "friday-sls-logs"
+  ]
+}

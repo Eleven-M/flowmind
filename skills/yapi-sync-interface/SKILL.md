@@ -68,7 +68,7 @@ This skill uses the **apiDoc** component. The actual API documentation provider 
 
 | Provider | MCP Server | Description |
 |----------|------------|-------------|
-| yapi | aomi-yapi-mcp | YApi API documentation platform |
+| yapi | yapi-mcp | YApi API documentation platform |
 
 Configuration is managed in `flowmind.config.json` under `components.apiDoc`.
 

@@ -1,6 +1,6 @@
 /**
  * Yuque Knowledge Base Adapter
- * Wraps the aomi-yuque-mcp MCP server for Yuque platform management
+ * Wraps the yuque-mcp MCP server for Yuque platform management
  */
 
 const KnowledgeBaseAdapter = require('../../adapters/knowledge-base-adapter');
@@ -23,7 +23,7 @@ class YuqueAdapter extends KnowledgeBaseAdapter {
   }
 
   get mcpServer() {
-    return 'aomi-yuque-mcp';
+    return 'yuque-mcp';
   }
 
   async getRepos(params) {

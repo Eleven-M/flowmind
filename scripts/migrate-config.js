@@ -19,8 +19,8 @@ const DEFAULT_MAPPING = {
   'aliyun-dms-mcp-server': { type: 'databaseManager', provider: 'aliyun-dms' },
   'friday-rds-redis-query': { type: 'databaseQuery', provider: 'aliyun-rds-query' },
   'friday-aliyun-sz-rds-redis': { type: 'redisMonitor', provider: 'aliyun-redis' },
-  'aomi-yapi-mcp': { type: 'apiDoc', provider: 'yapi' },
-  'aomi-yuque-mcp': { type: 'knowledgeBase', provider: 'yuque' },
+  'yapi-mcp': { type: 'apiDoc', provider: 'yapi' },
+  'yuque-mcp': { type: 'knowledgeBase', provider: 'yuque' },
   'friday-auto-flow': { type: 'workflow', provider: 'friday-flow' },
   'friday-auto-report': { type: 'report', provider: 'friday-report' }
 };

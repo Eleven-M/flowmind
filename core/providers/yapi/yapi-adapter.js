@@ -1,6 +1,6 @@
 /**
  * YApi API Documentation Adapter
- * Wraps the aomi-yapi-mcp MCP server for YApi platform management
+ * Wraps the yapi-mcp MCP server for YApi platform management
  */
 
 const ApiDocAdapter = require('../../adapters/api-doc-adapter');
@@ -24,7 +24,7 @@ class YapiAdapter extends ApiDocAdapter {
   }
 
   get mcpServer() {
-    return 'aomi-yapi-mcp';
+    return 'yapi-mcp';
   }
 
   async searchApis(params) {
