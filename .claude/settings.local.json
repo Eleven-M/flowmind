@@ -21,7 +21,10 @@
       "Bash(npm pack:*)",
       "Bash(npm publish:*)",
       "Bash(node bin/flowmind.js skills:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npm version:*)",
+      "Bash(npm config get registry)",
+      "Bash(ping:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
