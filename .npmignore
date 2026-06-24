@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Development files
+.git/
+.github/
+.gitignore
+.eslintrc*
+.prettierrc*
+jest.config*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+coverage/
+*.log
+
+# Claude settings
+.claude/
+
+# Test files
+__tests__/
+*.test.js
+*.spec.js
+
+# Documentation (keep README)
+docs/
+CONTRIBUTING.md

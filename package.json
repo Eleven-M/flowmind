@@ -27,12 +27,25 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/flowmind/flowmind.git"
+    "url": "https://github.com/Eleven-M/flowmind.git"
   },
   "bugs": {
-    "url": "https://github.com/flowmind/flowmind/issues"
+    "url": "https://github.com/Eleven-M/flowmind/issues"
   },
-  "homepage": "https://flowmind.dev",
+  "homepage": "https://github.com/Eleven-M/flowmind#readme",
+  "files": [
+    "bin/",
+    "core/",
+    "skills/",
+    "scripts/",
+    "templates/",
+    "config/",
+    "learning/",
+    "README.md",
+    "README_CN.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
   "engines": {
     "node": ">=18.0.0"
   },
