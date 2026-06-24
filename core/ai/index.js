@@ -7,6 +7,11 @@ const BaseModel = require('./base-model');
 const OpenAIProvider = require('./providers/openai');
 const AnthropicProvider = require('./providers/anthropic');
 const OllamaProvider = require('./providers/ollama');
+const GLMProvider = require('./providers/glm');
+const MiMoProvider = require('./providers/mimo');
+const QwenProvider = require('./providers/qwen');
+const ERNIEProvider = require('./providers/ernie');
+const DeepSeekProvider = require('./providers/deepseek');
 const prompts = require('./prompts');
 
 module.exports = {
@@ -15,5 +20,10 @@ module.exports = {
   OpenAIProvider,
   AnthropicProvider,
   OllamaProvider,
+  GLMProvider,
+  MiMoProvider,
+  QwenProvider,
+  ERNIEProvider,
+  DeepSeekProvider,
   prompts
 };

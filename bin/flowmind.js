@@ -52,7 +52,7 @@ program
 program
   .command('init')
   .description('Initialize FlowMind in current directory')
-  .option('--ai <provider>', 'Initialize with AI provider (openai/anthropic/ollama)')
+  .option('--ai <provider>', 'Initialize with AI provider (openai/anthropic/glm/mimo/qwen/ernie/deepseek/ollama)')
   .action(async (options) => {
     showBanner();
 
@@ -69,7 +69,7 @@ program
       const configPath = path.join(configDir, 'config.json');
       if (!await fs.pathExists(configPath)) {
         const defaultConfig = {
-          version: '1.0.0',
+          version: '1.1.0',
           learning: {
             enabled: true,
             autoApply: true,
@@ -103,23 +103,49 @@ program
         // Set default provider
         aiConfig.ai = aiConfig.ai || {};
         aiConfig.ai.defaultProvider = options.ai;
+        aiConfig.ai.enabled = true;
 
-        // Prompt for API key if needed
-        if (options.ai === 'openai' || options.ai === 'anthropic') {
+        // Prompt for API key based on provider
+        const apiKeyProviders = {
+          'openai': { key: 'apiKey', message: 'Enter OpenAI API key:', env: 'OPENAI_API_KEY' },
+          'anthropic': { key: 'apiKey', message: 'Enter Anthropic API key:', env: 'ANTHROPIC_API_KEY' },
+          'glm': { key: 'apiKey', message: 'Enter Zhipu AI API key:', env: 'ZHIPU_API_KEY' },
+          'mimo': { key: 'apiKey', message: 'Enter MiMo API key:', env: 'MIMO_API_KEY' },
+          'qwen': { key: 'apiKey', message: 'Enter DashScope API key:', env: 'DASHSCOPE_API_KEY' },
+          'ernie': { key: 'apiKey', message: 'Enter Baidu API key:', env: 'BAIDU_API_KEY' },
+          'deepseek': { key: 'apiKey', message: 'Enter DeepSeek API key:', env: 'DEEPSEEK_API_KEY' }
+        };
+
+        const providerConfig = apiKeyProviders[options.ai];
+        if (providerConfig) {
           const { apiKey } = await inquirer.prompt([
             {
               type: 'password',
               name: 'apiKey',
-              message: `Enter ${options.ai} API key:`,
+              message: providerConfig.message,
               mask: '*'
             }
           ]);
 
           aiConfig.ai.providers = aiConfig.ai.providers || {};
           aiConfig.ai.providers[options.ai] = {
+            ...aiConfig.ai.providers[options.ai],
             apiKey: apiKey,
             enabled: true
           };
+
+          // For ERNIE, also prompt for secret key
+          if (options.ai === 'ernie') {
+            const { secretKey } = await inquirer.prompt([
+              {
+                type: 'password',
+                name: 'secretKey',
+                message: 'Enter Baidu Secret key:',
+                mask: '*'
+              }
+            ]);
+            aiConfig.ai.providers[options.ai].secretKey = secretKey;
+          }
         }
 
         await fs.writeJson(aiConfigPath, aiConfig, { spaces: 2 });

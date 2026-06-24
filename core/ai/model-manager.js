@@ -6,6 +6,11 @@
 const OpenAIProvider = require('./providers/openai');
 const AnthropicProvider = require('./providers/anthropic');
 const OllamaProvider = require('./providers/ollama');
+const GLMProvider = require('./providers/glm');
+const MiMoProvider = require('./providers/mimo');
+const QwenProvider = require('./providers/qwen');
+const ERNIEProvider = require('./providers/ernie');
+const DeepSeekProvider = require('./providers/deepseek');
 const prompts = require('./prompts');
 
 class ModelManager {
@@ -54,7 +59,12 @@ class ModelManager {
     this.providerFactories = {
       openai: (config) => new OpenAIProvider(config),
       anthropic: (config) => new AnthropicProvider(config),
-      ollama: (config) => new OllamaProvider(config)
+      ollama: (config) => new OllamaProvider(config),
+      glm: (config) => new GLMProvider(config),
+      mimo: (config) => new MiMoProvider(config),
+      qwen: (config) => new QwenProvider(config),
+      ernie: (config) => new ERNIEProvider(config),
+      deepseek: (config) => new DeepSeekProvider(config)
     };
   }
 
