@@ -96,10 +96,35 @@ class SkillLoader {
 
     // Parse YAML-like frontmatter
     const lines = frontmatter.split('\n');
+    let currentKey = null;
+    let currentObj = null;
+
     for (const line of lines) {
+      // Top-level key: value
       const match = line.match(/^(\w+):\s*(.+)$/);
       if (match) {
-        definition[match[1]] = match[2].replace(/^["']|["']$/g, '');
+        const key = match[1];
+        const value = match[2].replace(/^["']|["']$/g, '');
+        definition[key] = value;
+        currentKey = key;
+        currentObj = null;
+        continue;
+      }
+
+      // Nested object (e.g., metadata:)
+      const nestedMatch = line.match(/^(\w+):\s*$/);
+      if (nestedMatch) {
+        currentKey = nestedMatch[1];
+        definition[currentKey] = {};
+        currentObj = definition[currentKey];
+        continue;
+      }
+
+      // Nested key: value (indented)
+      const nestedValueMatch = line.match(/^\s+(\w+):\s*(.+)$/);
+      if (nestedValueMatch && currentObj) {
+        currentObj[nestedValueMatch[1]] = nestedValueMatch[2].replace(/^["']|["']$/g, '');
+        continue;
       }
     }
 
@@ -114,7 +139,7 @@ class SkillLoader {
     }
 
     // Extract trigger patterns
-    const triggerMatch = content.match(/## Trigger Conditions\n([\s\S]*?)(?=\n##|$)/);
+    const triggerMatch = content.match(/## Trigger Patterns\n([\s\S]*?)(?=\n##|$)/);
     if (triggerMatch) {
       definition.triggers = this.extractTriggers(triggerMatch[1]);
     }
@@ -266,7 +291,10 @@ class SkillLoader {
     return Array.from(this.skills.values()).map(s => ({
       name: s.name,
       description: s.definition?.description,
-      category: s.definition?.category
+      category: s.definition?.category || s.definition?.metadata?.category,
+      version: s.definition?.version || s.definition?.metadata?.version,
+      author: s.definition?.author || s.definition?.metadata?.author,
+      path: s.path
     }));
   }
 

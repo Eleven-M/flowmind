@@ -215,15 +215,145 @@ program
     }
   });
 
-// Skills command
+// Skills command (enhanced)
 program
   .command('skills')
   .description('List available skills')
-  .action(async () => {
+  .option('-j, --json', 'Output as JSON (for tool integration)')
+  .option('-v, --verbose', 'Show detailed information')
+  .option('-c, --category <category>', 'Filter by category')
+  .action(async (options) => {
     try {
       const fm = await initFlowMind();
       const skills = fm.skills.list();
-      displaySkills(skills);
+
+      // Filter by category if specified
+      const filtered = options.category
+        ? skills.filter(s => s.category === options.category)
+        : skills;
+
+      if (options.json) {
+        // JSON output for codex/claude integration
+        console.log(JSON.stringify({ skills: filtered }, null, 2));
+      } else {
+        displaySkills(filtered, options.verbose);
+      }
+    } catch (error) {
+      console.error(chalk.red('Error:'), error.message);
+    }
+  });
+
+// Skill command (view/modify single skill)
+program
+  .command('skill <name>')
+  .description('View or modify skill configuration')
+  .option('-i, --info', 'Show skill info (default)')
+  .option('-c, --config', 'Show/edit skill configuration')
+  .option('-s, --set <key> <value>', 'Set config value')
+  .option('-r, --read', 'Read SKILL.md content')
+  .option('-e, --edit', 'Open SKILL.md in editor')
+  .option('-j, --json', 'Output as JSON (for tool integration)')
+  .action(async (name, options) => {
+    try {
+      const fm = await initFlowMind();
+      const skill = fm.skills.get(name);
+
+      if (!skill) {
+        console.error(chalk.red(`Skill not found: ${name}`));
+        console.log(chalk.cyan('\nAvailable skills:'));
+        fm.skills.list().forEach(s => console.log(`  - ${s.name}`));
+        return;
+      }
+
+      // Default to info if no option specified
+      if (!options.config && !options.read && !options.edit && !options.set) {
+        options.info = true;
+      }
+
+      if (options.info) {
+        await showSkillInfo(skill, options.json);
+      } else if (options.read) {
+        await readSkillMd(skill);
+      } else if (options.edit) {
+        await editSkillMd(skill);
+      } else if (options.config) {
+        await showSkillConfig(skill, fm, options.json);
+      } else if (options.set) {
+        // options.set is the key, need value from next arg
+        const value = options.set;
+        const key = options.set;
+        // Get key and value from command line
+        const args = process.argv.slice(3);
+        if (args.length >= 2) {
+          await setSkillConfig(skill, fm, args[0], args[1]);
+        } else {
+          console.error(chalk.red('Usage: flowmind skill <name> --set <key> <value>'));
+        }
+      }
+    } catch (error) {
+      console.error(chalk.red('Error:'), error.message);
+    }
+  });
+
+// Resource command (local resource files)
+program
+  .command('resource')
+  .alias('res')
+  .description('Manage local resource files')
+  .option('-l, --list [dir]', 'List resource directory')
+  .option('-s, --show <file>', 'Show file content')
+  .option('-e, --edit <file>', 'Edit file')
+  .option('-c, --config', 'Show resource configuration')
+  .option('-j, --json', 'Output as JSON (for tool integration)')
+  .action(async (options) => {
+    try {
+      const fm = await initFlowMind();
+      const resourceConfig = fm.config.get('resources', {});
+      const configDir = path.join(process.env.HOME || process.env.USERPROFILE, '.flowmind');
+
+      if (options.config) {
+        // Show resource configuration
+        if (options.json) {
+          console.log(JSON.stringify({ resources: resourceConfig }, null, 2));
+        } else {
+          displayResourceConfig(resourceConfig);
+        }
+      } else if (options.show) {
+        // Show file content
+        const filePath = resolveResourcePath(options.show, configDir);
+        if (await fs.pathExists(filePath)) {
+          const content = await fs.readFile(filePath, 'utf-8');
+          if (options.json) {
+            console.log(JSON.stringify({ file: options.show, content }, null, 2));
+          } else {
+            console.log(chalk.cyan(`\n📄 ${options.show}`));
+            console.log(chalk.gray('─'.repeat(50)));
+            console.log(content);
+          }
+        } else {
+          console.error(chalk.red(`File not found: ${options.show}`));
+        }
+      } else if (options.edit) {
+        // Edit file
+        const filePath = resolveResourcePath(options.edit, configDir);
+        await openInEditor(filePath);
+      } else {
+        // List directory (default)
+        const targetDir = options.list && typeof options.list === 'string'
+          ? resolveResourcePath(options.list, configDir)
+          : configDir;
+
+        if (await fs.pathExists(targetDir)) {
+          const files = await listResourceFiles(targetDir, configDir);
+          if (options.json) {
+            console.log(JSON.stringify({ directory: targetDir, files }, null, 2));
+          } else {
+            displayResourceFiles(files, targetDir);
+          }
+        } else {
+          console.error(chalk.red(`Directory not found: ${targetDir}`));
+        }
+      }
     } catch (error) {
       console.error(chalk.red('Error:'), error.message);
     }
@@ -432,20 +562,274 @@ function displayScenes(scenes) {
   console.log(chalk.cyan('└─────────────────────────────────────────────────────┘'));
 }
 
-function displaySkills(skills) {
+function displaySkills(skills, verbose = false) {
   console.log(chalk.cyan('\n┌─────────────────────────────────────────────────────┐'));
   console.log(chalk.cyan('│ Available Skills                                    │'));
   console.log(chalk.cyan('├─────────────────────────────────────────────────────┤'));
 
   for (const skill of skills) {
-    console.log(chalk.cyan(`│ ${skill.name}`));
+    console.log(chalk.cyan(`│ ${chalk.bold(skill.name)}`));
     if (skill.description) {
-      console.log(chalk.cyan(`│   ${skill.description.substring(0, 50)}...`));
+      const desc = verbose ? skill.description : skill.description.substring(0, 50) + '...';
+      console.log(chalk.cyan(`│   ${desc}`));
+    }
+    if (verbose && skill.category) {
+      console.log(chalk.cyan(`│   Category: ${skill.category}`));
     }
     console.log(chalk.cyan('├─────────────────────────────────────────────────────┤'));
   }
 
   console.log(chalk.cyan('└─────────────────────────────────────────────────────┘'));
+}
+
+// Skill info display
+async function showSkillInfo(skill, asJson = false) {
+  const info = {
+    name: skill.name,
+    path: skill.path,
+    description: skill.definition?.description || 'No description',
+    version: skill.definition?.version || skill.definition?.metadata?.version || '1.0.0',
+    author: skill.definition?.author || skill.definition?.metadata?.author || 'unknown',
+    category: skill.definition?.category || skill.definition?.metadata?.category || 'general',
+    componentDependencies: skill.definition?.componentDependencies || [],
+    triggers: skill.definition?.triggers || []
+  };
+
+  if (asJson) {
+    console.log(JSON.stringify(info, null, 2));
+  } else {
+    console.log(chalk.cyan('\n┌─────────────────────────────────────────────────────┐'));
+    console.log(chalk.cyan(`│ ${chalk.bold(info.name)}`));
+    console.log(chalk.cyan('├─────────────────────────────────────────────────────┤'));
+    console.log(chalk.cyan(`│ Description: ${info.description}`));
+    console.log(chalk.cyan(`│ Version:     ${info.version}`));
+    console.log(chalk.cyan(`│ Author:      ${info.author}`));
+    console.log(chalk.cyan(`│ Category:    ${info.category}`));
+    console.log(chalk.cyan(`│ Path:        ${info.path}`));
+
+    if (info.componentDependencies.length > 0) {
+      console.log(chalk.cyan('├─────────────────────────────────────────────────────┤'));
+      console.log(chalk.cyan('│ Component Dependencies:'));
+      for (const dep of info.componentDependencies) {
+        console.log(chalk.cyan(`│   - ${dep}`));
+      }
+    }
+
+    if (info.triggers.length > 0) {
+      console.log(chalk.cyan('├─────────────────────────────────────────────────────┤'));
+      console.log(chalk.cyan('│ Trigger Patterns:'));
+      for (const trigger of info.triggers.slice(0, 10)) {
+        console.log(chalk.cyan(`│   - ${trigger}`));
+      }
+      if (info.triggers.length > 10) {
+        console.log(chalk.cyan(`│   ... and ${info.triggers.length - 10} more`));
+      }
+    }
+
+    console.log(chalk.cyan('└─────────────────────────────────────────────────────┘'));
+  }
+}
+
+// Read SKILL.md content
+async function readSkillMd(skill) {
+  const skillMdPath = path.join(skill.path, 'SKILL.md');
+  if (await fs.pathExists(skillMdPath)) {
+    const content = await fs.readFile(skillMdPath, 'utf-8');
+    console.log(chalk.cyan(`\n📄 ${skill.name}/SKILL.md`));
+    console.log(chalk.gray('─'.repeat(50)));
+    console.log(content);
+  } else {
+    console.error(chalk.red('SKILL.md not found'));
+  }
+}
+
+// Edit SKILL.md
+async function editSkillMd(skill) {
+  const skillMdPath = path.join(skill.path, 'SKILL.md');
+  await openInEditor(skillMdPath);
+}
+
+// Show skill configuration
+async function showSkillConfig(skill, fm, asJson = false) {
+  const configKey = skill.name;
+  const config = fm.config.get(configKey, {});
+
+  if (asJson) {
+    console.log(JSON.stringify({ skill: skill.name, config }, null, 2));
+  } else {
+    console.log(chalk.cyan(`\n┌─────────────────────────────────────────────────────┐`));
+    console.log(chalk.cyan(`│ ${skill.name} Configuration`));
+    console.log(chalk.cyan('├─────────────────────────────────────────────────────┤'));
+
+    if (Object.keys(config).length === 0) {
+      console.log(chalk.cyan('│ No configuration set'));
+      console.log(chalk.cyan('│'));
+      console.log(chalk.cyan('│ Default configuration from SKILL.md:'));
+
+      // Extract default config from SKILL.md
+      const skillMdPath = path.join(skill.path, 'SKILL.md');
+      if (await fs.pathExists(skillMdPath)) {
+        const content = await fs.readFile(skillMdPath, 'utf-8');
+        const configMatch = content.match(/## Configuration\n([\s\S]*?)(?=\n##|$)/);
+        if (configMatch) {
+          const configSection = configMatch[1].trim();
+          const lines = configSection.split('\n').slice(0, 15);
+          for (const line of lines) {
+            console.log(chalk.cyan(`│ ${line}`));
+          }
+        }
+      }
+    } else {
+      const configJson = JSON.stringify(config, null, 2);
+      configJson.split('\n').forEach(line => {
+        console.log(chalk.cyan(`│ ${line}`));
+      });
+    }
+
+    console.log(chalk.cyan('└─────────────────────────────────────────────────────┘'));
+  }
+}
+
+// Set skill configuration
+async function setSkillConfig(skill, fm, key, value) {
+  const configKey = skill.name;
+  const config = fm.config.get(configKey, {});
+
+  // Support nested keys like "security.enabled"
+  const keys = key.split('.');
+  let current = config;
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (!current[keys[i]]) current[keys[i]] = {};
+    current = current[keys[i]];
+  }
+
+  // Try to parse value as JSON, fallback to string
+  let parsedValue;
+  try {
+    parsedValue = JSON.parse(value);
+  } catch {
+    parsedValue = value;
+  }
+
+  current[keys[keys.length - 1]] = parsedValue;
+  fm.config.set(configKey, config);
+  await fm.config.save();
+
+  console.log(chalk.green(`✓ Set ${skill.name}.${key} = ${value}`));
+}
+
+// Resource file helpers
+function resolveResourcePath(filePath, configDir) {
+  // If absolute path, use as-is
+  if (path.isAbsolute(filePath)) {
+    return filePath;
+  }
+  // Otherwise resolve relative to config dir
+  return path.join(configDir, filePath);
+}
+
+async function listResourceFiles(dir, configDir) {
+  const files = [];
+  const entries = await fs.readdir(dir);
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry);
+    const stat = await fs.stat(fullPath);
+    const relativePath = path.relative(configDir, fullPath);
+
+    if (stat.isDirectory()) {
+      files.push({
+        name: entry,
+        path: relativePath,
+        type: 'directory',
+        size: 0
+      });
+    } else {
+      files.push({
+        name: entry,
+        path: relativePath,
+        type: 'file',
+        size: stat.size,
+        modified: stat.mtime
+      });
+    }
+  }
+
+  return files.sort((a, b) => {
+    if (a.type === b.type) return a.name.localeCompare(b.name);
+    return a.type === 'directory' ? -1 : 1;
+  });
+}
+
+function displayResourceFiles(files, dir) {
+  console.log(chalk.cyan(`\n📁 ${dir}`));
+  console.log(chalk.gray('─'.repeat(50)));
+
+  if (files.length === 0) {
+    console.log(chalk.cyan('  (empty)'));
+    return;
+  }
+
+  for (const file of files) {
+    if (file.type === 'directory') {
+      console.log(chalk.blue(`  📁 ${file.name}/`));
+    } else {
+      const size = formatFileSize(file.size);
+      console.log(chalk.white(`  📄 ${file.name}`) + chalk.gray(` (${size})`));
+    }
+  }
+}
+
+function displayResourceConfig(config) {
+  console.log(chalk.cyan('\n┌─────────────────────────────────────────────────────┐'));
+  console.log(chalk.cyan('│ Resource Configuration                              │'));
+  console.log(chalk.cyan('├─────────────────────────────────────────────────────┤'));
+
+  const entries = Object.entries(config);
+  if (entries.length === 0) {
+    console.log(chalk.cyan('│ No resources configured'));
+  } else {
+    for (const [key, value] of entries) {
+      const enabled = value.enabled !== false;
+      const status = enabled ? chalk.green('✓') : chalk.red('✗');
+      console.log(chalk.cyan(`│ ${status} ${key}`));
+      if (value.path) {
+        console.log(chalk.cyan(`│   Path: ${value.path}`));
+      }
+    }
+  }
+
+  console.log(chalk.cyan('└─────────────────────────────────────────────────────┘'));
+}
+
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+async function openInEditor(filePath) {
+  const { spawn } = require('child_process');
+  const editor = process.env.EDITOR || process.env.VISUAL || 'vi';
+
+  console.log(chalk.cyan(`Opening ${filePath} in ${editor}...`));
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(editor, [filePath], {
+      stdio: 'inherit',
+      shell: true
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`Editor exited with code ${code}`));
+      }
+    });
+  });
 }
 
 // Parse arguments
