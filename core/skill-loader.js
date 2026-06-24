@@ -225,21 +225,7 @@ class SkillLoader {
    * Select best skill for input
    */
   async select(input, context = {}) {
-    const candidates = [];
-
-    for (const [name, skill] of this.skills) {
-      try {
-        const canHandle = await skill.canHandle(input, context);
-        if (canHandle) {
-          candidates.push({
-            skill: skill,
-            score: this.calculateSkillScore(skill, input, context)
-          });
-        }
-      } catch (error) {
-        // Skip skills that error on canHandle
-      }
-    }
+    const candidates = await this.getCandidates(input, context);
 
     if (candidates.length === 0) {
       return null;
@@ -249,6 +235,34 @@ class SkillLoader {
     candidates.sort((a, b) => b.score - a.score);
 
     return candidates[0].skill;
+  }
+
+  /**
+   * Get candidate skills for input
+   * Returns skills that can handle the input with their scores
+   */
+  async getCandidates(input, context = {}) {
+    const candidates = [];
+
+    for (const [name, skill] of this.skills) {
+      try {
+        const canHandle = await skill.canHandle(input, context);
+        if (canHandle) {
+          candidates.push({
+            name: skill.name,
+            skill: skill,
+            description: skill.definition?.description || '',
+            triggers: skill.definition?.triggers || [],
+            category: skill.definition?.category || skill.definition?.metadata?.category || '',
+            score: this.calculateSkillScore(skill, input, context)
+          });
+        }
+      } catch (error) {
+        // Skip skills that error on canHandle
+      }
+    }
+
+    return candidates;
   }
 
   /**

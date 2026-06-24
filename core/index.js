@@ -8,6 +8,7 @@ const LearningEngine = require('./learning-engine');
 const SceneMatcher = require('./scene-matcher');
 const ConfigManager = require('./config-manager');
 const ComponentRegistry = require('./component-registry');
+const ModelManager = require('./ai/model-manager');
 
 class FlowMind {
   constructor(options = {}) {
@@ -16,6 +17,7 @@ class FlowMind {
     this.matcher = new SceneMatcher(this.config, this.learning);
     this.components = new ComponentRegistry(this.config);
     this.skills = new SkillLoader(this.config, this.learning, this.components);
+    this.ai = new ModelManager(options.ai || {});
     this.initialized = false;
   }
 
@@ -32,6 +34,13 @@ class FlowMind {
     await this.skills.loadAll();
     await this.matcher.loadScenes();
 
+    // Initialize AI model manager
+    try {
+      await this.ai.init();
+    } catch (error) {
+      console.warn(`AI model initialization failed: ${error.message}. Falling back to rule-based engine.`);
+    }
+
     this.initialized = true;
     return this;
   }
@@ -47,32 +56,70 @@ class FlowMind {
     const startTime = Date.now();
 
     try {
-      // 1. Check for learning patterns (corrections, feedback)
-      const learningResult = await this.learning.detectLearning(input, context);
+      // 1. AI Intent Understanding (if available)
+      const intent = await this.ai.understandIntent(input, context);
+
+      // 2. Check for learning patterns (corrections, feedback)
+      // Use AI to analyze learning feedback if available
+      const aiLearningResult = await this.ai.analyzeLearningFeedback(input, context);
+      const learningResult = aiLearningResult?.isLearning
+        ? aiLearningResult
+        : await this.learning.detectLearning(input, context);
       if (learningResult) {
         return this.formatLearningResponse(learningResult);
       }
 
-      // 2. Check scene mappings
-      const sceneMatch = await this.matcher.match(input);
+      // 3. Check scene mappings (with AI intent if available)
+      const sceneMatch = await this.matcher.match(input, intent);
       if (sceneMatch && sceneMatch.confidence >= 0.7) {
         return this.executeSceneWorkflow(sceneMatch, input, context);
       }
 
-      // 3. Select and execute skill
-      const skill = await this.skills.select(input, context);
+      // 4. Select skill (AI-assisted if available)
+      let skill = null;
+      const candidates = await this.skills.getCandidates(input, context);
+
+      if (candidates.length > 0) {
+        // Use AI to select skill if available
+        const aiSelection = await this.ai.selectSkill(input, candidates);
+        if (aiSelection && aiSelection.selectedSkill) {
+          skill = this.skills.get(aiSelection.selectedSkill);
+        }
+      }
+
+      // Fallback to rule-based selection
+      if (!skill) {
+        skill = await this.skills.select(input, context);
+      }
+
       if (!skill) {
         return this.formatError('No matching skill found', input);
       }
 
-      // 4. Execute with learning applied
-      const result = await this.executeWithLearning(skill, input, context);
+      // 5. Extract parameters using AI (if available)
+      const extractedParams = await this.ai.extractParameters(input, skill.name);
 
-      // 5. Format and return
-      return this.formatResult(result, {
+      // 6. Execute with learning applied
+      const enhancedContext = {
+        ...context,
+        ...extractedParams,
+        intent: intent
+      };
+      const result = await this.executeWithLearning(skill, input, enhancedContext);
+
+      // 7. Generate AI summary (if available)
+      const summary = await this.ai.summarizeResult(result, {
+        skill: skill.name,
+        intent: intent
+      });
+
+      // 8. Format and return
+      return this.formatResult(summary || result, {
         skill: skill.name,
         duration: Date.now() - startTime,
-        sceneMatch: sceneMatch
+        sceneMatch: sceneMatch,
+        intent: intent,
+        aiEnhanced: !!summary
       });
 
     } catch (error) {
@@ -203,6 +250,22 @@ class FlowMind {
    */
   getComponentStatus() {
     return this.components.getStatus();
+  }
+
+  /**
+   * Get AI model status
+   * @returns {object}
+   */
+  getAIStatus() {
+    return this.ai.getStatus();
+  }
+
+  /**
+   * Check if AI is available
+   * @returns {boolean}
+   */
+  hasAI() {
+    return this.ai.hasAvailableProvider();
   }
 
   /**

@@ -52,7 +52,8 @@ program
 program
   .command('init')
   .description('Initialize FlowMind in current directory')
-  .action(async () => {
+  .option('--ai <provider>', 'Initialize with AI provider (openai/anthropic/ollama)')
+  .action(async (options) => {
     showBanner();
 
     const spinner = ora('Initializing FlowMind...').start();
@@ -89,16 +90,62 @@ program
         await fs.writeJson(configPath, defaultConfig, { spaces: 2 });
       }
 
+      // Initialize AI if requested
+      if (options.ai) {
+        spinner.text = 'Configuring AI provider...';
+        const aiConfigPath = path.join(configDir, 'ai-config.json');
+
+        let aiConfig = {};
+        if (await fs.pathExists(aiConfigPath)) {
+          aiConfig = await fs.readJson(aiConfigPath);
+        }
+
+        // Set default provider
+        aiConfig.ai = aiConfig.ai || {};
+        aiConfig.ai.defaultProvider = options.ai;
+
+        // Prompt for API key if needed
+        if (options.ai === 'openai' || options.ai === 'anthropic') {
+          const { apiKey } = await inquirer.prompt([
+            {
+              type: 'password',
+              name: 'apiKey',
+              message: `Enter ${options.ai} API key:`,
+              mask: '*'
+            }
+          ]);
+
+          aiConfig.ai.providers = aiConfig.ai.providers || {};
+          aiConfig.ai.providers[options.ai] = {
+            apiKey: apiKey,
+            enabled: true
+          };
+        }
+
+        await fs.writeJson(aiConfigPath, aiConfig, { spaces: 2 });
+        console.log(chalk.green(`\n✓ AI provider configured: ${options.ai}`));
+      }
+
       spinner.succeed('FlowMind initialized successfully!');
 
       console.log(chalk.green('\n✓ Configuration created at:'), configDir);
       console.log(chalk.green('✓ Learning system ready'));
       console.log(chalk.green('✓ Scene mapping ready'));
 
+      if (options.ai) {
+        console.log(chalk.green(`✓ AI provider configured: ${options.ai}`));
+      }
+
       console.log(chalk.cyan('\nNext steps:'));
       console.log('  1. Run', chalk.yellow('flowmind'), 'to start interactive mode');
       console.log('  2. Or use', chalk.yellow('flowmind "your request"'), 'for single commands');
       console.log('  3. FlowMind will learn from your corrections automatically');
+
+      if (!options.ai) {
+        console.log(chalk.cyan('\nTo enable AI features:'));
+        console.log('  Run', chalk.yellow('flowmind init --ai openai'), 'or', chalk.yellow('flowmind init --ai anthropic'));
+        console.log('  Or configure manually:', chalk.yellow('~/.flowmind/ai-config.json'));
+      }
 
     } catch (error) {
       spinner.fail('Failed to initialize FlowMind');
@@ -398,6 +445,82 @@ program
       } else {
         const config = fm.config.getAll();
         console.log(JSON.stringify(config, null, 2));
+      }
+    } catch (error) {
+      console.error(chalk.red('Error:'), error.message);
+    }
+  });
+
+// AI command
+program
+  .command('ai')
+  .description('Manage AI model configuration')
+  .option('-s, --status', 'Show AI model status')
+  .option('-l, --list', 'List available providers')
+  .option('-c, --config', 'Show AI configuration')
+  .option('-t, --test [provider]', 'Test AI provider connection')
+  .option('-j, --json', 'Output as JSON')
+  .action(async (options) => {
+    try {
+      const fm = await initFlowMind();
+
+      if (options.status) {
+        const status = fm.getAIStatus();
+        if (options.json) {
+          console.log(JSON.stringify(status, null, 2));
+        } else {
+          displayAIStatus(status);
+        }
+      } else if (options.list) {
+        const status = fm.getAIStatus();
+        const providers = Object.entries(status.providers).map(([name, info]) => ({
+          name,
+          ...info
+        }));
+        if (options.json) {
+          console.log(JSON.stringify({ providers }, null, 2));
+        } else {
+          console.log(chalk.cyan('\nAI Providers:'));
+          for (const provider of providers) {
+            const status = provider.initialized ? chalk.green('✓') : chalk.red('✗');
+            console.log(`  ${status} ${provider.name}`);
+            if (provider.info?.model) {
+              console.log(`    Model: ${provider.info.model}`);
+            }
+          }
+        }
+      } else if (options.config) {
+        const config = fm.config.get('ai', {});
+        if (options.json) {
+          console.log(JSON.stringify({ ai: config }, null, 2));
+        } else {
+          console.log(chalk.cyan('\nAI Configuration:'));
+          console.log(JSON.stringify(config, null, 2));
+        }
+      } else if (options.test !== undefined) {
+        const providerName = options.test || fm.ai.defaultProvider;
+        const provider = fm.ai.getProvider(providerName);
+        if (!provider) {
+          console.error(chalk.red(`Provider not found: ${providerName}`));
+          return;
+        }
+        console.log(chalk.cyan(`\nTesting ${providerName}...`));
+        try {
+          const result = await provider.complete('Hello, this is a test.', { maxTokens: 50 });
+          console.log(chalk.green('✓ Connection successful'));
+          console.log(chalk.white('Response:'), result.substring(0, 100) + '...');
+        } catch (error) {
+          console.log(chalk.red('✗ Connection failed'));
+          console.error(chalk.red(error.message));
+        }
+      } else {
+        // Default to status
+        const status = fm.getAIStatus();
+        if (options.json) {
+          console.log(JSON.stringify(status, null, 2));
+        } else {
+          displayAIStatus(status);
+        }
       }
     } catch (error) {
       console.error(chalk.red('Error:'), error.message);
@@ -796,6 +919,39 @@ function displayResourceConfig(config) {
       if (value.path) {
         console.log(chalk.cyan(`│   Path: ${value.path}`));
       }
+    }
+  }
+
+  console.log(chalk.cyan('└─────────────────────────────────────────────────────┘'));
+}
+
+function displayAIStatus(status) {
+  console.log(chalk.cyan('\n┌─────────────────────────────────────────────────────┐'));
+  console.log(chalk.cyan('│ AI Model Status                                     │'));
+  console.log(chalk.cyan('├─────────────────────────────────────────────────────┤'));
+
+  const initialized = status.initialized ? chalk.green('✓') : chalk.red('✗');
+  console.log(chalk.cyan(`│ Initialized: ${initialized}`));
+  console.log(chalk.cyan(`│ Default Provider: ${status.defaultProvider || 'None'}`));
+
+  console.log(chalk.cyan('├─────────────────────────────────────────────────────┤'));
+  console.log(chalk.cyan('│ Features:'));
+
+  const features = status.features || {};
+  for (const [feature, enabled] of Object.entries(features)) {
+    const statusIcon = enabled ? chalk.green('✓') : chalk.red('✗');
+    console.log(chalk.cyan(`│   ${statusIcon} ${feature}`));
+  }
+
+  console.log(chalk.cyan('├─────────────────────────────────────────────────────┤'));
+  console.log(chalk.cyan('│ Providers:'));
+
+  const providers = status.providers || {};
+  for (const [name, info] of Object.entries(providers)) {
+    const statusIcon = info.initialized ? chalk.green('✓') : chalk.red('✗');
+    console.log(chalk.cyan(`│   ${statusIcon} ${name}`));
+    if (info.info?.model) {
+      console.log(chalk.cyan(`│     Model: ${info.info.model}`));
     }
   }
 

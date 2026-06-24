@@ -1,0 +1,33 @@
+{
+  "ai": {
+    "enabled": true,
+    "defaultProvider": "openai",
+    "fallbackToRules": true,
+    "providers": {
+      "openai": {
+        "apiKey": "${OPENAI_API_KEY}",
+        "model": "gpt-4",
+        "temperature": 0.3,
+        "maxTokens": 2000
+      },
+      "anthropic": {
+        "apiKey": "${ANTHROPIC_API_KEY}",
+        "model": "claude-3-sonnet-20240229",
+        "maxTokens": 2000,
+        "temperature": 0.3
+      },
+      "ollama": {
+        "baseUrl": "http://localhost:11434",
+        "model": "llama2",
+        "temperature": 0.3
+      }
+    },
+    "features": {
+      "intentUnderstanding": true,
+      "parameterExtraction": true,
+      "skillSelection": true,
+      "resultSummary": true,
+      "learningFeedback": true
+    }
+  }
+}

@@ -94,7 +94,13 @@ npm install -g flowmind
 ### 初始化
 
 ```bash
+# 基础初始化
 flowmind init
+
+# 带 AI 模型初始化 (推荐)
+flowmind init --ai openai
+flowmind init --ai anthropic
+flowmind init --ai ollama
 ```
 
 > 一次配置，永久生效。配置资源连接、学习偏好、输出格式，无需每次重复设置。
@@ -110,6 +116,248 @@ FlowMind: [执行并学习你的偏好]
 flowmind "查询 traceId abc123 的日志"
 FlowMind: [自动使用顺序列表格式] ✓
 ```
+
+---
+
+## 📖 使用方式
+
+FlowMind 支持 4 种使用方式，满足不同场景需求：
+
+### 方式1: CLI 独立使用
+
+最简单的使用方式，无需 AI 模型，直接通过命令行调用。
+
+```bash
+# 单次执行
+flowmind "查询 traceId abc123 的日志"
+flowmind "审查代码质量"
+flowmind "验证订单数据"
+
+# 交互模式
+flowmind
+
+# 指定技能执行
+flowmind process --skill log-audit "查询最近1小时的错误日志"
+```
+
+**特点：**
+- ✅ 无需 AI 模型
+- ✅ 基于规则引擎匹配
+- ✅ 支持学习和记忆
+- ✅ 离线可用
+
+---
+
+### 方式2: AI 模型直接接入
+
+FlowMind 内置 AI 模型接入层，可直接调用 OpenAI、Anthropic、Ollama 等模型。
+
+#### 配置 AI 模型
+
+**方式 A：通过 CLI 初始化（推荐）**
+
+```bash
+# 配置 OpenAI
+flowmind init --ai openai
+# 会提示输入 API Key
+
+# 配置 Anthropic
+flowmind init --ai anthropic
+
+# 配置 Ollama (本地模型)
+flowmind init --ai ollama
+```
+
+**方式 B：手动配置**
+
+创建 `~/.flowmind/ai-config.json`：
+
+```json
+{
+  "ai": {
+    "enabled": true,
+    "defaultProvider": "openai",
+    "fallbackToRules": true,
+    "providers": {
+      "openai": {
+        "apiKey": "sk-your-api-key",
+        "model": "gpt-4",
+        "temperature": 0.3
+      },
+      "anthropic": {
+        "apiKey": "sk-ant-your-api-key",
+        "model": "claude-3-sonnet-20240229"
+      },
+      "ollama": {
+        "baseUrl": "http://localhost:11434",
+        "model": "llama2"
+      }
+    },
+    "features": {
+      "intentUnderstanding": true,
+      "parameterExtraction": true,
+      "skillSelection": true,
+      "resultSummary": true,
+      "learningFeedback": true
+    }
+  }
+}
+```
+
+**方式 C：环境变量**
+
+```bash
+export OPENAI_API_KEY=sk-your-api-key
+export ANTHROPIC_API_KEY=sk-ant-your-api-key
+```
+
+#### 测试 AI 连接
+
+```bash
+# 测试默认 Provider
+flowmind ai --test
+
+# 测试指定 Provider
+flowmind ai --test openai
+flowmind ai --test anthropic
+```
+
+#### 使用 AI 增强功能
+
+```bash
+# AI 会理解意图、提取参数、选择技能、生成摘要
+flowmind "帮我查一下最近1小时用户服务的错误日志"
+
+# AI 会分析复杂的多步骤任务
+flowmind "排查线上问题：用户下单失败，需要查看日志、检查数据库、分析原因"
+```
+
+**特点：**
+- ✅ 自然语言理解
+- ✅ 智能参数提取
+- ✅ 结果摘要生成
+- ✅ 降级到规则引擎
+
+---
+
+### 方式3: Claude Code 集成（MCP Server）
+
+让 Claude Code 直接调用 FlowMind 的内部流程。
+
+#### 步骤 1：安装 FlowMind
+
+```bash
+npm install -g flowmind
+```
+
+#### 步骤 2：配置 MCP Server
+
+在项目根目录创建 `.claude/settings.local.json`：
+
+```json
+{
+  "mcpServers": {
+    "flowmind": {
+      "command": "flowmind-mcp",
+      "args": [],
+      "env": {
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+或者使用完整路径：
+
+```json
+{
+  "mcpServers": {
+    "flowmind": {
+      "command": "node",
+      "args": ["/path/to/flowmind/mcp/server.js"]
+    }
+  }
+}
+```
+
+#### 步骤 3：在 Claude Code 中使用
+
+```
+你：帮我查询最近1小时的错误日志
+
+Claude：我来调用 FlowMind 帮你查询...
+[调用 flowmind_process 工具]
+
+你：审查一下这个项目的代码质量
+
+Claude：我来使用 FlowMind 的代码审查技能...
+[调用 flowmind_skill_code-review 工具]
+```
+
+#### 可用的 MCP 工具
+
+| 工具名称 | 描述 |
+|---------|------|
+| `flowmind_process` | 处理请求的主入口 |
+| `flowmind_list_skills` | 列出所有可用技能 |
+| `flowmind_get_skill` | 获取技能详情 |
+| `flowmind_ai_status` | 查看 AI 状态 |
+| `flowmind_learning_stats` | 查看学习统计 |
+| `flowmind_skill_<name>` | 执行特定技能 |
+
+**特点：**
+- ✅ Claude Code 直接调用
+- ✅ 无需额外配置 MCP Server
+- ✅ 保留学习和记忆功能
+- ✅ 支持所有 FlowMind 技能
+
+---
+
+### 方式4: Codex 集成（JSON 输出）
+
+通过 JSON 输出与 Codex 集成。
+
+```bash
+# 获取技能列表 (JSON 格式)
+flowmind skills --json
+
+# 获取技能详情
+flowmind skill log-audit --json
+
+# 执行并输出 JSON
+flowmind process --json "查询日志"
+```
+
+**Codex 脚本示例：**
+
+```python
+import subprocess
+import json
+
+def flowmind_query(query):
+    result = subprocess.run(
+        ['flowmind', 'process', '--json', query],
+        capture_output=True,
+        text=True
+    )
+    return json.loads(result.stdout)
+
+# 使用
+result = flowmind_query("查询 traceId abc123 的日志")
+print(result)
+```
+
+---
+
+### 使用方式对比
+
+| 方式 | 适用场景 | 需要 AI | 需要 MCP | 特点 |
+|------|---------|---------|----------|------|
+| CLI 独立使用 | 快速执行、脚本集成 | ❌ | ❌ | 简单直接 |
+| AI 模型接入 | 智能理解、复杂任务 | ✅ | ❌ | 自然语言 |
+| Claude Code | 智能对话、多步骤 | ✅ | ✅ | 深度集成 |
+| Codex 集成 | 自动化、CI/CD | ❌ | ❌ | 程序化调用 |
 
 ---
 
