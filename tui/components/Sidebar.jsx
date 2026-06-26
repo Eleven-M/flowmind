@@ -9,9 +9,17 @@ function Sidebar({ flowmind, width, onSkillSelect }) {
 
   React.useEffect(() => {
     if (flowmind) {
-      const list = flowmind.skills.list() || [];
-      setSkills(list);
-      setHonorData(flowmind.getHonorData());
+      try {
+        const list = flowmind.skills.list() || [];
+        setSkills(list);
+      } catch (e) {
+        setSkills([]);
+      }
+      try {
+        setHonorData(flowmind.getHonorData());
+      } catch (e) {
+        // keep default honorData
+      }
     }
   }, [flowmind]);
 

@@ -8,7 +8,12 @@ const StatusBar = require('./components/StatusBar.jsx');
 function App({ flowmind }) {
   const [results, setResults] = React.useState([]);
   const [isProcessing, setIsProcessing] = React.useState(false);
+  const mountedRef = React.useRef(true);
   const { exit } = useApp();
+
+  React.useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useInput((input, key) => {
     if (key.ctrl && input === 'c') exit();
@@ -18,6 +23,7 @@ function App({ flowmind }) {
     setIsProcessing(true);
     try {
       const result = await flowmind.process(input);
+      if (!mountedRef.current) return;
       if (result.type === 'result') {
         const text = typeof result.data === 'string' ? result.data : JSON.stringify(result.data, null, 2);
         addResponse(text.substring(0, 200) + (text.length > 200 ? '...' : ''));
@@ -28,18 +34,22 @@ function App({ flowmind }) {
       }
       setResults(prev => [...prev, result]);
     } catch (e) {
-      addResponse('Error: ' + e.message);
+      if (mountedRef.current) addResponse('Error: ' + e.message);
     } finally {
-      setIsProcessing(false);
+      if (mountedRef.current) setIsProcessing(false);
     }
   }, [flowmind]);
 
   const handleSkillSelect = React.useCallback((skill) => {
-    setResults(prev => [...prev, {
-      type: 'result',
-      data: { name: skill.name, description: skill.definition?.description || 'No description', category: skill.category || 'general', path: skill.path },
-      metadata: { skill: skill.name }
-    }]);
+    try {
+      setResults(prev => [...prev, {
+        type: 'result',
+        data: { name: skill.name, description: skill.definition?.description || 'No description', category: skill.category || 'general', path: skill.path },
+        metadata: { skill: skill.name }
+      }]);
+    } catch (e) {
+      // ignore skill select errors
+    }
   }, []);
 
   return (
@@ -47,7 +57,7 @@ function App({ flowmind }) {
       React.createElement(Box, { flexDirection: 'row', flexGrow: 1 },
         React.createElement(Sidebar, { flowmind: flowmind, width: 30, onSkillSelect: handleSkillSelect }),
         React.createElement(Box, { flexDirection: 'column', width: '70%', flexGrow: 1 },
-          React.createElement(ChatPanel, { onSubmit: handleCommand, isProcessing: isProcessing }),
+          React.createElement(ChatPanel, { onSubmit: handleCommand, isProcessing: isProcessing, onExit: exit }),
           React.createElement(ResultPanel, { results: results })
         )
       ),

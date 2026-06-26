@@ -15,6 +15,23 @@ const { execSync } = require('child_process');
 const FlowMind = require('../core');
 const HonorEngine = require('../core/honor-engine');
 
+// Global error handlers to prevent silent CLI crashes
+process.on('uncaughtException', (err) => {
+  console.error(chalk.red('\nUncaught Exception:'), err.message);
+  if (process.stdin.isTTY && process.stdin.isRaw) {
+    process.stdin.setRawMode(false);
+  }
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error(chalk.red('\nUnhandled Rejection:'), reason?.message || reason);
+  if (process.stdin.isTTY && process.stdin.isRaw) {
+    process.stdin.setRawMode(false);
+  }
+  process.exit(1);
+});
+
 // Package info
 const packageJson = require('../package.json');
 
@@ -1326,23 +1343,55 @@ program
   .command('tui')
   .description('Launch enhanced TUI with split panels, skill browser, and dragon display')
   .action(async () => {
+    let stdinWrapper = null;
     try {
       // Register .jsx extension for CJS
       require('module')._extensions['.jsx'] = require('module')._extensions['.js'];
 
       const React = require('react');
       const { render } = require('ink');
+      const { PassThrough } = require('stream');
       const App = require('../tui/app.jsx');
 
       const fm = await initFlowMind();
 
-      const { unmount, waitUntilExit } = render(React.createElement(App, { flowmind: fm }));
+      // Create a stdin wrapper to handle non-TTY environments (e.g., piped stdin).
+      // Ink v3's useInput hook calls setRawMode(true) which throws if stdin is not a TTY.
+      const realStdin = process.stdin;
+      stdinWrapper = new PassThrough();
+      stdinWrapper.isTTY = true;
+      stdinWrapper.isRaw = false;
+      stdinWrapper.setRawMode = (mode) => {
+        try {
+          if (realStdin.setRawMode) {
+            realStdin.setRawMode(mode);
+          }
+        } catch (e) {
+          // Suppress raw mode errors in non-TTY environments
+        }
+        return stdinWrapper;
+      };
+      // Forward real stdin data to the wrapper
+      if (realStdin.readable) {
+        realStdin.on('data', (chunk) => {
+          if (!stdinWrapper.destroyed) stdinWrapper.write(chunk);
+        });
+      }
+
+      const { unmount, waitUntilExit } = render(
+        React.createElement(App, { flowmind: fm }),
+        { stdin: stdinWrapper }
+      );
       await waitUntilExit();
       unmount();
     } catch (error) {
       console.error(chalk.red('TUI Error:'), error.message);
       if (error.message.includes('Cannot find module')) {
         console.log(chalk.yellow('Try running: npm install ink@3 react ink-text-input ink-spinner'));
+      }
+    } finally {
+      if (stdinWrapper && !stdinWrapper.destroyed) {
+        stdinWrapper.destroy();
       }
     }
   });
@@ -1352,19 +1401,43 @@ program
   .command('dashboard')
   .description('Launch real-time monitoring dashboard for MCP activity and events')
   .action(async () => {
+    let stdinWrapper = null;
     try {
       // Register .jsx extension for CJS
       require('module')._extensions['.jsx'] = require('module')._extensions['.js'];
 
       const React = require('react');
       const { render } = require('ink');
+      const { PassThrough } = require('stream');
       const DashboardApp = require('../dashboard/app.jsx');
       const eventBus = require('../core/event-bus');
 
       const fm = await initFlowMind();
 
+      // Create a stdin wrapper to handle non-TTY environments
+      const realStdin = process.stdin;
+      stdinWrapper = new PassThrough();
+      stdinWrapper.isTTY = true;
+      stdinWrapper.isRaw = false;
+      stdinWrapper.setRawMode = (mode) => {
+        try {
+          if (realStdin.setRawMode) {
+            realStdin.setRawMode(mode);
+          }
+        } catch (e) {
+          // Suppress raw mode errors in non-TTY environments
+        }
+        return stdinWrapper;
+      };
+      if (realStdin.readable) {
+        realStdin.on('data', (chunk) => {
+          if (!stdinWrapper.destroyed) stdinWrapper.write(chunk);
+        });
+      }
+
       const { unmount, waitUntilExit } = render(
-        React.createElement(DashboardApp, { flowmind: fm, eventBus })
+        React.createElement(DashboardApp, { flowmind: fm, eventBus }),
+        { stdin: stdinWrapper }
       );
       await waitUntilExit();
       unmount();
@@ -1372,6 +1445,10 @@ program
       console.error(chalk.red('Dashboard Error:'), error.message);
       if (error.message.includes('Cannot find module')) {
         console.log(chalk.yellow('Try running: npm install ink@3 react'));
+      }
+    } finally {
+      if (stdinWrapper && !stdinWrapper.destroyed) {
+        stdinWrapper.destroy();
       }
     }
   });

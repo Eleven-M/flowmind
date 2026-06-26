@@ -3,18 +3,34 @@ const { Box, Text } = require('ink');
 const TextInput = require('ink-text-input').default || require('ink-text-input');
 const Spinner = require('ink-spinner').default || require('ink-spinner');
 
-function ChatPanel({ onSubmit, isProcessing }) {
+function ChatPanel({ onSubmit, isProcessing, onExit }) {
   const [input, setInput] = React.useState('');
   const [history, setHistory] = React.useState([]);
+  const mountedRef = React.useRef(true);
+
+  React.useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const handleSubmit = (value) => {
     if (!value.trim()) return;
     setHistory(prev => [...prev, { role: 'user', text: value }]);
     setInput('');
-    if (value.toLowerCase() === 'exit' || value.toLowerCase() === 'quit') process.exit(0);
-    onSubmit(value, (response) => {
-      setHistory(prev => [...prev, { role: 'flowmind', text: response }]);
-    });
+    if (value.toLowerCase() === 'exit' || value.toLowerCase() === 'quit') {
+      if (onExit) onExit();
+      return;
+    }
+    try {
+      onSubmit(value, (response) => {
+        if (mountedRef.current) {
+          setHistory(prev => [...prev, { role: 'flowmind', text: response }]);
+        }
+      });
+    } catch (e) {
+      if (mountedRef.current) {
+        setHistory(prev => [...prev, { role: 'flowmind', text: 'Error: ' + e.message }]);
+      }
+    }
   };
 
   const displayHistory = history.slice(-20);
