@@ -11,7 +11,9 @@ const ora = require('ora');
 const inquirer = require('inquirer');
 const fs = require('fs-extra');
 const path = require('path');
+const { execSync } = require('child_process');
 const FlowMind = require('../core');
+const HonorEngine = require('../core/honor-engine');
 
 // Package info
 const packageJson = require('../package.json');
@@ -40,6 +42,274 @@ function showBanner() {
   ║                                                ║
   ╚══════════════════════════════════════════════════╝
   `));
+}
+
+/**
+ * Dragon Totem ASCII Art by level - Chinese Dragon (中国龙)
+ */
+function getDragonArt(level) {
+  const arts = {
+    0: [
+      '        ╭─────╮        ',
+      '       ╱  ╭─╮  ╲       ',
+      '      │  │   │  │      ',
+      '      │  │ ◎ │  │      ',
+      '      │   ╰─╯   │      ',
+      '       ╲       ╱       ',
+      '        ╰─────╯        ',
+      '      龙 蛋 (Egg)      '
+    ],
+    1: [
+      '           ╭──╮            ',
+      '      ╭────╯  ╰───╮        ',
+      '     ╱  ◎    ╰─╯   ╲      ',
+      '    ╱    ▽           ╲     ',
+      '    ╲    ╱╲   ╱╲     ╱     ',
+      '     ╲╱╱  ╲╱╱  ╲╱╲╱       ',
+      '       幼 龙 (Hatchling)   '
+    ],
+    2: [
+      '        ╭─╮  ╭─╮             ',
+      '   ╭────╯ ╰──╯ ╰───╮         ',
+      '  ╱  ◎      ╰──╯     ╲       ',
+      ' ╱      ╭────────╮     ╲     ',
+      ' ╲     ╱ ╱╱╱╱╱╱╱╱ ╲    ╱     ',
+      '  ╲───╯ ╱╱╱╱╱╱╱╱╱╱ ╰──╱      ',
+      '   ╲   ╱╱╱╱╱╱╱╱╱╱╱╱  ╱       ',
+      '    ╰─╯            ╰─╯       ',
+      '    少 年 龙 (Juvenile)       '
+    ],
+    3: [
+      '      ╭───╮  ╭───╮               ',
+      '  ╭───╯   ╰──╯   ╰───╮           ',
+      ' ╱  ◎        ╰───╯     ╲         ',
+      '│     ╭──────────╮      │        ',
+      '│    ╱ ╱╱╱╱╱╱╱╱╱╱ ╲     │        ',
+      ' ╲──╯ ╱╱╱╱╱╱╱╱╱╱╱╱ ╰───╯        ',
+      '  ╲  ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱  ╱         ',
+      '   ╲╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱          ',
+      '    ╰───╯       ╰───╯            ',
+      '    成 年 龙 (Adult)              '
+    ],
+    4: [
+      '    ╭───╮      ╭───╮                 ',
+      '╭───╯   ╰──────╯   ╰───╮             ',
+      '│  ◎           ╰───╯     │           ',
+      '│      ╭────────────╮    │           ',
+      '│     ╱ ╱╱╱╱╱╱╱╱╱╱╱╱ ╲   │           ',
+      ' ╲───╯ ╱╱╱╱╱╱╱╱╱╱╱╱╱╱ ╰──╯          ',
+      '  ╲   ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱  ╲          ',
+      '   ╲─╯╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰─╲         ',
+      '    ╲╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱         ',
+      '     ╰───╯         ╰───╯             ',
+      '     长 老 龙 (Elder)                 '
+    ],
+    5: [
+      '  ★  ╭───╮          ╭───╮  ★           ',
+      '╭─╯   ╰──╯          ╰──╯   ╰─╮         ',
+      '│  ◎            ╰───╯         │         ',
+      '│       ╭──────────────╮      │         ',
+      '│      ╱ ★╱╱╱╱╱╱╱╱╱╱★╱╱ ╲     │         ',
+      ' ╲────╯ ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ ╰───╯         ',
+      '  ╲    ╱╱╱╱★╱╱╱╱╱╱╱╱★╱╱╱╱╱  ╲          ',
+      '   ╲──╯╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰──╲         ',
+      '    ╲─╯╱╱╱★╱╱╱╱╱╱╱╱★╱╱╱╱╱╰──╲         ',
+      '  ★  ╲╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱  ★       ',
+      '       ╰───╯           ╰───╯            ',
+      '       升 龙 (Ascended)                 '
+    ]
+  };
+  return arts[level] || arts[0];
+}
+
+/**
+ * Get dragon color function for a level
+ */
+function getDragonColor(level) {
+  const colors = {
+    0: (text) => chalk.gray(text),
+    1: (text) => chalk.cyan(text),
+    2: (text) => chalk.cyan.bold(text),
+    3: (text) => chalk.cyanBright(text),
+    4: (text) => chalk.cyanBright.bold(text),
+    5: (text) => chalk.cyanBright.bold(text)
+  };
+  return colors[level] || colors[0];
+}
+
+/**
+ * Get highlight color for Ascended level
+ */
+function getHighlightColor(level) {
+  if (level >= 5) {
+    return (text) => chalk.whiteBright(text);
+  }
+  return (text) => text;
+}
+
+/**
+ * Render dragon totem with honor data
+ */
+function renderDragonTotem(honorData) {
+  const info = getLevelInfo(honorData.points);
+  const dragonColor = getDragonColor(info.level);
+  const highlightColor = getHighlightColor(info.level);
+  const art = getDragonArt(info.level);
+
+  // Calculate max art line width for proper padding
+  const maxArtWidth = Math.max(...art.map(l => l.length));
+  const boxWidth = Math.max(maxArtWidth + 8, 55);
+
+  const border = '─'.repeat(boxWidth - 2);
+  const padRight = (text, width) => {
+    const padding = Math.max(0, width - text.length);
+    return ' '.repeat(padding);
+  };
+
+  console.log('');
+  console.log(chalk.cyan('  ┌' + border + '┐'));
+  console.log(chalk.cyan('  │') + '  🐉 Dragon Totem of Honor  ' + padRight('  🐉 Dragon Totem of Honor  ', boxWidth - 2) + chalk.cyan('│'));
+  console.log(chalk.cyan('  ├' + border + '┤'));
+
+  for (const line of art) {
+    const padded = '  ' + line + padRight('  ' + line, boxWidth - 2);
+    console.log(chalk.cyan('  │') + dragonColor(padded) + chalk.cyan('│'));
+  }
+
+  console.log(chalk.cyan('  ├' + border + '┤'));
+
+  const levelLine = `  Level: ${info.level} - ${info.name}`;
+  const pointsLine = `  Points: ${honorData.points}`;
+  const stateLine = `  State: ${info.state}`;
+
+  console.log(chalk.cyan('  │') + highlightColor(levelLine + padRight(levelLine, boxWidth - 2)) + chalk.cyan('│'));
+  console.log(chalk.cyan('  │') + highlightColor(pointsLine + padRight(pointsLine, boxWidth - 2)) + chalk.cyan('│'));
+  console.log(chalk.cyan('  │') + highlightColor(stateLine + padRight(stateLine, boxWidth - 2)) + chalk.cyan('│'));
+
+  if (info.nextLevel) {
+    const nextLine = `  Next: ${info.pointsToNext} points to ${info.nextLevelName}`;
+    console.log(chalk.cyan('  │') + chalk.gray(nextLine + padRight(nextLine, boxWidth - 2)) + chalk.cyan('│'));
+  } else {
+    const maxLine = '  Maximum level reached!';
+    console.log(chalk.cyan('  │') + chalk.yellow(maxLine + padRight(maxLine, boxWidth - 2)) + chalk.cyan('│'));
+  }
+
+  console.log(chalk.cyan('  ├' + border + '┤'));
+
+  const statsTitle = '  Stats:';
+  console.log(chalk.cyan('  │') + chalk.white(statsTitle + padRight(statsTitle, boxWidth - 2)) + chalk.cyan('│'));
+
+  const stats1 = `    Skills Used: ${honorData.stats.skillUseCount}`;
+  const stats2 = `    New Skills: ${honorData.stats.newSkillCount}`;
+  const stats3 = `    Learnings: ${honorData.stats.learningCount}`;
+
+  console.log(chalk.cyan('  │') + chalk.gray(stats1 + padRight(stats1, boxWidth - 2)) + chalk.cyan('│'));
+  console.log(chalk.cyan('  │') + chalk.gray(stats2 + padRight(stats2, boxWidth - 2)) + chalk.cyan('│'));
+  console.log(chalk.cyan('  │') + chalk.gray(stats3 + padRight(stats3, boxWidth - 2)) + chalk.cyan('│'));
+
+  console.log(chalk.cyan('  └' + border + '┘'));
+  console.log('');
+}
+
+/**
+ * Get level info for points
+ */
+function getLevelInfo(points) {
+  const levels = [
+    { level: 0, minPoints: 0,   name: 'Egg',       state: 'dormant' },
+    { level: 1, minPoints: 1,   name: 'Hatchling',  state: 'awakening' },
+    { level: 2, minPoints: 10,  name: 'Juvenile',   state: 'growing' },
+    { level: 3, minPoints: 30,  name: 'Adult',       state: 'soaring' },
+    { level: 4, minPoints: 60,  name: 'Elder',       state: 'wise' },
+    { level: 5, minPoints: 100, name: 'Ascended',   state: 'transcendent' }
+  ];
+
+  let current = levels[0];
+  let next = levels[1];
+
+  for (const tier of levels) {
+    if (points >= tier.minPoints) {
+      current = tier;
+      next = levels[tier.level + 1] || null;
+    }
+  }
+
+  return {
+    level: current.level,
+    name: current.name,
+    state: current.state,
+    nextLevel: next ? next.level : null,
+    nextLevelName: next ? next.name : null,
+    pointsToNext: next ? next.minPoints - points : 0
+  };
+}
+
+/**
+ * Get hint for next level
+ */
+function getNextLevelHint(points) {
+  const info = getLevelInfo(points);
+  if (info.nextLevel) {
+    return `Earn ${info.pointsToNext} more points to reach ${info.nextLevelName} (Level ${info.nextLevel})`;
+  }
+  return 'You have reached the maximum dragon level!';
+}
+
+/**
+ * Publish honor data
+ */
+async function publishHonor(options) {
+  const configDir = path.join(process.env.HOME || process.env.USERPROFILE, '.flowmind');
+  const honorPath = path.join(configDir, 'honor.json');
+
+  if (!await fs.pathExists(honorPath)) {
+    console.error(chalk.red('No honor data found. Run flowmind init first.'));
+    return;
+  }
+
+  const honorData = await fs.readJson(honorPath);
+  const info = getLevelInfo(honorData.points);
+
+  const exportData = {
+    version: honorData.version,
+    points: honorData.points,
+    level: info.level,
+    levelName: info.name,
+    state: info.state,
+    stats: honorData.stats,
+    knownSkillsCount: honorData.knownSkills ? honorData.knownSkills.length : 0,
+    recentHistory: (honorData.history || []).slice(-20),
+    exportedAt: new Date().toISOString()
+  };
+
+  // Export to local JSON file
+  const outputPath = options.output || 'flowmind-honor.json';
+  await fs.writeJson(outputPath, exportData, { spaces: 2 });
+  console.log(chalk.green(`✓ Honor data exported to: ${outputPath}`));
+
+  // Create GitHub Gist if requested
+  if (options.gist) {
+    try {
+      // Check if gh CLI is available
+      try {
+        execSync('gh --version', { stdio: 'ignore' });
+      } catch {
+        console.error(chalk.red('GitHub CLI (gh) is not installed. Install it from https://cli.github.com/'));
+        return;
+      }
+
+      const gistContent = JSON.stringify(exportData, null, 2);
+      const gistDescription = `FlowMind Honor: Level ${info.level} (${info.name}) - ${honorData.points} points`;
+
+      // Create gist using gh CLI
+      const gistCommand = `gh gist create --public --desc "${gistDescription}" --filename "flowmind-honor.json" - <<< '${gistContent.replace(/'/g, "'\\''")}'`;
+
+      const gistUrl = execSync(gistCommand, { encoding: 'utf-8' }).trim();
+      console.log(chalk.green(`✓ GitHub Gist created: ${gistUrl}`));
+    } catch (error) {
+      console.error(chalk.red(`Failed to create Gist: ${error.message}`));
+    }
+  }
 }
 
 // CLI Commands
@@ -171,6 +441,17 @@ program
         console.log(chalk.cyan('\nTo enable AI features:'));
         console.log('  Run', chalk.yellow('flowmind init --ai openai'), 'or', chalk.yellow('flowmind init --ai anthropic'));
         console.log('  Or configure manually:', chalk.yellow('~/.flowmind/ai-config.json'));
+      }
+
+      // Award honor point for init
+      try {
+        const honorEngine = new HonorEngine({ get: (key, def) => def });
+        honorEngine.honorPath = path.join(configDir, 'honor.json');
+        await honorEngine.init();
+        await honorEngine.award('init', 'FlowMind initialized');
+        console.log(chalk.green('\n✓ Honor system activated (+1 point)'));
+      } catch (honorError) {
+        // Non-blocking
       }
 
     } catch (error) {
@@ -441,6 +722,32 @@ program
       const fm = await initFlowMind();
       const stats = await fm.getStats();
       displayStats(stats);
+    } catch (error) {
+      console.error(chalk.red('Error:'), error.message);
+    }
+  });
+
+// Honor command
+program
+  .command('honor')
+  .description('Show honor points and dragon totem')
+  .option('-j, --json', 'Output as JSON')
+  .option('-p, --publish', 'Export honor data to JSON file')
+  .option('-g, --gist', 'Create GitHub Gist (with --publish)')
+  .option('-o, --output <file>', 'Output file path (default: flowmind-honor.json)')
+  .action(async (options) => {
+    try {
+      const fm = await initFlowMind();
+      const honorData = fm.getHonorData();
+
+      if (options.json) {
+        console.log(JSON.stringify(honorData, null, 2));
+      } else if (options.publish) {
+        await publishHonor({ output: options.output, gist: options.gist });
+      } else {
+        renderDragonTotem(honorData);
+        console.log(chalk.gray(`  ${getNextLevelHint(honorData.points)}`));
+      }
     } catch (error) {
       console.error(chalk.red('Error:'), error.message);
     }
@@ -1013,6 +1320,136 @@ async function openInEditor(filePath) {
     });
   });
 }
+
+// TUI command - Rich terminal interface using Ink
+program
+  .command('tui')
+  .description('Launch enhanced TUI with split panels, skill browser, and dragon display')
+  .action(async () => {
+    try {
+      // Register .jsx extension for CJS
+      require('module')._extensions['.jsx'] = require('module')._extensions['.js'];
+
+      const React = require('react');
+      const { render } = require('ink');
+      const App = require('../tui/app.jsx');
+
+      const fm = await initFlowMind();
+
+      const { unmount, waitUntilExit } = render(React.createElement(App, { flowmind: fm }));
+      await waitUntilExit();
+      unmount();
+    } catch (error) {
+      console.error(chalk.red('TUI Error:'), error.message);
+      if (error.message.includes('Cannot find module')) {
+        console.log(chalk.yellow('Try running: npm install ink@3 react ink-text-input ink-spinner'));
+      }
+    }
+  });
+
+// Dashboard command - Hybrid monitoring dashboard
+program
+  .command('dashboard')
+  .description('Launch real-time monitoring dashboard for MCP activity and events')
+  .action(async () => {
+    try {
+      // Register .jsx extension for CJS
+      require('module')._extensions['.jsx'] = require('module')._extensions['.js'];
+
+      const React = require('react');
+      const { render } = require('ink');
+      const DashboardApp = require('../dashboard/app.jsx');
+      const eventBus = require('../core/event-bus');
+
+      const fm = await initFlowMind();
+
+      const { unmount, waitUntilExit } = render(
+        React.createElement(DashboardApp, { flowmind: fm, eventBus })
+      );
+      await waitUntilExit();
+      unmount();
+    } catch (error) {
+      console.error(chalk.red('Dashboard Error:'), error.message);
+      if (error.message.includes('Cannot find module')) {
+        console.log(chalk.yellow('Try running: npm install ink@3 react'));
+      }
+    }
+  });
+
+// Update command - Auto-update flowmind
+program
+  .command('update')
+  .description('Update FlowMind to the latest version')
+  .option('--check', 'Only check for updates, do not install')
+  .action(async (options) => {
+    const { execSync } = require('child_process');
+    const currentVersion = packageJson.version;
+
+    console.log(chalk.cyan(`\nCurrent version: ${currentVersion}`));
+
+    try {
+      // Check latest version on npm
+      const latestVersion = execSync('npm view flowmind version', { encoding: 'utf-8' }).trim();
+      console.log(chalk.cyan(`Latest version:  ${latestVersion}`));
+
+      if (currentVersion === latestVersion) {
+        console.log(chalk.green('\n✓ You are already on the latest version!'));
+        return;
+      }
+
+      // Compare versions
+      const parse = (v) => v.split('.').map(Number);
+      const curr = parse(currentVersion);
+      const latest = parse(latestVersion);
+      const isNewer = latest[0] > curr[0] || (latest[0] === curr[0] && latest[1] > curr[1]) || (latest[0] === curr[0] && latest[1] === curr[1] && latest[2] > curr[2]);
+
+      if (!isNewer) {
+        console.log(chalk.green('\n✓ You are on a newer version than npm latest.'));
+        return;
+      }
+
+      console.log(chalk.yellow(`\n⬆ Update available: ${currentVersion} → ${latestVersion}`));
+
+      if (options.check) {
+        console.log(chalk.cyan('\nRun `flowmind update` to install.'));
+        return;
+      }
+
+      // Detect install method
+      const isGlobal = (() => {
+        try {
+          const globalRoot = execSync('npm root -g', { encoding: 'utf-8' }).trim();
+          const localPath = require.resolve('../package.json');
+          return localPath.startsWith(globalRoot);
+        } catch { return false; }
+      })();
+
+      const installCmd = isGlobal
+        ? `npm install -g flowmind@${latestVersion}`
+        : `npm install flowmind@${latestVersion}`;
+
+      console.log(chalk.cyan(`\nInstalling: ${installCmd}`));
+      const spinner = ora('Updating FlowMind...').start();
+
+      try {
+        execSync(installCmd, { encoding: 'utf-8', stdio: 'pipe' });
+        spinner.succeed(`FlowMind updated to ${latestVersion}!`);
+
+        console.log(chalk.green('\n✓ Update complete!'));
+        console.log(chalk.gray('  Run `flowmind --version` to verify.'));
+      } catch (installError) {
+        spinner.fail('Update failed');
+        console.error(chalk.red('\nInstall error:'), installError.message);
+        console.log(chalk.yellow('\nTry manually:'));
+        console.log(chalk.white(`  ${installCmd}`));
+      }
+
+    } catch (error) {
+      console.error(chalk.red('Failed to check for updates:'), error.message);
+      console.log(chalk.yellow('\nYou can manually update with:'));
+      console.log(chalk.white('  npm install -g flowmind@latest'));
+    }
+  });
 
 // Parse arguments
 program.parse(process.argv);

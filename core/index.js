@@ -5,18 +5,21 @@
 
 const SkillLoader = require('./skill-loader');
 const LearningEngine = require('./learning-engine');
+const HonorEngine = require('./honor-engine');
 const SceneMatcher = require('./scene-matcher');
 const ConfigManager = require('./config-manager');
 const ComponentRegistry = require('./component-registry');
 const ModelManager = require('./ai/model-manager');
+const eventBus = require('./event-bus');
 
 class FlowMind {
   constructor(options = {}) {
     this.config = new ConfigManager(options.configPath);
-    this.learning = new LearningEngine(this.config);
+    this.honor = new HonorEngine(this.config);
+    this.learning = new LearningEngine(this.config, this.honor);
     this.matcher = new SceneMatcher(this.config, this.learning);
     this.components = new ComponentRegistry(this.config);
-    this.skills = new SkillLoader(this.config, this.learning, this.components);
+    this.skills = new SkillLoader(this.config, this.learning, this.components, this.honor);
     this.ai = new ModelManager(options.ai || {});
     this.initialized = false;
   }
@@ -30,6 +33,7 @@ class FlowMind {
     await this.config.load();
     await this.components.init();
     await this.components.initAll();
+    await this.honor.init();
     await this.learning.init();
     await this.skills.loadAll();
     await this.matcher.loadScenes();
@@ -54,6 +58,8 @@ class FlowMind {
     }
 
     const startTime = Date.now();
+
+    eventBus.emit('process:start', { input, timestamp: new Date().toISOString() });
 
     try {
       // 1. AI Intent Understanding (if available)
@@ -114,7 +120,7 @@ class FlowMind {
       });
 
       // 8. Format and return
-      return this.formatResult(summary || result, {
+      const formatted = this.formatResult(summary || result, {
         skill: skill.name,
         duration: Date.now() - startTime,
         sceneMatch: sceneMatch,
@@ -122,7 +128,18 @@ class FlowMind {
         aiEnhanced: !!summary
       });
 
+      eventBus.emit('process:complete', {
+        input,
+        skill: skill.name,
+        duration: formatted.metadata.duration,
+        success: true,
+        timestamp: formatted.timestamp
+      });
+
+      return formatted;
+
     } catch (error) {
+      eventBus.emit('process:error', { input, error: error.message, timestamp: new Date().toISOString() });
       return this.formatError(error.message, input);
     }
   }
@@ -131,6 +148,8 @@ class FlowMind {
    * Execute skill with learning applied
    */
   async executeWithLearning(skill, input, context) {
+    const skillStartTime = Date.now();
+
     // Get learning rules for this skill
     const learnings = await this.learning.getSkillLearnings(skill.name);
 
@@ -143,6 +162,19 @@ class FlowMind {
 
     // Execute skill
     const result = await skill.execute(input, enhancedContext);
+
+    const duration = Date.now() - skillStartTime;
+
+    // Emit skill execution event
+    eventBus.emit('skill:executed', {
+      name: skill.name,
+      duration,
+      success: true,
+      timestamp: new Date().toISOString()
+    });
+
+    // Award honor point for skill use
+    await this.honor.award('skill_use', `Used skill: ${skill.name}`);
 
     return result;
   }
@@ -225,6 +257,13 @@ class FlowMind {
    */
   async getStats() {
     return this.learning.getStats();
+  }
+
+  /**
+   * Get honor data
+   */
+  getHonorData() {
+    return this.honor.getData();
   }
 
   /**

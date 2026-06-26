@@ -6,6 +6,7 @@
  */
 
 const FlowMind = require('../core');
+const eventBus = require('../core/event-bus');
 
 // MCP Server 实现
 class FlowMindMCPServer {
@@ -122,106 +123,120 @@ class FlowMindMCPServer {
   async callTool(name, args) {
     await this.init();
 
+    const callStart = Date.now();
+    let result;
+
     try {
       // 核心工具
       if (name === 'flowmind_process') {
-        const result = await this.flowmind.process(args.input, args.context || {});
-        return {
+        const data = await this.flowmind.process(args.input, args.context || {});
+        result = {
           content: [{
             type: 'text',
-            text: JSON.stringify(result, null, 2)
+            text: JSON.stringify(data, null, 2)
           }]
         };
-      }
-
-      if (name === 'flowmind_list_skills') {
+      } else if (name === 'flowmind_list_skills') {
         const skills = this.flowmind.skills.list();
-        return {
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify({ skills }, null, 2)
           }]
         };
-      }
-
-      if (name === 'flowmind_get_skill') {
+      } else if (name === 'flowmind_get_skill') {
         const skill = this.flowmind.skills.get(args.name);
         if (!skill) {
-          return {
+          result = {
             content: [{
               type: 'text',
               text: JSON.stringify({ error: `Skill not found: ${args.name}` })
             }],
             isError: true
           };
+        } else {
+          result = {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                name: skill.name,
+                description: skill.definition?.description,
+                category: skill.definition?.category,
+                triggers: skill.definition?.triggers,
+                componentDependencies: skill.definition?.componentDependencies
+              }, null, 2)
+            }]
+          };
         }
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              name: skill.name,
-              description: skill.definition?.description,
-              category: skill.definition?.category,
-              triggers: skill.definition?.triggers,
-              componentDependencies: skill.definition?.componentDependencies
-            }, null, 2)
-          }]
-        };
-      }
-
-      if (name === 'flowmind_ai_status') {
+      } else if (name === 'flowmind_ai_status') {
         const status = this.flowmind.getAIStatus();
-        return {
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify(status, null, 2)
           }]
         };
-      }
-
-      if (name === 'flowmind_learning_stats') {
+      } else if (name === 'flowmind_learning_stats') {
         const stats = await this.flowmind.getStats();
-        return {
+        result = {
           content: [{
             type: 'text',
             text: JSON.stringify(stats, null, 2)
           }]
         };
-      }
-
-      // 技能工具
-      if (name.startsWith('flowmind_skill_')) {
+      } else if (name.startsWith('flowmind_skill_')) {
+        // 技能工具
         const skillName = name.replace('flowmind_skill_', '');
         const skill = this.flowmind.skills.get(skillName);
 
         if (!skill) {
-          return {
+          result = {
             content: [{
               type: 'text',
               text: JSON.stringify({ error: `Skill not found: ${skillName}` })
             }],
             isError: true
           };
+        } else {
+          const data = await this.flowmind.executeWithLearning(skill, args.input, args.context || {});
+          result = {
+            content: [{
+              type: 'text',
+              text: JSON.stringify(data, null, 2)
+            }]
+          };
         }
-
-        const result = await this.flowmind.executeWithLearning(skill, args.input, args.context || {});
-        return {
+      } else {
+        result = {
           content: [{
             type: 'text',
-            text: JSON.stringify(result, null, 2)
-          }]
+            text: JSON.stringify({ error: `Unknown tool: ${name}` })
+          }],
+          isError: true
         };
       }
 
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ error: `Unknown tool: ${name}` })
-        }],
-        isError: true
-      };
+      // Emit success event
+      eventBus.emit('mcp:tool_called', {
+        tool: name,
+        args,
+        duration: Date.now() - callStart,
+        success: !result.isError,
+        timestamp: new Date().toISOString()
+      });
+
+      return result;
 
     } catch (error) {
+      eventBus.emit('mcp:tool_called', {
+        tool: name,
+        args,
+        duration: Date.now() - callStart,
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+
       return {
         content: [{
           type: 'text',

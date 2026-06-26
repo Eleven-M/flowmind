@@ -7,10 +7,11 @@ const fs = require('fs-extra');
 const path = require('path');
 
 class SkillLoader {
-  constructor(config, learning, componentRegistry = null) {
+  constructor(config, learning, componentRegistry = null, honorEngine = null) {
     this.config = config;
     this.learning = learning;
     this.componentRegistry = componentRegistry;
+    this.honorEngine = honorEngine;
     this.skills = new Map();
     this.skillPath = config.get('skills.path', path.join(__dirname, '..', 'skills'));
   }
@@ -68,6 +69,13 @@ class SkillLoader {
       };
 
       this.skills.set(name, skill);
+
+      // Award honor points for new (previously unknown) skills
+      if (this.honorEngine && !this.honorEngine.isKnownSkill(name)) {
+        await this.honorEngine.award('new_skill', `New skill loaded: ${name}`);
+        await this.honorEngine.addKnownSkill(name);
+      }
+
       return skill;
     } catch (error) {
       console.error(`Failed to load skill ${name}:`, error.message);

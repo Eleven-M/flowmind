@@ -6,10 +6,12 @@
 const fs = require('fs-extra');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const eventBus = require('./event-bus');
 
 class LearningEngine {
-  constructor(config) {
+  constructor(config, honorEngine = null) {
     this.config = config;
+    this.honorEngine = honorEngine;
     this.learningPath = config.get('learning.storagePath', '~/.flowmind/learning');
     this.records = {};
     this.skillBindings = {};
@@ -170,6 +172,13 @@ class LearningEngine {
     // Update stats
     await this.updateStats('correction', record.skill);
 
+    eventBus.emit('learning:recorded', {
+      type: 'correction',
+      skill: record.skill,
+      recordId: record.id,
+      severity: record.severity
+    });
+
     return {
       type: 'correction',
       record: record,
@@ -204,6 +213,13 @@ class LearningEngine {
     // Update stats
     await this.updateStats('scene_mapping', 'global');
 
+    eventBus.emit('learning:recorded', {
+      type: 'scene_mapping',
+      skill: 'global',
+      recordId: record.id,
+      keywords: record.keywords
+    });
+
     return {
       type: 'scene_mapping',
       record: record,
@@ -231,6 +247,13 @@ class LearningEngine {
 
     // Update stats
     await this.updateStats('preference', record.skill);
+
+    eventBus.emit('learning:recorded', {
+      type: 'preference',
+      skill: record.skill,
+      recordId: record.id,
+      preferenceType: record.preferenceType
+    });
 
     return {
       type: 'preference',
@@ -398,6 +421,11 @@ class LearningEngine {
 
     const statsPath = path.join(this.expandPath(this.learningPath), 'stats.json');
     await fs.writeJson(statsPath, this.stats, { spaces: 2 });
+
+    // Award honor points for learning
+    if (this.honorEngine) {
+      await this.honorEngine.award('learning', `Learned: ${type} for ${skill}`);
+    }
   }
 
   /**
