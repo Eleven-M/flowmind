@@ -24,7 +24,10 @@
       "Bash(node:*)",
       "Bash(npm version:*)",
       "Bash(npm config get registry)",
-      "Bash(ping:*)"
+      "Bash(ping:*)",
+      "Skill(sdd-agent)",
+      "mcp__friday-sls-logs__queryLogs",
+      "mcp__friday-sls-logs__listProject"
     ]
   },
   "enableAllProjectMcpServers": true,
