@@ -33,6 +33,13 @@ class FlowMind {
     if (this.initialized) return this;
 
     await this.config.load();
+
+    // Validate configuration
+    const validation = this.config.validate();
+    if (!validation.valid) {
+      console.warn('Configuration warnings:', validation.errors.join(', '));
+    }
+
     await this.components.init();
     await this.components.initAll();
     await this.honor.init();

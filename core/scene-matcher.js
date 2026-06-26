@@ -5,6 +5,7 @@
 
 const fs = require('fs-extra');
 const path = require('path');
+const { expandPath } = require('./utils');
 
 class SceneMatcher {
   constructor(config, learning) {
@@ -316,10 +317,7 @@ class SceneMatcher {
    * Helper to expand path
    */
   expandPath(filePath) {
-    if (filePath.startsWith('~')) {
-      return path.join(process.env.HOME || process.env.USERPROFILE, filePath.slice(1));
-    }
-    return filePath;
+    return expandPath(filePath);
   }
 }
 

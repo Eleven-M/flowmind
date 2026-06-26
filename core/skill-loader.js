@@ -327,6 +327,13 @@ class SkillLoader {
     const skill = this.skills.get(name);
     if (!skill) return null;
 
+    // Clear require cache to actually reload the module
+    const indexPath = require('path').join(skill.path, 'index.js');
+    const resolvedPath = require.resolve(indexPath);
+    if (require.cache[resolvedPath]) {
+      delete require.cache[resolvedPath];
+    }
+
     return await this.loadSkill(name, skill.path);
   }
 

@@ -7,6 +7,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const eventBus = require('./event-bus');
+const { expandPath } = require('./utils');
 
 /**
  * Per-key write queue to prevent concurrent read-modify-write races
@@ -580,10 +581,7 @@ class LearningEngine {
    * Helper methods
    */
   expandPath(filePath) {
-    if (filePath.startsWith('~')) {
-      return path.join(process.env.HOME || process.env.USERPROFILE, filePath.slice(1));
-    }
-    return filePath;
+    return expandPath(filePath);
   }
 
   extractCondition(input) {

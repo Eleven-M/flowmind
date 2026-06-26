@@ -50,7 +50,7 @@ class HonorEngine {
       }
       this.initialized = true;
     } catch (error) {
-      // Non-blocking: create default data in memory
+      console.warn('HonorEngine init failed, using defaults:', error.message);
       this.data = this.createDefaultData();
       this.initialized = true;
     }
@@ -92,7 +92,7 @@ class HonorEngine {
         }
       }
     } catch (error) {
-      // Non-blocking
+      console.warn('HonorEngine seedKnownSkills failed:', error.message);
     }
   }
 
@@ -148,7 +148,7 @@ class HonorEngine {
         timestamp: this.data.lastUpdated
       });
     } catch (error) {
-      // Non-blocking
+      console.warn('HonorEngine award failed:', error.message);
     }
   }
 
@@ -170,7 +170,7 @@ class HonorEngine {
         await this.save();
       }
     } catch (error) {
-      // Non-blocking
+      console.warn('HonorEngine addKnownSkill failed:', error.message);
     }
   }
 
@@ -247,7 +247,7 @@ class HonorEngine {
       await fs.ensureDir(path.dirname(this.honorPath));
       await fs.writeJson(this.honorPath, this.data, { spaces: 2 });
     } catch (error) {
-      // Non-blocking
+      console.warn('HonorEngine save failed:', error.message);
     }
   }
 }
