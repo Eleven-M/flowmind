@@ -7,6 +7,7 @@
 
 const FlowMind = require('../core');
 const eventBus = require('../core/event-bus');
+const { version } = require('../package.json');
 
 // MCP Server 实现
 class FlowMindMCPServer {
@@ -276,7 +277,7 @@ async function main() {
             },
             serverInfo: {
               name: 'flowmind',
-              version: '1.0.1'
+              version: version
             }
           }
         };

@@ -536,11 +536,15 @@ program
         await fm.importLearnings(data);
         console.log(chalk.green('✓ Learnings imported successfully'));
       } else if (options.reset) {
-        console.log(chalk.yellow('Resetting learnings for:'), options.reset);
-        // Implementation would go here
+        const count = await fm.learning.resetSkill(options.reset);
+        console.log(chalk.green(`✓ Reset ${count} learning(s) for skill: ${options.reset}`));
       } else if (options.delete) {
-        console.log(chalk.yellow('Deleting learning:'), options.delete);
-        // Implementation would go here
+        const deleted = await fm.learning.deleteRecord(options.delete);
+        if (deleted) {
+          console.log(chalk.green(`✓ Deleted learning record: ${options.delete}`));
+        } else {
+          console.log(chalk.yellow(`Record not found: ${options.delete}`));
+        }
       } else {
         // Default to list
         const stats = await fm.getStats();
@@ -620,7 +624,7 @@ program
   .description('View or modify skill configuration')
   .option('-i, --info', 'Show skill info (default)')
   .option('-c, --config', 'Show/edit skill configuration')
-  .option('-s, --set <key> <value>', 'Set config value')
+  .option('-s, --set <key>', 'Set config value (value as next argument)')
   .option('-r, --read', 'Read SKILL.md content')
   .option('-e, --edit', 'Open SKILL.md in editor')
   .option('-j, --json', 'Output as JSON (for tool integration)')
@@ -650,13 +654,10 @@ program
       } else if (options.config) {
         await showSkillConfig(skill, fm, options.json);
       } else if (options.set) {
-        // options.set is the key, need value from next arg
-        const value = options.set;
-        const key = options.set;
-        // Get key and value from command line
         const args = process.argv.slice(3);
-        if (args.length >= 2) {
-          await setSkillConfig(skill, fm, args[0], args[1]);
+        const value = args.find(a => !a.startsWith('-'));
+        if (value) {
+          await setSkillConfig(skill, fm, options.set, value);
         } else {
           console.error(chalk.red('Usage: flowmind skill <name> --set <key> <value>'));
         }
@@ -775,7 +776,7 @@ program
   .command('config')
   .description('Manage configuration')
   .option('-l, --list', 'List configuration')
-  .option('-s, --set <key> <value>', 'Set configuration value')
+  .option('-s, --set <key>', 'Set configuration value (value as next argument)')
   .option('-g, --get <key>', 'Get configuration value')
   .action(async (options) => {
     try {
@@ -785,10 +786,16 @@ program
         const config = fm.config.getAll();
         console.log(chalk.cyan('\nFlowMind Configuration:'));
         console.log(JSON.stringify(config, null, 2));
-      } else if (options.set && options.value) {
-        fm.config.set(options.set, options.value);
-        await fm.config.save();
-        console.log(chalk.green('✓ Configuration updated'));
+      } else if (options.set) {
+        const args = process.argv.slice(3);
+        const value = args.find(a => !a.startsWith('-'));
+        if (value) {
+          fm.config.set(options.set, value);
+          await fm.config.save();
+          console.log(chalk.green('✓ Configuration updated'));
+        } else {
+          console.error(chalk.red('Usage: flowmind config --set <key> <value>'));
+        }
       } else if (options.get) {
         const value = fm.config.get(options.get);
         console.log(value);

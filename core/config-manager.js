@@ -5,6 +5,7 @@
 
 const fs = require('fs-extra');
 const path = require('path');
+const os = require('os');
 
 class ConfigManager {
   constructor(configPath = null) {

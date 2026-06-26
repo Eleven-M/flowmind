@@ -8,11 +8,31 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const eventBus = require('./event-bus');
 
+/**
+ * Per-key write queue to prevent concurrent read-modify-write races
+ */
+class WriteQueue {
+  constructor() {
+    this.queues = new Map();
+  }
+
+  async run(key, fn) {
+    if (!this.queues.has(key)) {
+      this.queues.set(key, Promise.resolve());
+    }
+    const prev = this.queues.get(key);
+    const next = prev.then(fn, fn);
+    this.queues.set(key, next);
+    return next;
+  }
+}
+
 class LearningEngine {
   constructor(config, honorEngine = null) {
     this.config = config;
     this.honorEngine = honorEngine;
     this.learningPath = config.get('learning.storagePath', '~/.flowmind/learning');
+    this.writeQueue = new WriteQueue();
     this.records = {};
     this.skillBindings = {};
     this.stats = {};
@@ -144,7 +164,7 @@ class LearningEngine {
    */
   async recordCorrection(correction, context) {
     const record = {
-      id: `learn-${Date.now()}-${uuidv4().substr(0, 8)}`,
+      id: `learn-${Date.now()}-${uuidv4().slice(0, 8)}`,
       timestamp: new Date().toISOString(),
       type: correction.type,
       severity: correction.severity,
@@ -191,7 +211,7 @@ class LearningEngine {
    */
   async recordSceneMapping(sceneMapping, context) {
     const record = {
-      id: `scene-${Date.now()}-${uuidv4().substr(0, 8)}`,
+      id: `scene-${Date.now()}-${uuidv4().slice(0, 8)}`,
       timestamp: new Date().toISOString(),
       type: 'scene_mapping',
       input: sceneMapping.input,
@@ -232,7 +252,7 @@ class LearningEngine {
    */
   async recordPreference(preference, context) {
     const record = {
-      id: `pref-${Date.now()}-${uuidv4().substr(0, 8)}`,
+      id: `pref-${Date.now()}-${uuidv4().slice(0, 8)}`,
       timestamp: new Date().toISOString(),
       type: 'preference',
       preferenceType: preference.preferenceType,
@@ -309,16 +329,17 @@ class LearningEngine {
    */
   async saveSceneMapping(record) {
     const scenesPath = path.join(this.expandPath(this.learningPath), 'scenes.json');
+    await this.writeQueue.run('scenes.json', async () => {
+      let scenes = { version: '1.0', mappings: [] };
+      if (await fs.pathExists(scenesPath)) {
+        scenes = await fs.readJson(scenesPath);
+      }
 
-    let scenes = { version: '1.0', mappings: [] };
-    if (await fs.pathExists(scenesPath)) {
-      scenes = await fs.readJson(scenesPath);
-    }
+      scenes.mappings.push(record);
+      scenes.lastUpdated = new Date().toISOString();
 
-    scenes.mappings.push(record);
-    scenes.lastUpdated = new Date().toISOString();
-
-    await fs.writeJson(scenesPath, scenes, { spaces: 2 });
+      await fs.writeJson(scenesPath, scenes, { spaces: 2 });
+    });
   }
 
   /**
@@ -331,17 +352,19 @@ class LearningEngine {
       record.skill,
       'preferences.json'
     );
+    const queueKey = `prefs:${record.skill}`;
+    await this.writeQueue.run(queueKey, async () => {
+      let prefs = {};
+      if (await fs.pathExists(prefsPath)) {
+        prefs = await fs.readJson(prefsPath);
+      }
 
-    let prefs = {};
-    if (await fs.pathExists(prefsPath)) {
-      prefs = await fs.readJson(prefsPath);
-    }
+      prefs[record.preferenceType] = record.value;
+      prefs.lastUpdated = new Date().toISOString();
 
-    prefs[record.preferenceType] = record.value;
-    prefs.lastUpdated = new Date().toISOString();
-
-    await fs.ensureDir(path.dirname(prefsPath));
-    await fs.writeJson(prefsPath, prefs, { spaces: 2 });
+      await fs.ensureDir(path.dirname(prefsPath));
+      await fs.writeJson(prefsPath, prefs, { spaces: 2 });
+    });
   }
 
   /**
@@ -387,9 +410,11 @@ class LearningEngine {
    * Save skill bindings
    */
   async saveSkillBindings() {
-    const bindingsPath = path.join(this.expandPath(this.learningPath), 'skill-bindings.json');
-    this.skillBindings.lastUpdated = new Date().toISOString();
-    await fs.writeJson(bindingsPath, this.skillBindings, { spaces: 2 });
+    await this.writeQueue.run('bindings', async () => {
+      const bindingsPath = path.join(this.expandPath(this.learningPath), 'skill-bindings.json');
+      this.skillBindings.lastUpdated = new Date().toISOString();
+      await fs.writeJson(bindingsPath, this.skillBindings, { spaces: 2 });
+    });
   }
 
   /**
@@ -414,13 +439,15 @@ class LearningEngine {
    * Update stats
    */
   async updateStats(type, skill) {
-    this.stats.totalRecords++;
-    this.stats.byType[type] = (this.stats.byType[type] || 0) + 1;
-    this.stats.bySkill[skill] = (this.stats.bySkill[skill] || 0) + 1;
-    this.stats.lastLearning = new Date().toISOString();
+    await this.writeQueue.run('stats', async () => {
+      this.stats.totalRecords++;
+      this.stats.byType[type] = (this.stats.byType[type] || 0) + 1;
+      this.stats.bySkill[skill] = (this.stats.bySkill[skill] || 0) + 1;
+      this.stats.lastLearning = new Date().toISOString();
 
-    const statsPath = path.join(this.expandPath(this.learningPath), 'stats.json');
-    await fs.writeJson(statsPath, this.stats, { spaces: 2 });
+      const statsPath = path.join(this.expandPath(this.learningPath), 'stats.json');
+      await fs.writeJson(statsPath, this.stats, { spaces: 2 });
+    });
 
     // Award honor points for learning
     if (this.honorEngine) {
@@ -482,6 +509,71 @@ class LearningEngine {
     await this.saveStats();
 
     return { success: true, imported: data.stats.totalRecords };
+  }
+
+  /**
+   * Reset all learnings for a specific skill
+   */
+  async resetSkill(skillName) {
+    const basePath = this.expandPath(this.learningPath);
+
+    // Delete records directory for this skill
+    const recordsDir = path.join(basePath, 'records', skillName);
+    if (await fs.pathExists(recordsDir)) {
+      await fs.remove(recordsDir);
+    }
+
+    // Remove from skill bindings
+    if (this.skillBindings.bindings && this.skillBindings.bindings[skillName]) {
+      delete this.skillBindings.bindings[skillName];
+      await this.saveSkillBindings();
+    }
+
+    // Update stats
+    const count = (this.records[skillName] || []).length;
+    if (count > 0 && this.stats.totalRecords) {
+      this.stats.totalRecords = Math.max(0, this.stats.totalRecords - count);
+    }
+    if (this.stats.bySkill && this.stats.bySkill[skillName]) {
+      delete this.stats.bySkill[skillName];
+    }
+    await this.saveStats();
+    delete this.records[skillName];
+
+    return count;
+  }
+
+  /**
+   * Delete a specific learning record by ID
+   */
+  async deleteRecord(recordId) {
+    const basePath = path.join(this.expandPath(this.learningPath), 'records');
+    if (!(await fs.pathExists(basePath))) return false;
+
+    const skillDirs = await fs.readdir(basePath);
+    for (const skill of skillDirs) {
+      const recordPath = path.join(basePath, skill, `${recordId}.json`);
+      if (await fs.pathExists(recordPath)) {
+        await fs.remove(recordPath);
+        // Remove from memory cache
+        if (this.records[skill]) {
+          this.records[skill] = this.records[skill].filter(r => r.id !== recordId);
+        }
+        // Update stats
+        if (this.stats.totalRecords) this.stats.totalRecords--;
+        await this.saveStats();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Save stats to disk
+   */
+  async saveStats() {
+    const statsPath = path.join(this.expandPath(this.learningPath), 'stats.json');
+    await fs.writeJson(statsPath, this.stats, { spaces: 2 });
   }
 
   /**
