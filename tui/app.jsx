@@ -26,7 +26,7 @@ function App({ flowmind }) {
       if (!mountedRef.current) return;
       if (result.type === 'result') {
         const text = typeof result.data === 'string' ? result.data : JSON.stringify(result.data, null, 2);
-        addResponse(text.substring(0, 200) + (text.length > 200 ? '...' : ''));
+        addResponse(text);
       } else if (result.type === 'learning') {
         addResponse(result.message || 'Learning recorded');
       } else if (result.type === 'error') {

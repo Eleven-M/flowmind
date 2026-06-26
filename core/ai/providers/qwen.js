@@ -31,7 +31,7 @@ class QwenProvider extends BaseModel {
       await this.init();
     }
 
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    const response = await this.fetchWithRetry(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -61,7 +61,17 @@ class QwenProvider extends BaseModel {
   async isAvailable() {
     try {
       if (!this.apiKey) return false;
-      return true;
+      const response = await this.fetchWithRetry(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify({ model: this.model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
+        retries: 1,
+        timeout: 10000
+      });
+      return response.ok || response.status === 400;
     } catch {
       return false;
     }

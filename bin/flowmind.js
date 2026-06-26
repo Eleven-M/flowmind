@@ -1460,6 +1460,52 @@ program
     }
   });
 
+// Doctor command - System health check
+program
+  .command('doctor')
+  .description('Run system health checks and diagnostics')
+  .option('-j, --json', 'Output as JSON')
+  .action(async (options) => {
+    try {
+      const fm = await initFlowMind();
+      const result = await fm.doctor();
+
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      console.log(chalk.cyan('\nFlowMind Health Check\n'));
+      console.log('─'.repeat(60));
+
+      for (const check of result.checks) {
+        const icon = check.status === 'ok' ? chalk.green('✓')
+          : check.status === 'warning' ? chalk.yellow('⚠')
+          : chalk.red('✗');
+        console.log(`  ${icon} ${check.name.padEnd(20)} ${check.message}`);
+      }
+
+      console.log('─'.repeat(60));
+      const { ok, warnings, errors } = result.summary;
+      const summaryLine = [
+        chalk.green(`${ok} ok`),
+        warnings > 0 ? chalk.yellow(`${warnings} warning(s)`) : null,
+        errors > 0 ? chalk.red(`${errors} error(s)`) : null
+      ].filter(Boolean).join(', ');
+      console.log(`\n  Result: ${summaryLine}`);
+
+      if (errors > 0) {
+        console.log(chalk.red('\n  Some checks failed. Please fix the errors above.'));
+      } else if (warnings > 0) {
+        console.log(chalk.yellow('\n  Some warnings detected. Review for potential issues.'));
+      } else {
+        console.log(chalk.green('\n  All checks passed!'));
+      }
+    } catch (error) {
+      console.error(chalk.red('Doctor Error:'), error.message);
+    }
+  });
+
 // Update command - Auto-update flowmind
 program
   .command('update')

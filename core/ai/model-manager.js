@@ -28,6 +28,9 @@ class ModelManager {
     };
     this.fallbackToRules = config.fallbackToRules !== false;
     this.initialized = false;
+    this.cache = new Map();
+    this.cacheMaxAge = config.cacheMaxAge || 300000; // 5 minutes
+    this.cacheMaxSize = config.cacheMaxSize || 100;
   }
 
   /**
@@ -119,30 +122,16 @@ class ModelManager {
    * @returns {Promise<Object>} 意图分析结果
    */
   async understandIntent(input, context = {}) {
-    if (!this.features.intentUnderstanding) {
-      return null;
-    }
+    if (!this.features.intentUnderstanding) return null;
 
-    const provider = this.getDefaultProvider();
-    if (!provider) {
-      return this._fallback('intentUnderstanding', input, context);
-    }
-
-    try {
+    return this._callWithFailover(async (provider) => {
       const messages = [
         { role: 'system', content: prompts.intent.system },
         { role: 'user', content: prompts.intent.user(input, context) }
       ];
-
-      const response = await provider.chat(messages, {
-        responseFormat: { type: 'json_object' }
-      });
-
+      const response = await provider.chat(messages, { responseFormat: { type: 'json_object' } });
       return JSON.parse(response);
-    } catch (error) {
-      console.warn(`AI intent understanding failed: ${error.message}`);
-      return this._fallback('intentUnderstanding', input, context);
-    }
+    }, 'intentUnderstanding');
   }
 
   /**
@@ -153,30 +142,16 @@ class ModelManager {
    * @returns {Promise<Object>} 提取的参数
    */
   async extractParameters(input, skillName, skillSchema = {}) {
-    if (!this.features.parameterExtraction) {
-      return {};
-    }
+    if (!this.features.parameterExtraction) return {};
 
-    const provider = this.getDefaultProvider();
-    if (!provider) {
-      return this._fallback('parameterExtraction', input, { skillName });
-    }
-
-    try {
+    return this._callWithFailover(async (provider) => {
       const messages = [
         { role: 'system', content: prompts.extraction.system },
         { role: 'user', content: prompts.extraction.user(input, skillName, skillSchema) }
       ];
-
-      const response = await provider.chat(messages, {
-        responseFormat: { type: 'json_object' }
-      });
-
+      const response = await provider.chat(messages, { responseFormat: { type: 'json_object' } });
       return JSON.parse(response);
-    } catch (error) {
-      console.warn(`AI parameter extraction failed: ${error.message}`);
-      return this._fallback('parameterExtraction', input, { skillName });
-    }
+    }, 'parameterExtraction');
   }
 
   /**
@@ -186,30 +161,16 @@ class ModelManager {
    * @returns {Promise<Object>} 选择的技能
    */
   async selectSkill(input, candidates) {
-    if (!this.features.skillSelection) {
-      return null;
-    }
+    if (!this.features.skillSelection) return null;
 
-    const provider = this.getDefaultProvider();
-    if (!provider) {
-      return this._fallback('skillSelection', input, { candidates });
-    }
-
-    try {
+    return this._callWithFailover(async (provider) => {
       const messages = [
         { role: 'system', content: prompts.selection.system },
         { role: 'user', content: prompts.selection.user(input, candidates) }
       ];
-
-      const response = await provider.chat(messages, {
-        responseFormat: { type: 'json_object' }
-      });
-
+      const response = await provider.chat(messages, { responseFormat: { type: 'json_object' } });
       return JSON.parse(response);
-    } catch (error) {
-      console.warn(`AI skill selection failed: ${error.message}`);
-      return this._fallback('skillSelection', input, { candidates });
-    }
+    }, 'skillSelection');
   }
 
   /**
@@ -219,26 +180,15 @@ class ModelManager {
    * @returns {Promise<string>} 摘要文本
    */
   async summarizeResult(result, context = {}) {
-    if (!this.features.resultSummary) {
-      return null;
-    }
+    if (!this.features.resultSummary) return null;
 
-    const provider = this.getDefaultProvider();
-    if (!provider) {
-      return this._fallback('resultSummary', result, context);
-    }
-
-    try {
+    return this._callWithFailover(async (provider) => {
       const messages = [
         { role: 'system', content: prompts.summary.system },
         { role: 'user', content: prompts.summary.user(result, context) }
       ];
-
       return await provider.chat(messages);
-    } catch (error) {
-      console.warn(`AI result summary failed: ${error.message}`);
-      return this._fallback('resultSummary', result, context);
-    }
+    }, 'resultSummary');
   }
 
   /**
@@ -248,42 +198,102 @@ class ModelManager {
    * @returns {Promise<Object>} 学习分析结果
    */
   async analyzeLearningFeedback(input, context = {}) {
-    if (!this.features.learningFeedback) {
-      return null;
-    }
+    if (!this.features.learningFeedback) return null;
 
-    const provider = this.getDefaultProvider();
-    if (!provider) {
-      return this._fallback('learningFeedback', input, context);
-    }
-
-    try {
+    return this._callWithFailover(async (provider) => {
       const messages = [
         { role: 'system', content: prompts.learning.system },
         { role: 'user', content: prompts.learning.user(input, context) }
       ];
-
-      const response = await provider.chat(messages, {
-        responseFormat: { type: 'json_object' }
-      });
-
+      const response = await provider.chat(messages, { responseFormat: { type: 'json_object' } });
       return JSON.parse(response);
-    } catch (error) {
-      console.warn(`AI learning feedback analysis failed: ${error.message}`);
-      return this._fallback('learningFeedback', input, context);
-    }
+    }, 'learningFeedback');
   }
 
   /**
-   * 降级处理
+   * Get cached result if available and not expired
    * @private
    */
-  _fallback(feature, input, context) {
-    if (!this.fallbackToRules) {
+  _getCached(key) {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > this.cacheMaxAge) {
+      this.cache.delete(key);
       return null;
     }
-    // 返回 null，让调用方使用规则引擎
-    return null;
+    return entry.value;
+  }
+
+  /**
+   * Set cache entry, evicting oldest if at capacity
+   * @private
+   */
+  _setCache(key, value) {
+    if (this.cache.size >= this.cacheMaxSize) {
+      const oldest = this.cache.keys().next().value;
+      this.cache.delete(oldest);
+    }
+    this.cache.set(key, { value, timestamp: Date.now() });
+  }
+
+  /**
+   * Clear the AI response cache
+   */
+  clearCache() {
+    this.cache.clear();
+  }
+
+  /**
+   * Call AI with automatic failover to other providers
+   * @private
+   */
+  async _callWithFailover(fn, feature) {
+    // Try default provider first
+    const defaultProvider = this.getDefaultProvider();
+    if (defaultProvider) {
+      try {
+        return await fn(defaultProvider);
+      } catch (error) {
+        console.warn(`Default provider (${this.defaultProvider}) failed for ${feature}: ${error.message}`);
+      }
+    }
+
+    // Try other providers
+    for (const [name, provider] of this.providers) {
+      if (name === this.defaultProvider || !provider.initialized) continue;
+      try {
+        console.warn(`Failing over to provider: ${name} for ${feature}`);
+        return await fn(provider);
+      } catch (error) {
+        console.warn(`Failover provider ${name} failed for ${feature}: ${error.message}`);
+      }
+    }
+
+    // All providers failed, use rule-based fallback
+    return this._fallback(feature);
+  }
+
+  /**
+   * Rule-based fallback when AI is unavailable
+   * @private
+   */
+  _fallback(feature) {
+    if (!this.fallbackToRules) return null;
+
+    switch (feature) {
+      case 'intentUnderstanding':
+        return { intent: 'unknown', confidence: 0, source: 'rules' };
+      case 'parameterExtraction':
+        return {};
+      case 'skillSelection':
+        return { selectedSkill: null, confidence: 0, source: 'rules' };
+      case 'resultSummary':
+        return null;
+      case 'learningFeedback':
+        return { isLearning: false, source: 'rules' };
+      default:
+        return null;
+    }
   }
 
   /**

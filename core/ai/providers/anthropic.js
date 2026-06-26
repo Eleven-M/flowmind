@@ -8,7 +8,7 @@ class AnthropicProvider extends BaseModel {
   constructor(config = {}) {
     super('anthropic', config);
     this.apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY;
-    this.model = config.model || 'claude-3-sonnet-20240229';
+    this.model = config.model || 'claude-sonnet-4-20250514';
     this.baseUrl = config.baseUrl || 'https://api.anthropic.com';
     this.maxTokens = config.maxTokens ?? 2000;
     this.temperature = config.temperature ?? 0.3;
@@ -26,14 +26,10 @@ class AnthropicProvider extends BaseModel {
   }
 
   async chat(messages, options = {}) {
-    if (!this.initialized) {
-      await this.init();
-    }
+    if (!this.initialized) await this.init();
 
-    // 转换消息格式：提取 system 消息
     let systemPrompt = '';
     const userMessages = [];
-
     for (const msg of messages) {
       if (msg.role === 'system') {
         systemPrompt = msg.content;
@@ -42,7 +38,7 @@ class AnthropicProvider extends BaseModel {
       }
     }
 
-    const response = await fetch(`${this.baseUrl}/v1/messages`, {
+    const response = await this.fetchWithRetry(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -74,19 +70,30 @@ class AnthropicProvider extends BaseModel {
   async isAvailable() {
     try {
       if (!this.apiKey) return false;
-      // Anthropic 没有 models 端点，直接尝试调用
-      return true;
+      // Anthropic has no /models endpoint; make a lightweight messages call to verify
+      const response = await this.fetchWithRetry(`${this.baseUrl}/v1/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: this.model,
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'hi' }]
+        }),
+        retries: 1,
+        timeout: 10000
+      });
+      return response.ok || response.status === 400; // 400 = bad request but API is reachable
     } catch {
       return false;
     }
   }
 
   getInfo() {
-    return {
-      ...super.getInfo(),
-      model: this.model,
-      baseUrl: this.baseUrl
-    };
+    return { ...super.getInfo(), model: this.model, baseUrl: this.baseUrl };
   }
 }
 

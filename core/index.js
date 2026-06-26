@@ -22,6 +22,8 @@ class FlowMind {
     this.skills = new SkillLoader(this.config, this.learning, this.components, this.honor);
     this.ai = new ModelManager(options.ai || {});
     this.initialized = false;
+    this.conversationHistory = [];
+    this.maxHistoryLength = options.maxHistoryLength || 50;
   }
 
   /**
@@ -50,6 +52,19 @@ class FlowMind {
   }
 
   /**
+   * Process a user request with streaming support
+   * Yields progress updates as an async generator
+   */
+  async *processStream(input, context = {}) {
+    yield { type: 'start', input, timestamp: new Date().toISOString() };
+
+    const result = await this.process(input, context);
+
+    yield { type: 'progress', message: `Skill: ${result.metadata?.skill || 'unknown'}`, timestamp: new Date().toISOString() };
+    yield { type: 'result', data: result, timestamp: new Date().toISOString() };
+  }
+
+  /**
    * Process a user request
    */
   async process(input, context = {}) {
@@ -57,20 +72,31 @@ class FlowMind {
       await this.init();
     }
 
+    if (!input || typeof input !== 'string') {
+      return this.formatError('Invalid input: expected a non-empty string', input);
+    }
+
     const startTime = Date.now();
+
+    // Build context with conversation history
+    const enhancedContext = {
+      ...context,
+      conversationHistory: this.conversationHistory.slice(-10),
+      sessionId: context.sessionId || 'default'
+    };
 
     eventBus.emit('process:start', { input, timestamp: new Date().toISOString() });
 
     try {
       // 1. AI Intent Understanding (if available)
-      const intent = await this.ai.understandIntent(input, context);
+      const intent = await this.ai.understandIntent(input, enhancedContext);
 
       // 2. Check for learning patterns (corrections, feedback)
       // Use AI to analyze learning feedback if available
-      const aiLearningResult = await this.ai.analyzeLearningFeedback(input, context);
+      const aiLearningResult = await this.ai.analyzeLearningFeedback(input, enhancedContext);
       const learningResult = aiLearningResult?.isLearning
         ? aiLearningResult
-        : await this.learning.detectLearning(input, context);
+        : await this.learning.detectLearning(input, enhancedContext);
       if (learningResult) {
         return this.formatLearningResponse(learningResult);
       }
@@ -106,12 +132,12 @@ class FlowMind {
       const extractedParams = await this.ai.extractParameters(input, skill.name);
 
       // 6. Execute with learning applied
-      const enhancedContext = {
-        ...context,
+      const executeContext = {
+        ...enhancedContext,
         ...extractedParams,
         intent: intent
       };
-      const result = await this.executeWithLearning(skill, input, enhancedContext);
+      const result = await this.executeWithLearning(skill, input, executeContext);
 
       // 7. Generate AI summary (if available)
       const summary = await this.ai.summarizeResult(result, {
@@ -127,6 +153,17 @@ class FlowMind {
         intent: intent,
         aiEnhanced: !!summary
       });
+
+      // Save to conversation history
+      this.conversationHistory.push({
+        input,
+        output: formatted,
+        skill: skill.name,
+        timestamp: new Date().toISOString()
+      });
+      if (this.conversationHistory.length > this.maxHistoryLength) {
+        this.conversationHistory.shift();
+      }
 
       eventBus.emit('process:complete', {
         input,
@@ -319,6 +356,146 @@ class FlowMind {
    */
   async importLearnings(data) {
     return this.learning.import(data);
+  }
+
+  /**
+   * Get conversation history
+   */
+  getConversationHistory(sessionId) {
+    if (sessionId) {
+      return this.conversationHistory.filter(h => h.sessionId === sessionId);
+    }
+    return this.conversationHistory;
+  }
+
+  /**
+   * Clear conversation history
+   */
+  clearHistory() {
+    this.conversationHistory = [];
+  }
+
+  /**
+   * Graceful shutdown - flush pending data and clean up
+   */
+  async shutdown() {
+    eventBus.emit('shutdown:start', { timestamp: new Date().toISOString() });
+
+    // Save learning data
+    try {
+      if (this.learning?.skillBindings) {
+        await this.learning.saveSkillBindings();
+      }
+      if (this.learning?.stats) {
+        await this.learning.saveStats();
+      }
+    } catch (e) {
+      console.warn('Failed to save learning data during shutdown:', e.message);
+    }
+
+    // Save honor data
+    try {
+      if (this.honor?.save) {
+        await this.honor.save();
+      }
+    } catch (e) {
+      console.warn('Failed to save honor data during shutdown:', e.message);
+    }
+
+    // Clear conversation history
+    this.conversationHistory = [];
+
+    this.initialized = false;
+    eventBus.emit('shutdown:complete', { timestamp: new Date().toISOString() });
+  }
+
+  /**
+   * Run system health checks (doctor)
+   */
+  async doctor() {
+    const checks = [];
+
+    // 1. Config check
+    try {
+      await this.config.load();
+      checks.push({ name: 'Configuration', status: 'ok', message: 'Config loaded successfully' });
+    } catch (e) {
+      checks.push({ name: 'Configuration', status: 'error', message: e.message });
+    }
+
+    // 2. Skills check
+    try {
+      const skills = this.skills.list();
+      checks.push({ name: 'Skills', status: 'ok', message: `${skills.length} skill(s) loaded` });
+    } catch (e) {
+      checks.push({ name: 'Skills', status: 'error', message: e.message });
+    }
+
+    // 3. Learning engine check
+    try {
+      const stats = await this.learning.getStats();
+      checks.push({ name: 'Learning Engine', status: 'ok', message: `${stats.totalRecords || 0} records` });
+    } catch (e) {
+      checks.push({ name: 'Learning Engine', status: 'error', message: e.message });
+    }
+
+    // 4. Honor engine check
+    try {
+      const honor = this.honor.getData();
+      checks.push({ name: 'Honor Engine', status: 'ok', message: `Level ${honor.level}, ${honor.points} pts` });
+    } catch (e) {
+      checks.push({ name: 'Honor Engine', status: 'error', message: e.message });
+    }
+
+    // 5. AI providers check
+    try {
+      const aiStatus = this.ai.getStatus();
+      const providerCount = Object.keys(aiStatus.providers || {}).length;
+      const activeCount = Object.values(aiStatus.providers || {}).filter(p => p.initialized).length;
+      checks.push({ name: 'AI Providers', status: activeCount > 0 ? 'ok' : 'warning', message: `${activeCount}/${providerCount} active` });
+    } catch (e) {
+      checks.push({ name: 'AI Providers', status: 'warning', message: e.message });
+    }
+
+    // 6. Components check
+    try {
+      const compStatus = this.components.getStatus();
+      const compCount = Object.keys(compStatus).length;
+      checks.push({ name: 'Components', status: 'ok', message: `${compCount} registered` });
+    } catch (e) {
+      checks.push({ name: 'Components', status: 'warning', message: e.message });
+    }
+
+    // 7. Node.js version check
+    const nodeVersion = process.version;
+    const major = parseInt(nodeVersion.slice(1));
+    checks.push({
+      name: 'Node.js',
+      status: major >= 18 ? 'ok' : 'warning',
+      message: `${nodeVersion} ${major < 18 ? '(recommend >= 18)' : ''}`
+    });
+
+    // 8. Disk space for learning data
+    try {
+      const fs = require('fs-extra');
+      const learningPath = this.learning.expandPath(this.learning.learningPath);
+      if (await fs.pathExists(learningPath)) {
+        checks.push({ name: 'Learning Storage', status: 'ok', message: learningPath });
+      } else {
+        checks.push({ name: 'Learning Storage', status: 'warning', message: 'Directory not yet created' });
+      }
+    } catch (e) {
+      checks.push({ name: 'Learning Storage', status: 'warning', message: e.message });
+    }
+
+    const errors = checks.filter(c => c.status === 'error').length;
+    const warnings = checks.filter(c => c.status === 'warning').length;
+
+    return {
+      healthy: errors === 0,
+      checks,
+      summary: { total: checks.length, ok: checks.filter(c => c.status === 'ok').length, warnings, errors }
+    };
   }
 }
 

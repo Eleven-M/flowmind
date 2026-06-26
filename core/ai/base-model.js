@@ -8,48 +8,27 @@ class BaseModel {
     this.name = name;
     this.config = config;
     this.initialized = false;
+    this.requestTimeout = config.requestTimeout || 30000;
+    this.maxRetries = config.maxRetries || 3;
+    this.retryDelay = config.retryDelay || 1000;
   }
 
-  /**
-   * 初始化模型
-   * @returns {Promise<void>}
-   */
   async init() {
     throw new Error('init() must be implemented by subclass');
   }
 
-  /**
-   * 发送聊天请求
-   * @param {Array} messages - 消息数组 [{role, content}]
-   * @param {Object} options - 请求选项
-   * @returns {Promise<string>} 模型响应
-   */
   async chat(messages, options = {}) {
     throw new Error('chat() must be implemented by subclass');
   }
 
-  /**
-   * 发送补全请求
-   * @param {string} prompt - 提示词
-   * @param {Object} options - 请求选项
-   * @returns {Promise<string>} 模型响应
-   */
   async complete(prompt, options = {}) {
     throw new Error('complete() must be implemented by subclass');
   }
 
-  /**
-   * 检查模型是否可用
-   * @returns {Promise<boolean>}
-   */
   async isAvailable() {
     throw new Error('isAvailable() must be implemented by subclass');
   }
 
-  /**
-   * 获取模型信息
-   * @returns {Object}
-   */
   getInfo() {
     return {
       name: this.name,
@@ -58,12 +37,52 @@ class BaseModel {
     };
   }
 
-  /**
-   * 验证配置
-   * @returns {boolean}
-   */
   validateConfig() {
     return true;
+  }
+
+  /**
+   * Fetch with retry, timeout, and exponential backoff
+   */
+  async fetchWithRetry(url, options = {}) {
+    const timeout = options.timeout || this.requestTimeout;
+    const maxRetries = options.retries || this.maxRetries;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeout);
+
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal
+        });
+
+        clearTimeout(timer);
+
+        // Retry on rate limit (429) and server errors (5xx)
+        if (response.status === 429 || response.status >= 500) {
+          if (attempt < maxRetries) {
+            const delay = this.retryDelay * Math.pow(2, attempt);
+            await new Promise(r => setTimeout(r, delay));
+            continue;
+          }
+        }
+
+        return response;
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          if (attempt < maxRetries) continue;
+          throw new Error(`Request timeout after ${timeout}ms`);
+        }
+        if (attempt < maxRetries) {
+          const delay = this.retryDelay * Math.pow(2, attempt);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 }
 

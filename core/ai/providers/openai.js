@@ -8,7 +8,7 @@ class OpenAIProvider extends BaseModel {
   constructor(config = {}) {
     super('openai', config);
     this.apiKey = config.apiKey || process.env.OPENAI_API_KEY;
-    this.model = config.model || 'gpt-4';
+    this.model = config.model || 'gpt-4o';
     this.baseUrl = config.baseUrl || 'https://api.openai.com/v1';
     this.temperature = config.temperature ?? 0.3;
     this.maxTokens = config.maxTokens ?? 2000;
@@ -26,11 +26,9 @@ class OpenAIProvider extends BaseModel {
   }
 
   async chat(messages, options = {}) {
-    if (!this.initialized) {
-      await this.init();
-    }
+    if (!this.initialized) await this.init();
 
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    const response = await this.fetchWithRetry(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -61,8 +59,10 @@ class OpenAIProvider extends BaseModel {
   async isAvailable() {
     try {
       if (!this.apiKey) return false;
-      const response = await fetch(`${this.baseUrl}/models`, {
-        headers: { 'Authorization': `Bearer ${this.apiKey}` }
+      const response = await this.fetchWithRetry(`${this.baseUrl}/models`, {
+        headers: { 'Authorization': `Bearer ${this.apiKey}` },
+        retries: 1,
+        timeout: 10000
       });
       return response.ok;
     } catch {
@@ -71,11 +71,7 @@ class OpenAIProvider extends BaseModel {
   }
 
   getInfo() {
-    return {
-      ...super.getInfo(),
-      model: this.model,
-      baseUrl: this.baseUrl
-    };
+    return { ...super.getInfo(), model: this.model, baseUrl: this.baseUrl };
   }
 }
 

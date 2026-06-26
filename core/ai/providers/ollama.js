@@ -34,7 +34,7 @@ class OllamaProvider extends BaseModel {
     // 转换消息格式为 Ollama 格式
     const prompt = this._convertMessagesToPrompt(messages);
 
-    const response = await fetch(`${this.baseUrl}/api/generate`, {
+    const response = await this.fetchWithRetry(`${this.baseUrl}/api/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -64,7 +64,7 @@ class OllamaProvider extends BaseModel {
       await this.init();
     }
 
-    const response = await fetch(`${this.baseUrl}/api/generate`, {
+    const response = await this.fetchWithRetry(`${this.baseUrl}/api/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -91,9 +91,10 @@ class OllamaProvider extends BaseModel {
 
   async isAvailable() {
     try {
-      const response = await fetch(`${this.baseUrl}/api/tags`, {
+      const response = await this.fetchWithRetry(`${this.baseUrl}/api/tags`, {
         method: 'GET',
-        signal: AbortSignal.timeout(5000) // 5秒超时
+        retries: 1,
+        timeout: 5000
       });
       return response.ok;
     } catch {

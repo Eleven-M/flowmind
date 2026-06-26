@@ -26,7 +26,7 @@ class ERNIEProvider extends BaseModel {
   }
 
   async refreshAccessToken() {
-    const response = await fetch(
+    const response = await this.fetchWithRetry(
       `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${this.apiKey}&client_secret=${this.secretKey}`,
       { method: 'POST' }
     );
@@ -51,7 +51,7 @@ class ERNIEProvider extends BaseModel {
     const model = options.model || this.model;
     const endpoint = this.getEndpoint(model);
 
-    const response = await fetch(`${this.baseUrl}${endpoint}?access_token=${this.accessToken}`, {
+    const response = await this.fetchWithRetry(`${this.baseUrl}${endpoint}?access_token=${this.accessToken}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
