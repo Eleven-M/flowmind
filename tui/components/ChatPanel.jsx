@@ -1,7 +1,7 @@
 const React = require('react');
 const { Box, Text } = require('ink');
-const TextInput = require('ink-text-input');
-const Spinner = require('ink-spinner');
+const TextInput = require('ink-text-input').default || require('ink-text-input');
+const Spinner = require('ink-spinner').default || require('ink-spinner');
 
 function ChatPanel({ onSubmit, isProcessing }) {
   const [input, setInput] = React.useState('');
