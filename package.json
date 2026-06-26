@@ -1,6 +1,6 @@
 {
   "name": "flowmind",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "The AI Agent That Learns How You Work - Stop repeating yourself, FlowMind learns your workflows and applies them automatically.",
   "main": "core/index.js",
   "bin": {
