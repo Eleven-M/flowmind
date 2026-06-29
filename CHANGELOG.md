@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.5] - 2026-06-29
+
+### Fixed
+- Skill routing now prefers explicit skill execution before treating input as generic learning feedback
+- `learning-feedback` now receives the active FlowMind runtime and current skill context for proper feedback injection
+- `resource-bind list` now reads registry data through a stable `getAll()` API instead of a broken internal path
+- `log-audit` now executes real adapter log queries when an adapter is configured, instead of returning a query plan only
+- TUI focus handling now keeps sidebar/chat input behavior and status display aligned
+
+### Added
+- Core regression tests for routing order, learning bindings, registry listing, and executable skill behavior
+
 ## [1.3.0] - 2026-06-26
 
 ### Fixed

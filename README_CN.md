@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Version](https://img.shields.io/badge/version-1.4.4-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.4.5-blue)](CHANGELOG.md)
 
 [English](README.md) | [快速开始](#-快速开始) | [工作原理](#-工作原理) | [使用场景](#-使用场景) | [架构](#-架构)
 
