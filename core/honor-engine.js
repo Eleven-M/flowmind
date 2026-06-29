@@ -26,13 +26,17 @@ const DRAGON_LEVELS = [
 class HonorEngine {
   constructor(config) {
     this.config = config;
-    this.honorPath = path.join(
-      config.get('storagePath') || path.join(process.env.HOME || process.env.USERPROFILE, '.flowmind'),
-      'honor.json'
-    );
+    this.honorPath = null;
     this.skillsPath = config.get('skills.path', path.join(__dirname, '..', 'skills'));
     this.data = null;
     this.initialized = false;
+  }
+
+  resolveHonorPath() {
+    const storagePath = this.config.get('storagePath')
+      || process.env.FLOWMIND_HOME
+      || path.join(process.env.HOME || process.env.USERPROFILE, '.flowmind');
+    return path.join(storagePath, 'honor.json');
   }
 
   /**
@@ -40,6 +44,8 @@ class HonorEngine {
    */
   async init() {
     try {
+      this.honorPath = this.resolveHonorPath();
+
       if (await fs.pathExists(this.honorPath)) {
         this.data = await fs.readJson(this.honorPath);
       } else {

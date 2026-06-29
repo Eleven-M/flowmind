@@ -32,7 +32,7 @@ class LearningEngine {
   constructor(config, honorEngine = null) {
     this.config = config;
     this.honorEngine = honorEngine;
-    this.learningPath = config.get('learning.storagePath', '~/.flowmind/learning');
+    this.learningPath = null;
     this.writeQueue = new WriteQueue();
     this.records = {};
     this.skillBindings = {};
@@ -44,6 +44,11 @@ class LearningEngine {
    * Initialize learning engine
    */
   async init() {
+    this.learningPath = this.config.get(
+      'learning.storagePath',
+      path.join(process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || '', '.flowmind', 'learning')
+    );
+
     // Ensure directories exist
     await fs.ensureDir(this.expandPath(this.learningPath));
     await fs.ensureDir(path.join(this.expandPath(this.learningPath), 'records'));

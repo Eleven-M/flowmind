@@ -319,6 +319,16 @@ Claude：我来使用 FlowMind 的代码审查技能...
 通过 JSON 输出与 Codex 集成。
 
 ```bash
+# 推荐：使用 Codex 包装命令
+flowmind-codex "查询最近1小时的错误日志"
+flowmind-codex skills
+flowmind-codex skill log-audit
+flowmind-codex doctor
+
+# 默认使用当前工作区的 .flowmind-codex/
+# 也可以自定义目录
+# FLOWMIND_CODEX_HOME=/your/path flowmind-codex skills
+
 # 获取技能列表 (JSON 格式)
 flowmind skills --json
 

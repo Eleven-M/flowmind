@@ -312,7 +312,7 @@ class ConfigManager {
    * Get home directory
    */
   getHomeDir() {
-    return process.env.HOME || process.env.USERPROFILE || os.homedir();
+    return process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || os.homedir();
   }
 
   /**

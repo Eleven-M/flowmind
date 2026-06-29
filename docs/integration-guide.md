@@ -216,7 +216,32 @@ Cline 是 VS Code 的 AI 编程助手，支持 MCP 协议。
 
 Codex 是 OpenAI 的 CLI 工具，通过 JSON 输出集成 FlowMind。
 
-### 方式 1：直接调用
+### 方式 1：使用 `flowmind-codex`（推荐）
+
+安装后直接使用专门的 Codex 包装命令：
+
+```bash
+# 处理请求
+flowmind-codex "查询最近1小时的错误日志"
+
+# 强制指定技能
+flowmind-codex --skill log-audit "查询 traceId abc123 的完整链路"
+
+# 列出技能
+flowmind-codex skills
+
+# 查看单个技能
+flowmind-codex skill log-audit
+
+# 健康检查
+flowmind-codex doctor
+```
+
+这个命令固定输出 JSON，适合 Codex、脚本和 CI 直接消费。
+默认会把配置、缓存和学习数据写到当前工作区的 `.flowmind-codex/`。
+如需改路径，可设置 `FLOWMIND_CODEX_HOME=/your/path`。
+
+### 方式 2：直接调用 `flowmind --json`
 
 ```bash
 # 获取技能列表
@@ -226,7 +251,7 @@ flowmind skills --json
 flowmind process --json "查询日志"
 ```
 
-### 方式 2：创建 Wrapper 脚本
+### 方式 3：创建 Wrapper 脚本
 
 创建 `flowmind-codex.sh`：
 
@@ -241,7 +266,7 @@ RESULT=$(flowmind process --json "$INPUT")
 echo "$RESULT" | jq -r '.data // .message // .error'
 ```
 
-### 方式 3：Python 集成
+### 方式 4：Python 集成
 
 ```python
 import subprocess

@@ -116,9 +116,16 @@ class FlowMind {
 
       // 4. Select skill (AI-assisted if available)
       let skill = null;
+      if (context.skill) {
+        skill = this.skills.get(context.skill);
+        if (!skill) {
+          return this.formatError(`Skill not found: ${context.skill}`, input);
+        }
+      }
+
       const candidates = await this.skills.getCandidates(input, context);
 
-      if (candidates.length > 0) {
+      if (!skill && candidates.length > 0) {
         // Use AI to select skill if available
         const aiSelection = await this.ai.selectSkill(input, candidates);
         if (aiSelection && aiSelection.selectedSkill) {

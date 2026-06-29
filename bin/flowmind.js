@@ -15,21 +15,43 @@ const { execSync } = require('child_process');
 const FlowMind = require('../core');
 const HonorEngine = require('../core/honor-engine');
 
+/**
+ * Restore terminal to sane state (cancel raw mode, show cursor, reset colors)
+ */
+function restoreTerminal() {
+  try {
+    if (process.stdin.isTTY && typeof process.stdin.setRawMode === 'function') {
+      process.stdin.setRawMode(false);
+    }
+  } catch (e) { /* ignore */ }
+  if (process.stdout.isTTY) {
+    // Show cursor, reset colors, clear scroll region
+    process.stdout.write('\x1b[?25h\x1b[0m\x1b[r');
+  }
+}
+
 // Global error handlers to prevent silent CLI crashes
 process.on('uncaughtException', (err) => {
   console.error(chalk.red('\nUncaught Exception:'), err.message);
-  if (process.stdin.isTTY && process.stdin.isRaw) {
-    process.stdin.setRawMode(false);
-  }
+  restoreTerminal();
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
   console.error(chalk.red('\nUnhandled Rejection:'), reason?.message || reason);
-  if (process.stdin.isTTY && process.stdin.isRaw) {
-    process.stdin.setRawMode(false);
-  }
+  restoreTerminal();
   process.exit(1);
+});
+
+// Handle SIGINT (Ctrl+C) to restore terminal state
+process.on('SIGINT', () => {
+  restoreTerminal();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  restoreTerminal();
+  process.exit(0);
 });
 
 // Package info
@@ -483,6 +505,7 @@ program
   .alias('p')
   .description('Process a request')
   .argument('[input]', 'Input to process')
+  .option('-j, --json', 'Output as JSON (for tool integration)')
   .option('-s, --skill <skill>', 'Use specific skill')
   .option('-v, --verbose', 'Verbose output')
   .action(async (input, options) => {
@@ -494,18 +517,38 @@ program
         await runInteractiveMode(fm);
       } else {
         // Single command mode
-        const spinner = ora('Processing...').start();
+        const spinner = options.json ? null : ora('Processing...').start();
 
         const result = await fm.process(input, {
           skill: options.skill,
           verbose: options.verbose
         });
 
-        spinner.stop();
-        displayResult(result);
+        if (spinner) {
+          spinner.stop();
+        }
+
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+          if (result.type === 'error') {
+            process.exitCode = 1;
+          }
+        } else {
+          displayResult(result);
+        }
       }
     } catch (error) {
-      console.error(chalk.red('Error:'), error.message);
+      if (options.json) {
+        console.log(JSON.stringify({
+          type: 'error',
+          message: error.message
+        }, null, 2));
+        process.exitCode = 1;
+      } else {
+        console.error(chalk.red('Error:'), error.message);
+      }
+    } finally {
+      restoreTerminal();
     }
   });
 
@@ -889,35 +932,47 @@ async function runInteractiveMode(fm) {
   showBanner();
   console.log(chalk.cyan('Interactive mode started. Type "exit" to quit.\n'));
 
-  while (true) {
-    const { input } = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'input',
-        message: chalk.green('You:'),
-        prefix: ''
+  try {
+    while (true) {
+      let input;
+      try {
+        const answers = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'input',
+            message: chalk.green('You:'),
+            prefix: ''
+          }
+        ]);
+        input = answers.input;
+      } catch (promptErr) {
+        // inquirer throws on SIGINT (Ctrl+C)
+        console.log(chalk.cyan('\nGoodbye! 👋\n'));
+        break;
       }
-    ]);
 
-    if (input.toLowerCase() === 'exit' || input.toLowerCase() === 'quit') {
-      console.log(chalk.cyan('\nGoodbye! FlowMind will remember your preferences. 👋\n'));
-      break;
+      if (input.toLowerCase() === 'exit' || input.toLowerCase() === 'quit') {
+        console.log(chalk.cyan('\nGoodbye! FlowMind will remember your preferences. 👋\n'));
+        break;
+      }
+
+      if (!input.trim()) continue;
+
+      const spinner = ora('Thinking...').start();
+
+      try {
+        const result = await fm.process(input);
+        spinner.stop();
+        displayResult(result);
+      } catch (error) {
+        spinner.stop();
+        console.error(chalk.red('Error:'), error.message);
+      }
+
+      console.log(''); // Empty line for spacing
     }
-
-    if (!input.trim()) continue;
-
-    const spinner = ora('Thinking...').start();
-
-    try {
-      const result = await fm.process(input);
-      spinner.stop();
-      displayResult(result);
-    } catch (error) {
-      spinner.stop();
-      console.error(chalk.red('Error:'), error.message);
-    }
-
-    console.log(''); // Empty line for spacing
+  } finally {
+    restoreTerminal();
   }
 }
 
@@ -1351,6 +1406,7 @@ program
   .description('Launch enhanced TUI with split panels, skill browser, and dragon display')
   .action(async () => {
     let stdinWrapper = null;
+    let stdinForwarder = null;
     try {
       // Register .jsx extension for CJS
       require('module')._extensions['.jsx'] = require('module')._extensions['.js'];
@@ -1378,11 +1434,18 @@ program
         }
         return stdinWrapper;
       };
-      // Forward real stdin data to the wrapper
+      // Forward real stdin data to the wrapper (store reference for cleanup)
       if (realStdin.readable) {
-        realStdin.on('data', (chunk) => {
-          if (!stdinWrapper.destroyed) stdinWrapper.write(chunk);
-        });
+        stdinForwarder = (chunk) => {
+          if (!stdinWrapper.destroyed) {
+            try {
+              stdinWrapper.write(chunk);
+            } catch (e) {
+              // Ignore write-after-destroy errors
+            }
+          }
+        };
+        realStdin.on('data', stdinForwarder);
       }
 
       const { unmount, waitUntilExit } = render(
@@ -1397,9 +1460,14 @@ program
         console.log(chalk.yellow('Try running: npm install ink@3 react ink-text-input ink-spinner'));
       }
     } finally {
+      // Clean up stdin listener to prevent leak
+      if (stdinForwarder) {
+        process.stdin.removeListener('data', stdinForwarder);
+      }
       if (stdinWrapper && !stdinWrapper.destroyed) {
         stdinWrapper.destroy();
       }
+      restoreTerminal();
     }
   });
 
@@ -1409,6 +1477,7 @@ program
   .description('Launch real-time monitoring dashboard for MCP activity and events')
   .action(async () => {
     let stdinWrapper = null;
+    let stdinForwarder = null;
     try {
       // Register .jsx extension for CJS
       require('module')._extensions['.jsx'] = require('module')._extensions['.js'];
@@ -1437,9 +1506,14 @@ program
         return stdinWrapper;
       };
       if (realStdin.readable) {
-        realStdin.on('data', (chunk) => {
-          if (!stdinWrapper.destroyed) stdinWrapper.write(chunk);
-        });
+        stdinForwarder = (chunk) => {
+          if (!stdinWrapper.destroyed) {
+            try {
+              stdinWrapper.write(chunk);
+            } catch (e) { /* ignore write-after-destroy */ }
+          }
+        };
+        realStdin.on('data', stdinForwarder);
       }
 
       const { unmount, waitUntilExit } = render(
@@ -1454,9 +1528,13 @@ program
         console.log(chalk.yellow('Try running: npm install ink@3 react'));
       }
     } finally {
+      if (stdinForwarder) {
+        process.stdin.removeListener('data', stdinForwarder);
+      }
       if (stdinWrapper && !stdinWrapper.destroyed) {
         stdinWrapper.destroy();
       }
+      restoreTerminal();
     }
   });
 
@@ -1592,6 +1670,8 @@ if (!process.argv.slice(2).length) {
       await runInteractiveMode(fm);
     } catch (error) {
       console.error(chalk.red('Error:'), error.message);
+    } finally {
+      restoreTerminal();
     }
   })();
 }
