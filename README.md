@@ -4,11 +4,11 @@
 
 ### **The AI Agent That Learns How You Work**
 
-*Stop repeating yourself. FlowMind learns your workflows and applies them automatically.*
+*An adaptive memory and workflow layer for MCP-based developer tools.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Version](https://img.shields.io/badge/version-1.3.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.4.4-blue)](CHANGELOG.md)
 
 [中文](README_CN.md) | [Quick Start](#-quick-start) | [How It Works](#-how-it-works) | [Use Cases](#-use-cases) | [Architecture](#-architecture)
 
@@ -16,100 +16,68 @@
 
 ---
 
-## 🎯 The Problem
+## One Core Value
 
-Whether you're a developer, architect, product manager, or tech lead, you face these challenges:
+FlowMind helps you **teach a developer workflow once and reuse it later**.
 
-### 1. Repetitive Labor
-```
-❌ Same instructions every single time:
-"Format output as table..."
-"Use sequential list..."
-"Check errors first then..."
-"Connect using source_id..."
-```
+Today, the most reliable path in this repository is:
 
-### 2. Scattered Tools
-```
-❌ Constantly switching between platforms:
-SLS for logs → RDS for data → Code repo → YApi for APIs → Yuque for docs
-```
+1. Route a request to a skill
+2. Execute that skill through a configured adapter or MCP-compatible provider
+3. Capture explicit user feedback
+4. Re-apply that preference on the next similar run
 
-### 3. Lost Experience
-```
-❌ Valuable experience cannot be preserved:
-Architect's design thinking → Lost with project end
-Debugging paths → Have to摸索 again next time
-Best practices → Cannot be reused or传承
-```
+If you want one sentence:
 
-### 4. Low Efficiency
-```
-❌ Repetitive waiting and inefficient operations:
-Configure database connection every time
-Enter complete conditions for every log query
-Manually execute multiple steps for each deployment
-```
+> FlowMind is a memory layer for repetitive MCP-based developer operations.
 
----
+## A Runnable Example
 
-## 💡 The Solution
+```bash
+# 1. Install
+npm install -g flowmind
 
-**FlowMind learns once, applies forever.**
+# 2. Inspect available skills
+flowmind skills --json
 
-### Core Philosophy
+# 3. Run a real workflow through the log-audit skill
+flowmind process --skill log-audit "查询 traceId abc123 的日志"
 
-```
-✅ First time: You teach FlowMind
-✅ Every time after: FlowMind remembers
-✅ Smarter with use: AI self-evolution
+# 4. Give explicit feedback
+flowmind "下次用表格格式"
+
+# 5. Programmatic / Codex-friendly access
+flowmind-codex --skill log-audit "查询 traceId abc123 的日志"
 ```
 
-### One-Stop Solution
+What you get today:
+- Skill routing
+- MCP/provider-aware execution contracts
+- Explicit feedback capture
+- Local persistence for preferences and learning
 
-```
-Code Locate → Data Verify → Problem Analyze → One-Click Fix → Auto Deploy → Archive
-    ↓              ↓              ↓               ↓              ↓            ↓
-Local+MCP      RDS Read      SLS Analysis    Code Modify    Pipeline     OpenSpec+Yuque
-```
+What this project is not yet:
+- A full autonomous coding agent
+- A complete SSH/remote code execution platform
+- A one-click deploy system for every workflow
 
-### Smarter with Every Use
-
-- 🧠 **Learning Accumulation** - Every use accumulates experience, understands your code and thinking better
-- 🔄 **Scene Coordination** - Skills auto-coordinate across different scenarios, forming complete workflows
-- 💰 **Token Optimization** - Reduce token consumption through mapping files, lower AI costs
-- ⏱️ **Efficiency Boost** - Reduce repetitive waiting, 10x efficiency through automation
-- 🎓 **Experience Retention** - Architect and senior developer design thinking, permanently preserved
-
----
-
-## 🚀 Quick Start
-
-### Installation
+## Quick Start
 
 ```bash
 npm install -g flowmind
-```
-
-### Initialize
-
-```bash
 flowmind init
+flowmind skills --json
+flowmind process --skill log-audit "查询 traceId abc123 的日志"
 ```
 
-> One-time configuration, permanent effect. Configure resource connections, learning preferences, output formats - no need to repeat setup.
-
-### Start Using
+If you are integrating with Codex or scripts:
 
 ```bash
-# First time - teach FlowMind your preference
-flowmind "查询 traceId 日志，用顺序列表格式"
-FlowMind: [Executes and learns your preference]
-
-# Next time - FlowMind remembers!
-flowmind "查询 traceId abc123 的日志"
-FlowMind: [Automatically uses sequential list format] ✓
+flowmind-codex skills
+flowmind-codex --skill log-audit "查询 traceId abc123 的日志"
 ```
+
+FlowMind stores learning data locally and uses that state to apply explicit feedback on future runs.
 
 ---
 

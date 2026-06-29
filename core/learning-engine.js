@@ -292,7 +292,7 @@ class LearningEngine {
    * Get learning rules for a skill
    */
   async getSkillLearnings(skillName) {
-    const bindings = this.skillBindings[skillName] || { records: [], rules: [] };
+    const bindings = this.skillBindings.bindings?.[skillName] || { records: [], rules: [] };
     return bindings.rules || [];
   }
 
@@ -377,15 +377,17 @@ class LearningEngine {
    * Update skill bindings
    */
   async updateSkillBindings(record) {
-    if (!this.skillBindings[record.skill]) {
-      this.skillBindings[record.skill] = {
+    this.skillBindings.bindings = this.skillBindings.bindings || {};
+
+    if (!this.skillBindings.bindings[record.skill]) {
+      this.skillBindings.bindings[record.skill] = {
         learningCount: 0,
         records: [],
         rules: []
       };
     }
 
-    const binding = this.skillBindings[record.skill];
+    const binding = this.skillBindings.bindings[record.skill];
     binding.learningCount++;
     binding.lastLearning = record.timestamp;
     binding.records.push({
@@ -407,6 +409,7 @@ class LearningEngine {
 
     if (await fs.pathExists(bindingsPath)) {
       this.skillBindings = await fs.readJson(bindingsPath);
+      this.skillBindings.bindings = this.skillBindings.bindings || {};
     } else {
       this.skillBindings = { version: '1.0', bindings: {} };
     }

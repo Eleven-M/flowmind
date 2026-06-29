@@ -24,34 +24,23 @@ module.exports = {
       };
     }
 
-    // If we have a log service, format the query for MCP tools
-    if (params.traceId) {
-      return {
-        type: 'result',
-        skill: 'log-audit',
-        message: `Trace query for: ${params.traceId}`,
-        data: {
-          action: 'trace',
-          traceId: params.traceId,
-          query: `* and "${params.traceId}"`,
-          timeRange: params.timeRange || 'last 1 hour',
-          endpoint: params.endpoint || 'cn-shenzhen.log.aliyuncs.com'
-        },
-        input,
-        timestamp: new Date().toISOString()
-      };
-    }
+    const queryInput = buildLogQueryInput(params);
+    const queryParams = typeof logService.buildQueryParams === 'function'
+      ? logService.buildQueryParams(queryInput)
+      : queryInput;
+    const execution = await logService.queryLogs(queryParams);
 
     return {
       type: 'result',
       skill: 'log-audit',
-      message: `Log query: ${params.service || 'all services'}, ${params.level || 'all levels'}, ${params.timeRange || 'last 1 hour'}`,
+      message: params.traceId
+        ? `Executed trace query for: ${params.traceId}`
+        : `Executed log query: ${params.service || 'all services'}, ${params.level || 'all levels'}, ${params.timeRange || 'last 1 hour'}`,
       data: {
-        action: 'query',
-        query: buildSLSQuery(params),
-        timeRange: params.timeRange || 'last 1 hour',
-        endpoint: params.endpoint || 'cn-shenzhen.log.aliyuncs.com',
-        limit: params.limit || 100
+        action: params.traceId ? 'trace' : 'query',
+        provider: logService.providerName,
+        queryParams,
+        execution
       },
       input,
       timestamp: new Date().toISOString()
@@ -85,4 +74,16 @@ function buildSLSQuery(params) {
   if (params.level) parts.push(`level: ${params.level}`);
   if (params.keyword) parts.push(`"${params.keyword}"`);
   return parts.length > 0 ? parts.join(' and ') : '*';
+}
+
+function buildLogQueryInput(params) {
+  return {
+    project: params.project,
+    logstore: params.logstore,
+    env: params.env,
+    query: params.traceId ? `* and "${params.traceId}"` : buildSLSQuery(params),
+    from: params.from,
+    to: params.to,
+    line: params.limit || 100
+  };
 }

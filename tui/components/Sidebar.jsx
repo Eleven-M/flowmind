@@ -2,7 +2,7 @@ const React = require('react');
 const { Box, Text, useInput } = require('ink');
 const DragonTotem = require('./DragonTotem.jsx');
 
-function Sidebar({ flowmind, width, onSkillSelect }) {
+function Sidebar({ flowmind, width, onSkillSelect, focused }) {
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const [skills, setSkills] = React.useState([]);
   const [honorData, setHonorData] = React.useState({ points: 0, level: 0, stats: {} });
@@ -24,6 +24,7 @@ function Sidebar({ flowmind, width, onSkillSelect }) {
   }, [flowmind]);
 
   useInput((input, key) => {
+    if (!focused) return; // Ignore input when sidebar is not focused
     if (key.upArrow) setSelectedIndex(prev => Math.max(0, prev - 1));
     else if (key.downArrow) setSelectedIndex(prev => Math.min(skills.length - 1, prev + 1));
     else if (key.return && skills[selectedIndex] && onSkillSelect) onSkillSelect(skills[selectedIndex]);
@@ -35,7 +36,8 @@ function Sidebar({ flowmind, width, onSkillSelect }) {
   const progressBar = '\u2588'.repeat(filled) + '\u2591'.repeat(barWidth - filled);
 
   return (
-    React.createElement(Box, { flexDirection: 'column', width: width, borderStyle: 'single', borderColor: 'cyan', paddingX: 1 },
+    React.createElement(Box, { flexDirection: 'column', width: width, borderStyle: 'single', borderColor: focused ? 'cyan' : 'gray', paddingX: 1 },
+      React.createElement(Text, { color: focused ? 'cyan' : 'gray' }, focused ? 'Sidebar [Focused]' : 'Sidebar'),
       React.createElement(DragonTotem, { honorData: honorData, compact: true }),
       React.createElement(Box, { flexDirection: 'column', marginTop: 1 },
         React.createElement(Text, { bold: true, color: 'cyan' }, 'Progress'),
@@ -51,11 +53,15 @@ function Sidebar({ flowmind, width, onSkillSelect }) {
             const category = skill.category || 'general';
             const prefix = isSelected ? '\u25B6 ' : '  ';
             return React.createElement(Text, { key: skill.name },
-              React.createElement(Text, { color: isSelected ? 'green' : 'white' }, prefix + skill.name),
+              React.createElement(Text, { color: isSelected ? (focused ? 'green' : 'yellow') : 'white' }, prefix + skill.name),
               React.createElement(Text, { color: 'gray' }, ' [' + category + ']')
             );
           })
         )
+      ),
+      React.createElement(Box, { flexDirection: 'column', marginTop: 1 },
+        React.createElement(Text, { color: 'gray' }, 'Tab: switch focus'),
+        React.createElement(Text, { color: 'gray' }, 'Enter: inspect skill')
       ),
       React.createElement(Box, { flexDirection: 'column', marginTop: 1 },
         React.createElement(Text, { bold: true, color: 'cyan' }, 'Stats'),

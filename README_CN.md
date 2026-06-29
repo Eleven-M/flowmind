@@ -4,11 +4,11 @@
 
 ### **学习你工作方式的 AI 智能体**
 
-*不再重复自己。FlowMind 学习你的工作流程并自动应用。*
+*一个面向 MCP 开发工作流的可学习记忆层。*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.4.4-blue)](CHANGELOG.md)
 
 [English](README.md) | [快速开始](#-快速开始) | [工作原理](#-工作原理) | [使用场景](#-使用场景) | [架构](#-架构)
 
@@ -16,106 +16,68 @@
 
 ---
 
-## 🎯 问题所在
+## 一个核心价值
 
-开发者在日常工作中面临诸多痛点：
+FlowMind 的目标不是“什么都做”，而是把**重复出现的开发工作流记住并复用**。
 
-### 1. 重复劳动
-```
-❌ 每次都要重复相同的指令：
-"输出格式用表格..."
-"用顺序列表..."
-"先检查错误再..."
-"用 source_id 连接..."
-```
+当前仓库里最可靠、最能跑通的一条主链路是：
 
-### 2. 工具分散
-```
-❌ 在多个平台间频繁切换：
-SLS 查日志 → RDS 查数据 → 代码库定位 → YApi 查接口 → 语雀写文档
-```
+1. 把请求路由到合适的 skill
+2. 通过已配置的 adapter / MCP 兼容提供者执行 skill
+3. 捕获用户的显式反馈
+4. 在下次相似请求里复用这份偏好
 
-### 3. 经验流失
-```
-❌ 宝贵的经验无法沉淀：
-架构师的设计思路 → 随项目结束而丢失
-调试的排查路径 → 下次又要重新摸索
-最佳实践 → 无法复用和传承
-```
+一句话概括：
 
-### 4. 效率低下
-```
-❌ 重复等待和低效操作：
-每次连接数据库都要配置
-每次查日志都要输完整条件
-每次部署都要手动执行多个步骤
-```
+> FlowMind 是一个给 MCP 开发工具使用的记忆层。
 
----
+## 一个可跑通的例子
 
-## 💡 解决方案
+```bash
+# 1. 安装
+npm install -g flowmind
 
-**FlowMind 学习一次，永久应用。**
+# 2. 看看有哪些技能
+flowmind skills --json
 
-### 核心理念
+# 3. 走真正的日志技能链路
+flowmind process --skill log-audit "查询 traceId abc123 的日志"
 
-```
-✅ 第一次：你教 FlowMind
-✅ 之后每次：FlowMind 自动记住
-✅ 越用越懂你：AI 自我进化
+# 4. 给出显式反馈
+flowmind "下次用表格格式"
+
+# 5. 如果你在 Codex / 脚本里集成
+flowmind-codex --skill log-audit "查询 traceId abc123 的日志"
 ```
 
-### 一站式解决
+现在已经具备的能力：
+- skill 路由
+- 面向 MCP/provider 的执行协议
+- 显式反馈学习
+- 本地持久化学习记录和偏好
 
-```
-代码定位 → 数据验证 → 问题分析 → 一键修复 → 自动部署 → 归档记录
-   ↓           ↓           ↓           ↓           ↓           ↓
-本地+MCP    RDS读取    SLS分析    代码修改    流水线执行   OpenSpec+语雀
-```
+当前还不应该过度承诺的部分：
+- 不是完整的自治编码 Agent
+- 不是通用 SSH 远程执行平台
+- 不是所有工作流都已实现一键自动化
 
-### 越用越智能
-
-- 🧠 **学习积累** - 每次使用都在积累经验，越用越懂你的代码和思路
-- 🔄 **场景联动** - 不同场景下的技能自动配合，形成完整工作流
-- 💰 **Token 优化** - 通过映射文件减少 token 消耗，降低 AI 调用成本
-- ⏱️ **效率提升** - 减少重复等待，自动化处理提升 10 倍效率
-- 🎓 **经验沉淀** - 架构师和高级开发者的设计思路，永久保留复用
-
----
-
-## 🚀 快速开始
-
-### 安装
+## 快速开始
 
 ```bash
 npm install -g flowmind
-```
-
-### 初始化
-
-```bash
-# 基础初始化
 flowmind init
-
-# 带 AI 模型初始化 (推荐)
-flowmind init --ai openai
-flowmind init --ai anthropic
-flowmind init --ai ollama
+flowmind skills --json
+flowmind process --skill log-audit "查询 traceId abc123 的日志"
 ```
 
-> 一次配置，永久生效。配置资源连接、学习偏好、输出格式，无需每次重复设置。
-
-### 开始使用
+如果你要集成到 Codex 或脚本：
 
 ```bash
-# 第一次 - 教 FlowMind 你的偏好
-flowmind "查询 traceId 日志，用顺序列表格式"
-FlowMind: [执行并学习你的偏好]
-
-# 下次 - FlowMind 自动记住！
-flowmind "查询 traceId abc123 的日志"
-FlowMind: [自动使用顺序列表格式] ✓
+flowmind-codex skills
+flowmind-codex --skill log-audit "查询 traceId abc123 的日志"
 ```
+
+FlowMind 会把学习数据保存在本地，并在后续运行中应用这些显式反馈。
 
 ---
 

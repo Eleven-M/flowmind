@@ -98,48 +98,33 @@ class FlowMind {
       // 1. AI Intent Understanding (if available)
       const intent = await this.ai.understandIntent(input, enhancedContext);
 
-      // 2. Check for learning patterns (corrections, feedback)
-      // Use AI to analyze learning feedback if available
-      const aiLearningResult = await this.ai.analyzeLearningFeedback(input, enhancedContext);
-      const learningResult = aiLearningResult?.isLearning
-        ? aiLearningResult
-        : await this.learning.detectLearning(input, enhancedContext);
-      if (learningResult) {
-        return this.formatLearningResponse(learningResult);
-      }
-
-      // 3. Check scene mappings (with AI intent if available)
-      const sceneMatch = await this.matcher.match(input, intent);
-      if (sceneMatch && sceneMatch.confidence >= 0.7) {
-        return this.executeSceneWorkflow(sceneMatch, input, context);
-      }
-
-      // 4. Select skill (AI-assisted if available)
-      let skill = null;
-      if (context.skill) {
-        skill = this.skills.get(context.skill);
-        if (!skill) {
-          return this.formatError(`Skill not found: ${context.skill}`, input);
-        }
-      }
-
-      const candidates = await this.skills.getCandidates(input, context);
-
-      if (!skill && candidates.length > 0) {
-        // Use AI to select skill if available
-        const aiSelection = await this.ai.selectSkill(input, candidates);
-        if (aiSelection && aiSelection.selectedSkill) {
-          skill = this.skills.get(aiSelection.selectedSkill);
-        }
-      }
-
-      // Fallback to rule-based selection
-      if (!skill) {
-        skill = await this.skills.select(input, context);
-      }
+      // 2. Select skill (AI-assisted if available)
+      const skill = await this.selectSkill(input, context);
 
       if (!skill) {
         return this.formatError('No matching skill found', input);
+      }
+
+      // 3. Capture explicit learning feedback after skill resolution so bindings are accurate.
+      if (this.shouldCaptureLearningInput(input, skill, enhancedContext)) {
+        const learningContext = {
+          ...enhancedContext,
+          flowmind: this,
+          currentSkill: this.resolveLearningTargetSkill(skill, enhancedContext)
+        };
+        const aiLearningResult = await this.ai.analyzeLearningFeedback(input, learningContext);
+        const learningResult = aiLearningResult?.isLearning
+          ? aiLearningResult
+          : await this.learning.detectLearning(input, learningContext);
+        if (learningResult) {
+          return this.formatLearningResponse(learningResult);
+        }
+      }
+
+      // 4. Check scene mappings (with AI intent if available)
+      const sceneMatch = await this.matcher.match(input, intent);
+      if (sceneMatch && sceneMatch.confidence >= 0.7 && !context.skill) {
+        return this.executeSceneWorkflow(sceneMatch, input, enhancedContext);
       }
 
       // 5. Extract parameters using AI (if available)
@@ -149,7 +134,9 @@ class FlowMind {
       const executeContext = {
         ...enhancedContext,
         ...extractedParams,
-        intent: intent
+        intent: intent,
+        flowmind: this,
+        currentSkill: skill.name
       };
       const result = await this.executeWithLearning(skill, input, executeContext);
 
@@ -207,6 +194,8 @@ class FlowMind {
     // Apply learning rules to context
     const enhancedContext = {
       ...context,
+      flowmind: context.flowmind || this,
+      currentSkill: context.currentSkill || skill.name,
       learnings: learnings,
       preferences: await this.learning.getPreferences(skill.name)
     };
@@ -244,7 +233,9 @@ class FlowMind {
       const stepContext = {
         ...context,
         params: { ...step.params, ...params },
-        previousResults: results
+        previousResults: results,
+        flowmind: this,
+        currentSkill: step.skill
       };
 
       const result = await this.executeWithLearning(skill, input, stepContext);
@@ -275,6 +266,61 @@ class FlowMind {
       message: confirmation,
       success: true
     };
+  }
+
+  async selectSkill(input, context = {}) {
+    if (context.skill) {
+      const explicitSkill = this.skills.get(context.skill);
+      if (!explicitSkill) {
+        return null;
+      }
+      return explicitSkill;
+    }
+
+    const candidates = await this.skills.getCandidates(input, context);
+
+    if (candidates.length > 0) {
+      const aiSelection = await this.ai.selectSkill(input, candidates);
+      if (aiSelection && aiSelection.selectedSkill) {
+        const selected = this.skills.get(aiSelection.selectedSkill);
+        if (selected) {
+          return selected;
+        }
+      }
+    }
+
+    return this.skills.select(input, context);
+  }
+
+  shouldCaptureLearningInput(input, skill, context = {}) {
+    if (skill?.name === 'learning-feedback') {
+      return true;
+    }
+
+    const normalized = input.trim();
+    const explicitFeedbackPatterns = [
+      /^(不对|错了|应该是|正确的是|改成|改为|重新处理|重来|下次|以后|记住|别再|不要|别这样)/i,
+      /^(wrong|should be|change to|next time|remember|don't|do not)/i
+    ];
+
+    return explicitFeedbackPatterns.some((pattern) => pattern.test(normalized))
+      && context.conversationHistory?.length > 0;
+  }
+
+  resolveLearningTargetSkill(skill, context = {}) {
+    if (context.currentSkill) {
+      return context.currentSkill;
+    }
+
+    if (skill && skill.name !== 'learning-feedback') {
+      return skill.name;
+    }
+
+    const previousSkill = [...this.conversationHistory]
+      .reverse()
+      .find((entry) => entry.skill && entry.skill !== 'learning-feedback');
+
+    return previousSkill?.skill || 'global';
   }
 
   /**

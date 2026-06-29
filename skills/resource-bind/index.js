@@ -14,12 +14,21 @@ module.exports = {
     const params = parseResourceParams(input);
 
     if (params.action === 'list') {
-      const components = registry ? registry.getAll() : [];
+      const components = registry?.getAll ? registry.getAll() : [];
       return {
         type: 'result',
         skill: 'resource-bind',
         message: `Found ${components.length} configured component(s)`,
-        data: { components: components.map(c => ({ name: c.name, type: c.type, active: c.active })) },
+        data: {
+          components: components.map(c => ({
+            name: c.name,
+            type: c.type,
+            provider: c.provider,
+            active: c.active,
+            initialized: c.initialized,
+            mcpServer: c.mcpServer
+          }))
+        },
         input,
         timestamp: new Date().toISOString()
       };

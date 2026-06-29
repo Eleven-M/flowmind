@@ -114,5 +114,6 @@ dist/
 .flowmind/
 .flowmind-codex/
 .flowmind-codex-test/
+.npm-cache/
 flowmind-learnings.json
 flowmind-scenes.json

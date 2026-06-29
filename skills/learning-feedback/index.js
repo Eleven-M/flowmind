@@ -50,7 +50,7 @@ module.exports = {
         type: 'learning',
         skill: 'learning-feedback',
         learningType: 'preference',
-        message: `Recorded preference: ${preference.type} = ${preference.value}`,
+        message: `Recorded preference: ${preference.preferenceType}`,
         data: record,
         input,
         timestamp: new Date().toISOString()
@@ -65,7 +65,7 @@ module.exports = {
         type: 'learning',
         skill: 'learning-feedback',
         learningType: 'scene_mapping',
-        message: `Recorded scene mapping for skill: ${scene.skill}`,
+        message: 'Recorded scene mapping for future matching',
         data: record,
         input,
         timestamp: new Date().toISOString()

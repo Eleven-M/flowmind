@@ -3,7 +3,7 @@ const { Box, Text } = require('ink');
 
 const LEVEL_NAMES = ['Egg', 'Hatchling', 'Juvenile', 'Adult', 'Elder', 'Ascended'];
 
-function StatusBar({ flowmind }) {
+function StatusBar({ flowmind, focusPanel }) {
   const [aiStatus, setAiStatus] = React.useState(null);
   const [componentStatus, setComponentStatus] = React.useState(null);
   const [honorData, setHonorData] = React.useState(null);
@@ -41,6 +41,11 @@ function StatusBar({ flowmind }) {
         React.createElement(Text, { color: 'gray' }, 'Honor: '),
         React.createElement(Text, { color: 'yellow' }, LEVEL_NAMES[level]),
         React.createElement(Text, { color: 'gray' }, ' (' + points + ' pts)')
+      ),
+      React.createElement(Text, null,
+        React.createElement(Text, { color: 'gray' }, 'Focus: '),
+        React.createElement(Text, { color: focusPanel === 'chat' ? 'green' : 'cyan' }, focusPanel || 'chat'),
+        React.createElement(Text, { color: 'gray' }, ' | Tab switch')
       )
     )
   );

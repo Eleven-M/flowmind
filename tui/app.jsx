@@ -8,6 +8,7 @@ const StatusBar = require('./components/StatusBar.jsx');
 function App({ flowmind }) {
   const [results, setResults] = React.useState([]);
   const [isProcessing, setIsProcessing] = React.useState(false);
+  const [focusPanel, setFocusPanel] = React.useState('chat'); // 'chat' | 'sidebar'
   const mountedRef = React.useRef(true);
   const { exit } = useApp();
 
@@ -15,11 +16,16 @@ function App({ flowmind }) {
     return () => { mountedRef.current = false; };
   }, []);
 
+  // Ctrl+C always exits; Tab switches focus between panels
   useInput((input, key) => {
     if (key.ctrl && input === 'c') exit();
+    if (key.tab) {
+      setFocusPanel(prev => prev === 'chat' ? 'sidebar' : 'chat');
+    }
   });
 
   const handleCommand = React.useCallback(async (input, addResponse) => {
+    if (!mountedRef.current) return;
     setIsProcessing(true);
     try {
       const result = await flowmind.process(input);
@@ -41,6 +47,7 @@ function App({ flowmind }) {
   }, [flowmind]);
 
   const handleSkillSelect = React.useCallback((skill) => {
+    if (!mountedRef.current) return;
     try {
       setResults(prev => [...prev, {
         type: 'result',
@@ -55,13 +62,13 @@ function App({ flowmind }) {
   return (
     React.createElement(Box, { flexDirection: 'column', width: '100%', height: '100%' },
       React.createElement(Box, { flexDirection: 'row', flexGrow: 1 },
-        React.createElement(Sidebar, { flowmind: flowmind, width: 30, onSkillSelect: handleSkillSelect }),
+        React.createElement(Sidebar, { flowmind: flowmind, width: 30, onSkillSelect: handleSkillSelect, focused: focusPanel === 'sidebar' }),
         React.createElement(Box, { flexDirection: 'column', width: '70%', flexGrow: 1 },
-          React.createElement(ChatPanel, { onSubmit: handleCommand, isProcessing: isProcessing, onExit: exit }),
+          React.createElement(ChatPanel, { onSubmit: handleCommand, isProcessing: isProcessing, onExit: exit, focused: focusPanel === 'chat' }),
           React.createElement(ResultPanel, { results: results })
         )
       ),
-      React.createElement(StatusBar, { flowmind: flowmind })
+      React.createElement(StatusBar, { flowmind: flowmind, focusPanel: focusPanel })
     )
   );
 }

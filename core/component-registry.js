@@ -234,6 +234,30 @@ class ComponentRegistry {
   }
 
   /**
+   * Get a flat list of all registered component providers.
+   * @returns {object[]}
+   */
+  getAll() {
+    const result = [];
+
+    for (const type of Object.values(ComponentType)) {
+      const typeAdapters = this.adapters.get(type);
+      if (!typeAdapters) continue;
+
+      for (const [name, adapter] of typeAdapters) {
+        result.push({
+          name,
+          type,
+          active: this.activeProviders.get(type) === name,
+          ...adapter.getStatus()
+        });
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Get the active provider name for a component type.
    * @param {string} componentType
    * @returns {string|null}
