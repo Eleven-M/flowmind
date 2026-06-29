@@ -10,7 +10,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Version](https://img.shields.io/badge/version-1.4.5-blue)](CHANGELOG.md)
 
-[中文](README_CN.md) | [Quick Start](#-quick-start) | [How It Works](#-how-it-works) | [Use Cases](#-use-cases) | [Architecture](#-architecture)
+[中文](README_CN.md) | [Quick Start](#-quick-start) | [Demo](demo/DEMO.md) | [How It Works](#-how-it-works) | [Use Cases](#-use-cases) | [Architecture](#-architecture)
 
 </div>
 
@@ -32,6 +32,8 @@ If you want one sentence:
 > FlowMind is a memory layer for repetitive MCP-based developer operations.
 
 ## A Runnable Example
+
+For a longer walkthrough, see [demo/DEMO.md](demo/DEMO.md).
 
 ```bash
 # 1. Install

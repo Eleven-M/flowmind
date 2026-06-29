@@ -10,7 +10,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Version](https://img.shields.io/badge/version-1.4.5-blue)](CHANGELOG.md)
 
-[English](README.md) | [快速开始](#-快速开始) | [工作原理](#-工作原理) | [使用场景](#-使用场景) | [架构](#-架构)
+[English](README.md) | [快速开始](#-快速开始) | [演示](demo/DEMO_CN.md) | [工作原理](#-工作原理) | [使用场景](#-使用场景) | [架构](#-架构)
 
 </div>
 
@@ -32,6 +32,8 @@ FlowMind 的目标不是“什么都做”，而是把**重复出现的开发工
 > FlowMind 是一个给 MCP 开发工具使用的记忆层。
 
 ## 一个可跑通的例子
+
+更完整的演示见 [demo/DEMO_CN.md](demo/DEMO_CN.md)。
 
 ```bash
 # 1. 安装
