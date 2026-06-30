@@ -10,6 +10,8 @@
 
 ---
 
+![FlowMind 终端演示](flowmind-demo.gif)
+
 ## 快速开始
 
 ### 安装
@@ -218,6 +220,25 @@ flowmind learn import team.json
 | `flowmind learn import` | 导入学习记录 |
 
 ---
+
+## 可重复终端演示
+
+在仓库根目录下，可以直接回放这套终端演示，不依赖全局安装：
+
+```bash
+./demo/setup-vhs-demo.sh
+./demo/01-skills.sh
+./demo/02-log-audit.sh
+./demo/03-learn-format.sh
+./demo/04-show-learning.sh
+./demo/05-log-audit-json.sh
+```
+
+如果要用 VHS 生成终端动画：
+
+```bash
+vhs demo/flowmind-demo.tape
+```
 
 ## 使用技巧
 

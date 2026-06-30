@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.4.6] - 2026-06-30
+
+### Added
+- Portable demo scripts for skill listing, log audit, learning feedback, and JSON output replay from the repository root
+- Animated terminal walkthrough assets, including a VHS tape and generated demo GIF
+
+### Changed
+- Demo helpers now fall back to the local `node ./bin/flowmind.js` entrypoint when a global `flowmind` binary is unavailable
+- README and demo docs now expose the terminal walkthrough directly for GitHub and npm readers
+
 ## [1.4.5] - 2026-06-29
 
 ### Fixed

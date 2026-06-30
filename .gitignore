@@ -112,8 +112,10 @@ dist/
 
 # FlowMind specific
 .flowmind/
+.flowmind-demo/
 .flowmind-codex/
 .flowmind-codex-test/
+.vhs/
 .npm-cache/
 flowmind-learnings.json
 flowmind-scenes.json

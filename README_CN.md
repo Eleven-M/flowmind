@@ -35,6 +35,10 @@ FlowMind 的目标不是“什么都做”，而是把**重复出现的开发工
 
 更完整的演示见 [demo/DEMO_CN.md](demo/DEMO_CN.md)。
 
+终端操作 GIF 演示：
+
+![FlowMind 终端演示](https://raw.githubusercontent.com/Eleven-M/flowmind/master/demo/flowmind-demo.gif)
+
 ```bash
 # 1. 安装
 npm install -g flowmind

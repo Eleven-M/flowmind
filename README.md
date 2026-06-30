@@ -35,6 +35,10 @@ If you want one sentence:
 
 For a longer walkthrough, see [demo/DEMO.md](demo/DEMO.md).
 
+Animated terminal walkthrough:
+
+![FlowMind terminal demo](https://raw.githubusercontent.com/Eleven-M/flowmind/master/demo/flowmind-demo.gif)
+
 ```bash
 # 1. Install
 npm install -g flowmind

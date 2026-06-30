@@ -10,6 +10,8 @@
 
 ---
 
+![FlowMind terminal demo](flowmind-demo.gif)
+
 ## Quick Start
 
 ### Install
@@ -218,6 +220,25 @@ flowmind learn import team.json
 | `flowmind learn import` | Import learnings |
 
 ---
+
+## Repeatable Terminal Demo
+
+From the repository root, you can replay the terminal walkthrough without requiring a global install:
+
+```bash
+./demo/setup-vhs-demo.sh
+./demo/01-skills.sh
+./demo/02-log-audit.sh
+./demo/03-learn-format.sh
+./demo/04-show-learning.sh
+./demo/05-log-audit-json.sh
+```
+
+If you want to render the animated terminal capture with VHS:
+
+```bash
+vhs demo/flowmind-demo.tape
+```
 
 ## Tips
 
