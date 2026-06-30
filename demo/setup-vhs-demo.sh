@@ -6,13 +6,14 @@ source "$(cd "$(dirname "$0")" && pwd)/common.sh"
 
 DEMO_HOME="$FLOWMIND_HOME"
 CONFIG_DIR="$DEMO_HOME/.flowmind"
+PACKAGE_VERSION="$(node -p "require('$ROOT_DIR/package.json').version")"
 
 rm -rf "$DEMO_HOME"
 mkdir -p "$CONFIG_DIR"
 
 cat > "$CONFIG_DIR/config.json" <<EOF
 {
-  "version": "1.4.5",
+  "version": "$PACKAGE_VERSION",
   "learning": {
     "enabled": true,
     "autoApply": true,

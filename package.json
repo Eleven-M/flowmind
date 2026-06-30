@@ -1,7 +1,7 @@
 {
   "name": "flowmind",
-  "version": "1.4.6",
-  "description": "The AI Agent That Learns How You Work - Stop repeating yourself, FlowMind learns your workflows and applies them automatically.",
+  "version": "1.4.8",
+  "description": "Memory and workflow automation for MCP, Codex, and Claude Code. Reuse repeatable developer operations through skills and explicit feedback.",
   "main": "core/index.js",
   "bin": {
     "flowmind": "./bin/flowmind.js",
@@ -18,22 +18,27 @@
     "dev": "nodemon core/index.js"
   },
   "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "codex",
+    "claude-code",
     "ai-agent",
-    "workflow-automation",
     "developer-tools",
-    "learning-system",
-    "code-review",
+    "cli",
+    "workflow-automation",
+    "developer-productivity",
+    "memory-layer",
+    "skill-routing",
     "log-analysis",
+    "code-review",
     "devops",
-    "mcp-server",
-    "claude-integration",
-    "codex-integration"
+    "mcp-server"
   ],
   "author": "FlowMind Technologies",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Eleven-M/flowmind.git"
+    "url": "git+https://github.com/Eleven-M/flowmind.git"
   },
   "bugs": {
     "url": "https://github.com/Eleven-M/flowmind/issues"
@@ -50,8 +55,13 @@
     "templates/",
     "config/",
     "learning/",
+    "demo/",
+    "docs/integration-guide.md",
+    "docs/guide.md",
+    "docs/guide.zh-CN.md",
     "README.md",
     "README_CN.md",
+    "CONTRIBUTING.md",
     "LICENSE",
     "CHANGELOG.md"
   ],

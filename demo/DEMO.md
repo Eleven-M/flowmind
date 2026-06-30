@@ -20,6 +20,13 @@
 npm install -g flowmind
 ```
 
+### Try Without Install
+
+```bash
+npx flowmind@latest skills
+npx flowmind@latest doctor
+```
+
 ### Initialize
 
 ```bash

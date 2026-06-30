@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.4.8] - 2026-06-30
+
+### Changed
+- Simplified the npm homepage README into a short entry page focused on positioning, quick start, and next-step links
+- Moved the longer product explanation into dedicated guide documents for English and Chinese readers
+- Added packaged detailed guide documents so linked deep-dive docs resolve from the published npm package
+
+## [1.4.7] - 2026-06-30
+
+### Added
+- npm package now ships the demo assets and integration guide referenced by the README
+
+### Changed
+- Release packaging now excludes local promotion copy so community post drafts do not get published to npm
+- Demo setup now reads the package version dynamically instead of keeping a stale hardcoded value
+
 ## [1.4.6] - 2026-06-30
 
 ### Added

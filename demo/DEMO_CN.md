@@ -20,6 +20,13 @@
 npm install -g flowmind
 ```
 
+### 免安装试用
+
+```bash
+npx flowmind@latest skills
+npx flowmind@latest doctor
+```
+
 ### 初始化
 
 ```bash
