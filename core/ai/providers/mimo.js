@@ -82,7 +82,7 @@ class MiMoProvider extends BaseModel {
       ...super.getInfo(),
       model: this.model,
       baseUrl: this.baseUrl,
-      provider: 'Xiaomi'
+      provider: 'MiMo'
     };
   }
 }

@@ -18,6 +18,7 @@ class ModelManager {
     this.config = config;
     this.providers = new Map();
     this.defaultProvider = config.defaultProvider || 'openai';
+    this.defaultModel = config.defaultModel || null;
     this.features = {
       intentUnderstanding: true,
       parameterExtraction: true,
@@ -31,6 +32,8 @@ class ModelManager {
     this.cache = new Map();
     this.cacheMaxAge = config.cacheMaxAge || 300000; // 5 minutes
     this.cacheMaxSize = config.cacheMaxSize || 100;
+    this.warnedErrors = new Set();
+    this.silenceWarnings = config.silenceWarnings === true;
   }
 
   /**
@@ -46,7 +49,7 @@ class ModelManager {
       try {
         await this.initProvider(name, providerConfig);
       } catch (error) {
-        console.warn(`Failed to initialize provider ${name}: ${error.message}`);
+        this._warn(`Failed to initialize provider ${name}: ${error.message}`);
       }
     }
 
@@ -80,7 +83,12 @@ class ModelManager {
       throw new Error(`Unknown provider: ${name}`);
     }
 
-    const provider = factory(config);
+    const resolvedConfig = { ...config };
+    if (!resolvedConfig.model && this.defaultModel) {
+      resolvedConfig.model = this.defaultModel;
+    }
+
+    const provider = factory(resolvedConfig);
     await provider.init();
     this.providers.set(name, provider);
     return provider;
@@ -107,7 +115,7 @@ class ModelManager {
     const provider = this.getProvider(this.defaultProvider);
     if (!provider) {
       // 尝试获取任意可用的 Provider
-      for (const [name, p] of this.providers) {
+      for (const [_name, p] of this.providers) {
         if (p.initialized) return p;
       }
       return null;
@@ -160,13 +168,13 @@ class ModelManager {
    * @param {Array} candidates - 候选技能列表
    * @returns {Promise<Object>} 选择的技能
    */
-  async selectSkill(input, candidates) {
+  async selectSkill(input, candidates, context = {}) {
     if (!this.features.skillSelection) return null;
 
     return this._callWithFailover(async (provider) => {
       const messages = [
         { role: 'system', content: prompts.selection.system },
-        { role: 'user', content: prompts.selection.user(input, candidates) }
+        { role: 'user', content: prompts.selection.user(input, candidates, context) }
       ];
       const response = await provider.chat(messages, { responseFormat: { type: 'json_object' } });
       return JSON.parse(response);
@@ -189,6 +197,52 @@ class ModelManager {
       ];
       return await provider.chat(messages);
     }, 'resultSummary');
+  }
+
+  /**
+   * 生成自然语言回复
+   * @param {string} input - 用户输入
+   * @param {Object} context - 上下文
+   * @returns {Promise<string>}
+   */
+  async answerQuery(input, context = {}) {
+    const messages = [
+      { role: 'system', content: prompts.response.system },
+      { role: 'user', content: prompts.response.user(input, context) }
+    ];
+
+    const attemptedProviders = [];
+    const defaultProvider = this.getDefaultProvider();
+    if (defaultProvider) {
+      attemptedProviders.push(defaultProvider);
+    }
+    for (const [_name, provider] of this.providers) {
+      if (provider && provider.initialized && provider !== defaultProvider) {
+        attemptedProviders.push(provider);
+      }
+    }
+
+    let lastError = null;
+    for (const provider of attemptedProviders) {
+      try {
+        const response = await provider.chat(messages);
+        provider.lastError = null;
+        provider.lastCheckedAt = new Date().toISOString();
+        provider.lastHealth = 'ready';
+        return response;
+      } catch (error) {
+        lastError = error;
+        provider.lastError = error.message || String(error);
+        provider.lastCheckedAt = new Date().toISOString();
+        provider.lastHealth = 'error';
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    throw new Error('No available AI provider');
   }
 
   /**
@@ -254,7 +308,7 @@ class ModelManager {
       try {
         return await fn(defaultProvider);
       } catch (error) {
-        console.warn(`Default provider (${this.defaultProvider}) failed for ${feature}: ${error.message}`);
+        this._warnOnce(this._buildWarningKey(defaultProvider, error), `Default provider (${this.defaultProvider}) failed for ${feature}: ${error.message}`);
       }
     }
 
@@ -262,15 +316,43 @@ class ModelManager {
     for (const [name, provider] of this.providers) {
       if (name === this.defaultProvider || !provider.initialized) continue;
       try {
-        console.warn(`Failing over to provider: ${name} for ${feature}`);
+        this._warnOnce(`failover:${name}`, `Failing over to provider: ${name} for ${feature}`);
         return await fn(provider);
       } catch (error) {
-        console.warn(`Failover provider ${name} failed for ${feature}: ${error.message}`);
+        this._warnOnce(this._buildWarningKey(provider, error), `Failover provider ${name} failed for ${feature}: ${error.message}`);
       }
     }
 
     // All providers failed, use rule-based fallback
     return this._fallback(feature);
+  }
+
+  _warn(message) {
+    if (this.silenceWarnings || process.env.FLOWMIND_SILENCE_AI_WARNINGS === '1') {
+      return;
+    }
+    console.warn(message);
+  }
+
+  _warnOnce(key, message) {
+    if (this.silenceWarnings || process.env.FLOWMIND_SILENCE_AI_WARNINGS === '1') {
+      return;
+    }
+
+    const normalizedKey = String(key || message || '').trim();
+    if (!normalizedKey || this.warnedErrors.has(normalizedKey)) {
+      return;
+    }
+
+    this.warnedErrors.add(normalizedKey);
+    console.warn(message);
+  }
+
+  _buildWarningKey(provider, error) {
+    const providerName = provider?.providerName || provider?.name || this.defaultProvider || 'provider';
+    const code = error?.code || error?.statusCode || 'error';
+    const message = String(error?.message || '').replace(/failed for [^:]+:/i, 'failed for *:');
+    return `${providerName}:${code}:${message}`;
   }
 
   /**
@@ -300,7 +382,7 @@ class ModelManager {
    * 检查是否有可用的 Provider
    */
   hasAvailableProvider() {
-    for (const [name, provider] of this.providers) {
+    for (const [_name, provider] of this.providers) {
       if (provider.initialized) return true;
     }
     return false;
@@ -311,9 +393,23 @@ class ModelManager {
    */
   getStatus() {
     const providers = {};
+    let overallHealth = 'off';
     for (const [name, provider] of this.providers) {
+      const providerHealth = provider.lastError
+        ? 'error'
+        : provider.initialized
+          ? 'ready'
+          : 'off';
+      if (overallHealth !== 'error' && providerHealth === 'error') {
+        overallHealth = 'error';
+      } else if (overallHealth === 'off' && providerHealth === 'ready') {
+        overallHealth = 'ready';
+      }
       providers[name] = {
         initialized: provider.initialized,
+        health: providerHealth,
+        error: provider.lastError || null,
+        lastCheckedAt: provider.lastCheckedAt || null,
         info: provider.getInfo()
       };
     }
@@ -321,6 +417,8 @@ class ModelManager {
     return {
       initialized: this.initialized,
       defaultProvider: this.defaultProvider,
+      defaultModel: this.defaultModel,
+      health: overallHealth,
       features: this.features,
       providers: providers
     };

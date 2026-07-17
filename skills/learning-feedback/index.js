@@ -4,8 +4,10 @@
  * Overlaps with learning-engine but focuses on feedback capture and binding.
  */
 
+const { createSkillError, createSkillResult } = require('../../core/result-contract');
+
 module.exports = {
-  canHandle(input, context) {
+  canHandle(input, _context) {
     if (!input) return false;
     const lower = input.toLowerCase();
     const feedbackPatterns = [
@@ -19,12 +21,11 @@ module.exports = {
   async execute(input, context) {
     const learning = context.flowmind?.learning;
     if (!learning) {
-      return {
-        type: 'error',
-        skill: 'learning-feedback',
-        message: 'Learning engine not available',
-        input
-      };
+      return createSkillError('learning-feedback', 'Learning engine not available', {
+        input,
+        kind: 'missing-component',
+        retryable: false
+      });
     }
 
     // Detect correction patterns
@@ -72,12 +73,8 @@ module.exports = {
       };
     }
 
-    return {
-      type: 'result',
-      skill: 'learning-feedback',
-      message: 'No feedback pattern detected',
-      input,
-      timestamp: new Date().toISOString()
-    };
+    return createSkillResult('learning-feedback', 'No feedback pattern detected', {
+      input
+    });
   }
 };

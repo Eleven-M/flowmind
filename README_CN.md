@@ -11,9 +11,11 @@
 [![npm version](https://img.shields.io/npm/v/flowmind.svg)](https://www.npmjs.com/package/flowmind)
 [![npm downloads](https://img.shields.io/npm/dw/flowmind.svg)](https://www.npmjs.com/package/flowmind)
 
-[English](README.md) | [快速开始](#快速开始) | [演示](demo/DEMO_CN.md) | [详细指南](docs/guide.zh-CN.md) | [集成指南](docs/integration-guide.md) | [更新记录](CHANGELOG.md)
+[English](README.md) | [快速开始](#快速开始) | [演示](demo/DEMO_CN.md) | [详细指南](docs/guide.zh-CN.md) | [升级契约](docs/upgrade-contracts.zh-CN.md) | [集成指南](docs/integration-guide.md) | [更新记录](CHANGELOG.md)
 
 </div>
+
+本周下载量：3,280 次
 
 ---
 
@@ -56,6 +58,19 @@ npx flowmind@latest doctor
 npx flowmind@latest skills
 ```
 
+## 本地状态
+
+FlowMind 默认把本地配置和学习数据存放在 `FLOWMIND_HOME/.flowmind` 下。
+如果没有设置 `FLOWMIND_HOME`，则回落到当前用户主目录。
+
+如果你要导入本机 `SDD-Agent` 的资源配置和场景映射，请显式执行：
+
+```bash
+flowmind resource --sync-sdd-agent
+```
+
+出于安全考虑，跨工作区自动同步默认关闭；只有在你明确设置 `FLOWMIND_ENABLE_SDD_AGENT_AUTO_SYNC=1` 时，初始化阶段才会自动同步。
+
 ## 为什么它比直接写 Prompt 更稳
 
 - skill 提供稳定执行路径，而不是每次重新组织 prompt
@@ -74,6 +89,7 @@ flowmind "下次用表格格式"
 ## 按目标阅读
 
 - 想看完整产品说明： [docs/guide.zh-CN.md](docs/guide.zh-CN.md)
+- 想看升级后的 skill 输出契约和串联方式： [docs/upgrade-contracts.zh-CN.md](docs/upgrade-contracts.zh-CN.md)
 - 想看 Claude Code、Codex、Cursor、MCP 接入： [docs/integration-guide.md](docs/integration-guide.md)
 - 想先看终端演示： [demo/DEMO_CN.md](demo/DEMO_CN.md)
 - 想看版本变化： [CHANGELOG.md](CHANGELOG.md)
@@ -82,6 +98,10 @@ flowmind "下次用表格格式"
 
 npm 发布页更适合作为入口页，而不是整本使用手册。
 更完整的使用方式、系统阐述和架构说明已经下沉到上面的独立文档。
+
+## 发布说明
+
+包发布细节不再写入随 npm 发布的 README。
 
 ## 贡献
 

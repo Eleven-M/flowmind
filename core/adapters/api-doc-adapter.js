@@ -16,7 +16,7 @@ class ApiDocAdapter extends McpAdapter {
    * @param {object} params - { nameKeyword, pathKeyword, projectKeyword }
    * @returns {Promise<object>}
    */
-  async searchApis(params) {
+  async searchApis(_params) {
     throw new Error('Subclasses must implement searchApis()');
   }
 
@@ -25,7 +25,7 @@ class ApiDocAdapter extends McpAdapter {
    * @param {string} projectId
    * @returns {Promise<object>}
    */
-  async getCategories(projectId) {
+  async getCategories(_projectId) {
     throw new Error('Subclasses must implement getCategories()');
   }
 
@@ -34,7 +34,7 @@ class ApiDocAdapter extends McpAdapter {
    * @param {object} apiData
    * @returns {Promise<object>}
    */
-  async saveApi(apiData) {
+  async saveApi(_apiData) {
     throw new Error('Subclasses must implement saveApi()');
   }
 
@@ -45,7 +45,7 @@ class ApiDocAdapter extends McpAdapter {
    * @param {string} swaggerData
    * @returns {Promise<object>}
    */
-  async importSwagger(projectId, catId, swaggerData) {
+  async importSwagger(_projectId, _catId, _swaggerData) {
     throw new Error('Subclasses must implement importSwagger()');
   }
 
@@ -55,7 +55,7 @@ class ApiDocAdapter extends McpAdapter {
    * @param {string} type - 'json', 'markdown', 'swagger'
    * @returns {Promise<object>}
    */
-  async exportProject(projectId, type) {
+  async exportProject(_projectId, _type) {
     throw new Error('Subclasses must implement exportProject()');
   }
 

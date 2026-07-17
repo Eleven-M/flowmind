@@ -179,7 +179,7 @@ class SkillLoader {
   createDefaultCanHandle(definition) {
     const triggers = definition.triggers || [];
 
-    return (input, context) => {
+    return (input, _context) => {
       if (!input) return false;
 
       const inputLower = input.toLowerCase();
@@ -252,17 +252,22 @@ class SkillLoader {
   async getCandidates(input, context = {}) {
     const candidates = [];
 
-    for (const [name, skill] of this.skills) {
+    for (const [_name, skill] of this.skills) {
       try {
         const canHandle = await skill.canHandle(input, context);
-        if (canHandle) {
+        const fallbackMatch = this.matchDefinitionSignals(skill, input);
+
+        if (canHandle || fallbackMatch.matched) {
           candidates.push({
             name: skill.name,
             skill: skill,
             description: skill.definition?.description || '',
             triggers: skill.definition?.triggers || [],
             category: skill.definition?.category || skill.definition?.metadata?.category || '',
-            score: this.calculateSkillScore(skill, input, context)
+            score: this.calculateSkillScore(skill, input, context, {
+              canHandle,
+              ...fallbackMatch
+            })
           });
         }
       } catch (error) {
@@ -276,19 +281,16 @@ class SkillLoader {
   /**
    * Calculate skill score for selection
    */
-  calculateSkillScore(skill, input, context) {
+  calculateSkillScore(skill, input, context, matchInfo = {}) {
     let score = 0;
 
     // Base score for matching
-    score += 10;
+    score += matchInfo.canHandle ? 10 : 4;
 
     // Bonus for trigger specificity
-    const triggers = skill.definition?.triggers || [];
-    for (const trigger of triggers) {
-      if (input.toLowerCase().includes(trigger.toLowerCase())) {
-        score += 5;
-      }
-    }
+    score += (matchInfo.triggerHits?.length || 0) * 5;
+    score += (matchInfo.nameHits?.length || 0) * 4;
+    score += matchInfo.categoryHit ? 2 : 0;
 
     // Bonus for recent successful use
     const bindings = this.learning?.skillBindings?.bindings?.[skill.name];
@@ -297,6 +299,45 @@ class SkillLoader {
     }
 
     return score;
+  }
+
+  matchDefinitionSignals(skill, input) {
+    if (!input) {
+      return {
+        matched: false,
+        triggerHits: [],
+        nameHits: [],
+        categoryHit: false
+      };
+    }
+
+    const inputLower = input.toLowerCase();
+    const triggers = skill.definition?.triggers || [];
+    const triggerHits = triggers.filter((trigger) => inputLower.includes(String(trigger).toLowerCase()));
+
+    const nameVariants = this.getSkillNameVariants(skill.name);
+    const nameHits = nameVariants.filter((variant) => inputLower.includes(variant));
+
+    const category = skill.definition?.category || skill.definition?.metadata?.category || '';
+    const categoryHit = category ? inputLower.includes(String(category).toLowerCase()) : false;
+
+    return {
+      matched: triggerHits.length > 0 || nameHits.length > 0 || categoryHit,
+      triggerHits,
+      nameHits,
+      categoryHit
+    };
+  }
+
+  getSkillNameVariants(name = '') {
+    const normalized = String(name).toLowerCase();
+    return [...new Set([
+      normalized,
+      normalized.replace(/-/g, ' '),
+      normalized.replace(/-/g, ''),
+      normalized.replace(/_/g, ' '),
+      normalized.replace(/_/g, '')
+    ])].filter(Boolean);
   }
 
   /**
@@ -318,6 +359,13 @@ class SkillLoader {
       author: s.definition?.author || s.definition?.metadata?.author,
       path: s.path
     }));
+  }
+
+  /**
+   * Get all loaded skill objects
+   */
+  getAll() {
+    return Array.from(this.skills.values());
   }
 
   /**

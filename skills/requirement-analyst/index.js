@@ -3,13 +3,15 @@
  * Six-dimensional analysis of requirements, design, and code alignment
  */
 
+const { createSkillError, createSkillResult } = require('../../core/result-contract');
+
 module.exports = {
-  canHandle(input, context) {
+  canHandle(input, _context) {
     if (!input) return false;
     return /需求分析|requirement.*analy|六维分析|需求.*审查|分析需求/i.test(input);
   },
 
-  async execute(input, context) {
+  async execute(input, _context) {
     const dimensions = [
       { name: '历史设计原则', weight: 0.15, description: '评估历史设计意图、依据、当前有效性' },
       { name: '迭代合理性', weight: 0.15, description: '评估迭代驱动力、演进路径、迭代质量' },
@@ -22,14 +24,18 @@ module.exports = {
     const requirementText = extractRequirement(input);
 
     if (!requirementText) {
-      return {
-        type: 'result',
-        skill: 'requirement-analyst',
-        message: 'Please provide requirement text or a requirement document path for analysis',
-        data: { dimensions: dimensions.map(d => ({ ...d, score: null })) },
+      return createSkillError('requirement-analyst', 'Please provide requirement text or a requirement document path for analysis', {
         input,
-        timestamp: new Date().toISOString()
-      };
+        kind: 'invalid-input',
+        retryable: true,
+        data: {
+          dimensions: dimensions.map((d) => ({ ...d, score: null }))
+        },
+        retryHints: [
+          'Provide requirement text directly in the request.',
+          'Or include a requirement document path and a short problem statement.'
+        ]
+      });
     }
 
     // Basic analysis based on text content
@@ -57,14 +63,10 @@ module.exports = {
       priorityActions.push({ priority: d.score < 40 ? 'P0' : 'P1', dimension: d.name, action: `Improve ${d.name}` });
     });
 
-    return {
-      type: 'result',
-      skill: 'requirement-analyst',
-      message: `Six-dimensional analysis complete. Overall score: ${overallScore}/100`,
-      data: { overallScore, dimensions: analysis, priorityActions },
+    return createSkillResult('requirement-analyst', `Six-dimensional analysis complete. Overall score: ${overallScore}/100`, {
       input,
-      timestamp: new Date().toISOString()
-    };
+      data: { overallScore, dimensions: analysis, priorityActions }
+    });
   }
 };
 

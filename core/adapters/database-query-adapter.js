@@ -24,7 +24,7 @@ class DatabaseQueryAdapter extends McpAdapter {
    * @param {string} sourceId
    * @returns {Promise<object>}
    */
-  async fetchDatabases(sourceId) {
+  async fetchDatabases(_sourceId) {
     throw new Error('Subclasses must implement fetchDatabases()');
   }
 
@@ -34,7 +34,7 @@ class DatabaseQueryAdapter extends McpAdapter {
    * @param {string} schema
    * @returns {Promise<object>}
    */
-  async fetchTables(sourceId, schema) {
+  async fetchTables(_sourceId, _schema) {
     throw new Error('Subclasses must implement fetchTables()');
   }
 
@@ -43,7 +43,7 @@ class DatabaseQueryAdapter extends McpAdapter {
    * @param {object} params - { source_id, schema, sql }
    * @returns {Promise<object>}
    */
-  async queryExec(params) {
+  async queryExec(_params) {
     throw new Error('Subclasses must implement queryExec()');
   }
 }

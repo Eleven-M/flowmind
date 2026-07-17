@@ -40,43 +40,23 @@ class FridayReportAdapter extends ReportAdapter {
   }
 
   async listBuilds(params) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('listBuilds'),
-      params: params || {}
-    };
+    return this.callMcpTool('listBuilds', params || {});
   }
 
   async getBuildInfo(buildId) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('getBuildInfo'),
-      params: { id: buildId }
-    };
+    return this.callMcpTool('getBuildInfo', { id: buildId });
   }
 
   async listJacocoReports(params) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('listJacoco'),
-      params: params || {}
-    };
+    return this.callMcpTool('listJacoco', params || {});
   }
 
   async listUnitReports(params) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('listJacocoUnit'),
-      params: params || {}
-    };
+    return this.callMcpTool('listJacocoUnit', params || {});
   }
 
   async getJobDetails(jobName) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('getJobDetails'),
-      params: { jobName }
-    };
+    return this.callMcpTool('getJobDetails', { jobName });
   }
 }
 

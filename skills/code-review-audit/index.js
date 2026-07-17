@@ -4,6 +4,7 @@
  */
 
 const fs = require('fs-extra');
+const { createSkillResult } = require('../../core/result-contract');
 
 const SECURITY_CHECKS = [
   { pattern: /(\bselect\b.*\bfrom\b.*\bwhere\b.*['"]\s*\+\s*)/i, name: 'SQL Injection', severity: 'HIGH' },
@@ -20,12 +21,12 @@ const CONSTRAINT_CHECKS = [
 ];
 
 module.exports = {
-  canHandle(input, context) {
+  canHandle(input, _context) {
     if (!input) return false;
     return /安全审计|security audit|design compliance|设计合规|code review audit|审查审计/i.test(input);
   },
 
-  async execute(input, context) {
+  async execute(input, _context) {
     const findings = [];
     const filePath = extractFilePath(input);
 
@@ -51,10 +52,8 @@ module.exports = {
     const medium = findings.filter(f => f.severity === 'MEDIUM').length;
     const verdict = high > 0 ? 'FAIL' : medium > 0 ? 'CONDITIONAL' : 'PASS';
 
-    return {
-      type: 'result',
-      skill: 'code-review-audit',
-      message: `Audit verdict: ${verdict} (${findings.length} findings)`,
+    return createSkillResult('code-review-audit', `Audit verdict: ${verdict} (${findings.length} findings)`, {
+      input,
       data: {
         verdict,
         findings,
@@ -63,10 +62,8 @@ module.exports = {
           security: findings.filter(f => f.dimension === 'security').length,
           constraint: findings.filter(f => f.dimension === 'constraint').length
         }
-      },
-      input,
-      timestamp: new Date().toISOString()
-    };
+      }
+    });
   }
 };
 

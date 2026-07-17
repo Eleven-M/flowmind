@@ -27,43 +27,23 @@ class AliyunDmsAdapter extends DatabaseManagerAdapter {
   }
 
   async listInstances(params) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('listInstances'),
-      params: params || {}
-    };
+    return this.callMcpTool('listInstances', params || {});
   }
 
   async executeScript(params) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('executeScript'),
-      params
-    };
+    return this.callMcpTool('executeScript', params);
   }
 
   async searchDatabase(searchKey) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('searchDatabase'),
-      params: { search_key: searchKey }
-    };
+    return this.callMcpTool('searchDatabase', { search_key: searchKey });
   }
 
   async listTables(databaseId) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('listTables'),
-      params: { database_id: databaseId }
-    };
+    return this.callMcpTool('listTables', { database_id: databaseId });
   }
 
   async getTableDetail(tableGuid) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('getTableDetailInfo'),
-      params: { table_guid: tableGuid }
-    };
+    return this.callMcpTool('getTableDetailInfo', { table_guid: tableGuid });
   }
 
   /**
@@ -73,11 +53,7 @@ class AliyunDmsAdapter extends DatabaseManagerAdapter {
    * @returns {Promise<object>}
    */
   async generateSql(databaseId, question) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('generateSql'),
-      params: { database_id: databaseId, question }
-    };
+    return this.callMcpTool('generateSql', { database_id: databaseId, question });
   }
 
   /**
@@ -87,11 +63,7 @@ class AliyunDmsAdapter extends DatabaseManagerAdapter {
    * @returns {Promise<object>}
    */
   async optimizeSql(databaseId, sql) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('optimizeSql'),
-      params: { database_id: databaseId, sql }
-    };
+    return this.callMcpTool('optimizeSql', { database_id: databaseId, sql });
   }
 }
 

@@ -314,7 +314,9 @@ flowmind learn reset <skill>
 
 ```bash
 flowmind learn export [--output <file>]
+flowmind learn export --bundle
 flowmind learn import <file>
+flowmind learn --install <file>
 ```
 
 ## Privacy & Security

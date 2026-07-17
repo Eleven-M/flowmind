@@ -5,35 +5,35 @@
 
 const fs = require('fs-extra');
 const path = require('path');
+const { createSkillError, createSkillResult } = require('../../core/result-contract');
 
 module.exports = {
-  canHandle(input, context) {
+  canHandle(input, _context) {
     if (!input) return false;
     return /api.*sync|同步.*api|api.*文档|swagger.*sync|接口.*同步/i.test(input);
   },
 
   async execute(input, context) {
+    const skillSettings = getSkillSettings(context);
     const params = parseApiSyncParams(input);
+    params.platform = params.platform || skillSettings.platform || 'yapi';
 
     if (params.action === 'generate') {
-      return generateDocs(params, input);
+      return generateDocs(params, input, skillSettings);
     }
 
     if (params.action === 'sync') {
-      return syncToYApi(params, input, context);
+      return syncToYApi(params, input, context, skillSettings);
     }
 
-    return {
-      type: 'result',
-      skill: 'api-sync',
-      message: 'API sync. Available actions: generate (from code), sync (to platform)',
+    return createSkillResult('api-sync', 'API sync. Available actions: generate (from code), sync (to platform)', {
+      input,
       data: {
         actions: ['generate - Generate API docs from code', 'sync - Sync to YApi/Swagger Hub'],
-        params
-      },
-      input,
-      timestamp: new Date().toISOString()
-    };
+        params,
+        skillConfig: skillSettings
+      }
+    });
   }
 };
 
@@ -54,14 +54,22 @@ function parseApiSyncParams(input) {
   return params;
 }
 
-async function generateDocs(params, input) {
+async function generateDocs(params, input, skillSettings = {}) {
   const dirPath = params.path || '.';
   if (!(await fs.pathExists(dirPath))) {
-    return {
-      type: 'error', skill: 'api-sync',
-      message: `Path not found: ${dirPath}`,
-      input, timestamp: new Date().toISOString()
-    };
+    return createSkillError('api-sync', `Path not found: ${dirPath}`, {
+      input,
+      kind: 'invalid-input',
+      retryable: true,
+      data: {
+        action: 'generate',
+        path: dirPath
+      },
+      retryHints: [
+        'Retry with an existing project path or source directory.',
+        'Use path=<dir> to point to the codebase that contains controller or route files.'
+      ]
+    });
   }
 
   const apis = [];
@@ -73,25 +81,23 @@ async function generateDocs(params, input) {
     apis.push(...endpoints.map(e => ({ ...e, file: path.relative(dirPath, file) })));
   }
 
-  return {
-    type: 'result',
-    skill: 'api-sync',
-    message: `Found ${apis.length} API endpoint(s) in ${files.length} file(s)`,
-    data: { apis, totalEndpoints: apis.length, totalFiles: files.length },
+  return createSkillResult('api-sync', `Found ${apis.length} API endpoint(s) in ${files.length} file(s)`, {
     input,
-    timestamp: new Date().toISOString()
-  };
+    data: { apis, totalEndpoints: apis.length, totalFiles: files.length, skillConfig: skillSettings }
+  });
 }
 
-function syncToYApi(params, input, context) {
-  return {
-    type: 'result',
-    skill: 'api-sync',
-    message: 'API sync to platform (use yapi-sync-interface skill for YApi-specific operations)',
-    data: { platform: params.platform || 'yapi', hint: 'Use yapi-sync-interface skill for direct YApi integration' },
+function syncToYApi(params, input, context, skillSettings = {}) {
+  return createSkillResult('api-sync', 'API sync to platform (use yapi-sync-interface skill for YApi-specific operations)', {
     input,
-    timestamp: new Date().toISOString()
-  };
+    data: {
+      platform: params.platform || skillSettings.platform || 'yapi',
+      connection: skillSettings.connection || {},
+      options: skillSettings.options || {},
+      hint: 'Use yapi-sync-interface skill for direct YApi integration',
+      skillConfig: skillSettings
+    }
+  });
 }
 
 async function findApiFiles(dir) {
@@ -127,4 +133,11 @@ function extractEndpoints(content) {
   }
 
   return endpoints;
+}
+
+function getSkillSettings(context = {}) {
+  return {
+    ...(context.skillConfig || {}),
+    ...(context.preferences || {})
+  };
 }

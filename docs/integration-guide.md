@@ -394,7 +394,8 @@ vim ~/.claude/settings.json
 
 ### Q3: 如何同时使用多个 AI CLI 工具？
 
-FlowMind 支持同时被多个客户端调用，学习数据会自动同步。
+FlowMind 支持同时被多个客户端调用。
+如果这些客户端共享同一个 `FLOWMIND_HOME`，它们会复用同一份本地学习数据；如果使用不同工作区或不同 `FLOWMIND_HOME`，学习数据彼此隔离。
 
 ### Q4: 如何自定义 FlowMind 技能？
 

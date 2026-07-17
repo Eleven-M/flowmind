@@ -1,92 +1,34 @@
 const React = require('react');
 const { Box, Text } = require('ink');
+const { LEVEL_COLORS, LEVEL_NAMES, LEVEL_STATES, getDragonArt } = require('../ui');
 
-const DRAGON_ARTS = {
-  0: [
-    '        ╭─────╮        ',
-    '       ╱  ╭─╮  ╲       ',
-    '      │  │   │  │      ',
-    '      │  │ ◎ │  │      ',
-    '      │   ╰─╯   │      ',
-    '       ╲       ╱       ',
-    '        ╰─────╯        ',
-  ],
-  1: [
-    '           ╭──╮            ',
-    '      ╭────╯  ╰───╮        ',
-    '     ╱  ◎    ╰─╯   ╲      ',
-    '    ╱    ▽           ╲     ',
-    '    ╲    ╱╲   ╱╲     ╱     ',
-    '     ╲╱╱  ╲╱╱  ╲╱╲╱       ',
-  ],
-  2: [
-    '        ╭─╮  ╭─╮             ',
-    '   ╭────╯ ╰──╯ ╰───╮         ',
-    '  ╱  ◎      ╰──╯     ╲       ',
-    ' ╱      ╭────────╮     ╲     ',
-    ' ╲     ╱ ╱╱╱╱╱╱╱╱ ╲    ╱     ',
-    '  ╲───╯ ╱╱╱╱╱╱╱╱╱╱ ╰──╱      ',
-    '   ╰─╯            ╰─╯       ',
-  ],
-  3: [
-    '      ╭───╮  ╭───╮               ',
-    '  ╭───╯   ╰──╯   ╰───╮           ',
-    ' ╱  ◎        ╰───╯     ╲         ',
-    '│     ╭──────────╮      │        ',
-    '│    ╱ ╱╱╱╱╱╱╱╱╱╱ ╲     │        ',
-    ' ╲──╯ ╱╱╱╱╱╱╱╱╱╱╱╱ ╰───╯        ',
-    '  ╲  ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱  ╱         ',
-    '   ╲╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱          ',
-    '    ╰───╯       ╰───╯            ',
-  ],
-  4: [
-    '    ╭───╮      ╭───╮                 ',
-    '╭───╯   ╰──────╯   ╰───╮             ',
-    '│  ◎           ╰───╯     │           ',
-    '│      ╭────────────╮    │           ',
-    '│     ╱ ╱╱╱╱╱╱╱╱╱╱╱╱ ╲   │           ',
-    ' ╲───╯ ╱╱╱╱╱╱╱╱╱╱╱╱╱╱ ╰──╯          ',
-    '  ╲   ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱  ╲          ',
-    '   ╲─╯╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰─╲         ',
-    '    ╲╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱         ',
-    '     ╰───╯         ╰───╯             ',
-  ],
-  5: [
-    '  ★  ╭───╮          ╭───╮  ★           ',
-    '╭─╯   ╰──╯          ╰──╯   ╰─╮         ',
-    '│  ◎            ╰───╯         │         ',
-    '│       ╭──────────────╮      │         ',
-    '│      ╱ ★╱╱╱╱╱╱╱╱╱╱★╱╱ ╲     │         ',
-    ' ╲────╯ ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ ╰───╯         ',
-    '  ╲    ╱╱╱╱★╱╱╱╱╱╱╱╱★╱╱╱╱╱  ╲          ',
-    '   ╲──╯╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╰──╲         ',
-    '    ╲─╯╱╱╱★╱╱╱╱╱╱╱╱★╱╱╱╱╱╰──╲         ',
-    '  ★  ╲╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱  ★       ',
-    '       ╰───╯           ╰───╯            ',
-  ],
-};
-
-const LEVEL_NAMES = ['Egg', 'Hatchling', 'Juvenile', 'Adult', 'Elder', 'Ascended'];
-const LEVEL_STATES = ['dormant', 'awakening', 'growing', 'soaring', 'wise', 'transcendent'];
-const LEVEL_COLORS = ['gray', 'cyan', 'cyan', 'cyanBright', 'cyanBright', 'cyanBright'];
-
-function DragonTotem({ honorData, compact }) {
+function DragonTotem({ honorData, compact, asciiMode = false, width = 0 }) {
   const points = honorData?.points || 0;
   const level = honorData?.level || 0;
-  const art = DRAGON_ARTS[level] || DRAGON_ARTS[0];
+  const art = getDragonArt(level, { asciiMode, compact });
   const color = LEVEL_COLORS[level] || 'gray';
   const levelName = LEVEL_NAMES[level] || 'Unknown';
   const state = LEVEL_STATES[level] || 'unknown';
   const nextLevelPoints = [1, 10, 30, 60, 100];
   const nextPoints = nextLevelPoints[level] || null;
   const pointsToNext = nextPoints !== null ? nextPoints - points : 0;
-  const lines = compact ? art.slice(0, 4) : art;
+  const superCompact = width > 0 && width < 26;
+
+  if (superCompact) {
+    return (
+      React.createElement(Box, { flexDirection: 'column', paddingX: 1 },
+        React.createElement(Text, { bold: true, color: 'cyan' }, 'Dragon'),
+        React.createElement(Text, { color: color }, 'Lv' + level + ' ' + levelName),
+        React.createElement(Text, { color: 'gray' }, points + ' pts')
+      )
+    );
+  }
 
   return (
     React.createElement(Box, { flexDirection: 'column', paddingX: 1 },
       React.createElement(Text, { bold: true, color: 'cyan' }, 'Dragon Totem'),
       React.createElement(Box, { flexDirection: 'column', marginTop: 1 },
-        lines.map((line, i) => React.createElement(Text, { key: i, color: color }, line))
+        art.map((line, i) => React.createElement(Text, { key: i, color: color }, line))
       ),
       React.createElement(Box, { flexDirection: 'column', marginTop: 1 },
         React.createElement(Text, null,

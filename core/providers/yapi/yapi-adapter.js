@@ -28,51 +28,27 @@ class YapiAdapter extends ApiDocAdapter {
   }
 
   async searchApis(params) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('searchApis'),
-      params
-    };
+    return this.callMcpTool('searchApis', params);
   }
 
   async getCategories(projectId) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('getCategories'),
-      params: { projectId }
-    };
+    return this.callMcpTool('getCategories', { projectId });
   }
 
   async saveApi(apiData) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('saveApi'),
-      params: apiData
-    };
+    return this.callMcpTool('saveApi', apiData);
   }
 
   async importSwagger(projectId, catId, swaggerData) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('importSwagger'),
-      params: { projectId, catId, swaggerData }
-    };
+    return this.callMcpTool('importSwagger', { projectId, catId, swaggerData });
   }
 
   async exportProject(projectId, type = 'swagger') {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('exportProject'),
-      params: { projectId, type }
-    };
+    return this.callMcpTool('exportProject', { projectId, type });
   }
 
   async listProjects() {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('listProjects'),
-      params: {}
-    };
+    return this.callMcpTool('listProjects', {});
   }
 }
 

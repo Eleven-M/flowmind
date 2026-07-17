@@ -17,11 +17,11 @@ class BaseModel {
     throw new Error('init() must be implemented by subclass');
   }
 
-  async chat(messages, options = {}) {
+  async chat(messages, _options = {}) {
     throw new Error('chat() must be implemented by subclass');
   }
 
-  async complete(prompt, options = {}) {
+  async complete(prompt, _options = {}) {
     throw new Error('complete() must be implemented by subclass');
   }
 

@@ -20,7 +20,7 @@ module.exports = {
 
 请只返回 JSON，不要返回其他内容。`,
 
-  user: (input, candidates) => {
+  user: (input, candidates, context = {}) => {
     const candidateList = candidates.map(c => ({
       name: c.name,
       description: c.description,
@@ -28,7 +28,20 @@ module.exports = {
       category: c.category
     }));
 
+    const contextParts = [];
+    if (context.intent?.intent) {
+      contextParts.push(`意图: ${context.intent.intent}`);
+    }
+    if (context.intent?.action) {
+      contextParts.push(`动作: ${context.intent.action}`);
+    }
+    if (context.currentSkill) {
+      contextParts.push(`当前技能: ${context.currentSkill}`);
+    }
+
     return `用户输入: "${input}"
+
+${contextParts.length > 0 ? `上下文:\n${contextParts.join('\n')}\n` : ''}
 
 候选技能列表:
 ${JSON.stringify(candidateList, null, 2)}

@@ -34,11 +34,7 @@ class AliyunRedisAdapter extends McpAdapter {
    * @returns {Promise<object>}
    */
   async query(query, time) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('query'),
-      params: { query, time }
-    };
+    return this.callMcpTool('query', { query, time });
   }
 
   /**
@@ -50,11 +46,7 @@ class AliyunRedisAdapter extends McpAdapter {
    * @returns {Promise<object>}
    */
   async queryRange(query, start, end, step) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('queryRange'),
-      params: { query, start, end, step }
-    };
+    return this.callMcpTool('queryRange', { query, start, end, step });
   }
 
   /**
@@ -63,11 +55,7 @@ class AliyunRedisAdapter extends McpAdapter {
    * @returns {Promise<object>}
    */
   async getLabelNames(params) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('getLabelNames'),
-      params: params || {}
-    };
+    return this.callMcpTool('getLabelNames', params || {});
   }
 
   /**
@@ -77,11 +65,7 @@ class AliyunRedisAdapter extends McpAdapter {
    * @returns {Promise<object>}
    */
   async getLabelValues(name, params) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('getLabelValues'),
-      params: { name, ...(params || {}) }
-    };
+    return this.callMcpTool('getLabelValues', { name, ...(params || {}) });
   }
 }
 

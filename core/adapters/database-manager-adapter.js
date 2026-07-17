@@ -16,7 +16,7 @@ class DatabaseManagerAdapter extends McpAdapter {
    * @param {object} params - Optional filter params
    * @returns {Promise<object>}
    */
-  async listInstances(params) {
+  async listInstances(_params) {
     throw new Error('Subclasses must implement listInstances()');
   }
 
@@ -25,7 +25,7 @@ class DatabaseManagerAdapter extends McpAdapter {
    * @param {object} params - { database_id, script }
    * @returns {Promise<object>}
    */
-  async executeScript(params) {
+  async executeScript(_params) {
     throw new Error('Subclasses must implement executeScript()');
   }
 
@@ -34,7 +34,7 @@ class DatabaseManagerAdapter extends McpAdapter {
    * @param {string} searchKey
    * @returns {Promise<object>}
    */
-  async searchDatabase(searchKey) {
+  async searchDatabase(_searchKey) {
     throw new Error('Subclasses must implement searchDatabase()');
   }
 
@@ -43,7 +43,7 @@ class DatabaseManagerAdapter extends McpAdapter {
    * @param {string} databaseId
    * @returns {Promise<object>}
    */
-  async listTables(databaseId) {
+  async listTables(_databaseId) {
     throw new Error('Subclasses must implement listTables()');
   }
 
@@ -52,7 +52,7 @@ class DatabaseManagerAdapter extends McpAdapter {
    * @param {string} tableGuid
    * @returns {Promise<object>}
    */
-  async getTableDetail(tableGuid) {
+  async getTableDetail(_tableGuid) {
     throw new Error('Subclasses must implement getTableDetail()');
   }
 }

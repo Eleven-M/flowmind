@@ -115,7 +115,7 @@ FlowMind: [Uses sequential list automatically]
 ### Workflow Execution
 
 ```bash
-flowmind run deploy-workflow
+flowmind process --skill auto-flow "执行部署流程"
 ```
 
 ## Configuration
@@ -280,8 +280,14 @@ flowmind scenes list
 # Export learnings
 flowmind learn export
 
+# Export a portable bundle
+flowmind learn export --bundle team-learning.json
+
 # Import learnings
 flowmind learn import <file>
+
+# Install a portable bundle
+flowmind learn --install team-learning.json
 ```
 
 ## Management Commands

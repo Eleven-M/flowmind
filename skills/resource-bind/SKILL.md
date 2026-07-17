@@ -29,6 +29,11 @@ Manage database, Redis, API, and other external resource connections.
 - Authentication management
 - Request/response handling
 
+### 🧠 Business Binding Memory
+- Save MCP server, address, token, namespace, project, and similar connection fields by business
+- Reuse learned bindings automatically when the same business appears again
+- Keep binding records in local learning files so users do not need to re-enter the same setup repeatedly
+
 ## Trigger Patterns
 
 ```
@@ -102,6 +107,7 @@ This skill supports FlowMind learning:
 - **Connection Method**: Learns preferred connection method
 - **Default Database**: Learns frequently used databases
 - **Query Style**: Learns query formatting preferences
+- **Business Resource Binding**: Learns MCP/address/token configuration by business context
 
 ```
 User: "用 source_id 连接"
@@ -109,6 +115,20 @@ FlowMind: ✓ Learned: Use source_id for connections
 
 User: [Next connection]
 FlowMind: [Uses source_id automatically]
+```
+
+### Example 3: Business Binding
+
+```
+User: 绑定零售业务 mcp=yapi-mcp 地址=https://yapi.example.com token=xxx project=retail
+
+FlowMind:
+✓ Saved learned binding for business: 零售
+
+User: 同步零售业务接口到 YApi
+
+FlowMind:
+[Reuses learned YApi MCP/address/project binding automatically]
 ```
 
 ## Examples

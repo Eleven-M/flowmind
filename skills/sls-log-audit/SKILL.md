@@ -113,6 +113,12 @@ Configuration is managed in `flowmind.config.json` under `components.logService`
 | test/uat | cn-shenzhen.log.aliyuncs.com | 深圳 |
 | gray/prod | cn-hongkong.log.aliyuncs.com | 香港 |
 
+**Environment-aware logstore selection**:
+
+- `test环境` / `在test环境` / `测试环境` will resolve to the test logstore automatically
+- `uat` / `预发` will resolve to the UAT logstore automatically
+- Explicit `logstore` still wins if the user provides one
+
 ## Learning Integration
 
 This skill supports FlowMind learning:
@@ -212,7 +218,19 @@ Component provider configuration (in `flowmind.config.json`):
           "config": {
             "endpoints": {
               "test": "cn-shenzhen.log.aliyuncs.com",
+              "uat": "cn-shenzhen.log.aliyuncs.com",
+              "gray": "cn-hongkong.log.aliyuncs.com",
               "prod": "cn-hongkong.log.aliyuncs.com"
+            },
+            "envConfig": {
+              "test": {
+                "project": "test-project",
+                "logstore": "test_reg_log"
+              },
+              "uat": {
+                "project": "uat-project",
+                "logstore": "uat-log"
+              }
             }
           }
         }

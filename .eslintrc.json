@@ -1,0 +1,32 @@
+{
+  "env": {
+    "commonjs": true,
+    "es2022": true,
+    "jest": true,
+    "node": true
+  },
+  "extends": "eslint:recommended",
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "script"
+  },
+  "ignorePatterns": [
+    "node_modules/",
+    "coverage/",
+    "flowmind-*.tgz",
+    ".flowmind-codex/",
+    ".flowmind-codex-test/",
+    ".flowmind-demo/"
+  ],
+  "rules": {
+    "complexity": ["warn", 45],
+    "no-console": "off",
+    "no-constant-condition": "off",
+    "no-control-regex": "off",
+    "no-prototype-builtins": "off",
+    "no-unexpected-multiline": "off",
+    "no-useless-escape": "off",
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-empty": ["error", { "allowEmptyCatch": true }]
+  }
+}

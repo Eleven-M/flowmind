@@ -4,14 +4,15 @@
  */
 
 const { execSync } = require('child_process');
+const { createSkillError, createSkillResult } = require('../../core/result-contract');
 
 module.exports = {
-  canHandle(input, context) {
+  canHandle(input, _context) {
     if (!input) return false;
     return /git\s*review|commit.*review|代码提交|提交审查|review.*commit|检查提交/i.test(input);
   },
 
-  async execute(input, context) {
+  async execute(input, _context) {
     const count = extractCount(input) || 5;
 
     try {
@@ -21,7 +22,7 @@ module.exports = {
       ).trim();
 
       if (!logRaw) {
-        return { type: 'result', skill: 'git-review', message: 'No commits found', input, timestamp: new Date().toISOString() };
+        return createSkillResult('git-review', 'No commits found', { input });
       }
 
       const commits = logRaw.split('\n').map(line => {
@@ -47,22 +48,16 @@ module.exports = {
         }
       });
 
-      return {
-        type: 'result',
-        skill: 'git-review',
-        message: `Reviewed ${commits.length} commits: ${good.length} good, ${issues.length} issues`,
-        data: { commits, issues, good, summary: { total: commits.length, good: good.length, issues: issues.length } },
+      return createSkillResult('git-review', `Reviewed ${commits.length} commits: ${good.length} good, ${issues.length} issues`, {
         input,
-        timestamp: new Date().toISOString()
-      };
+        data: { commits, issues, good, summary: { total: commits.length, good: good.length, issues: issues.length } }
+      });
     } catch (e) {
-      return {
-        type: 'error',
-        skill: 'git-review',
-        message: `Git review failed: ${e.message}`,
+      return createSkillError('git-review', `Git review failed: ${e.message}`, {
         input,
-        timestamp: new Date().toISOString()
-      };
+        kind: 'execution-failed',
+        retryable: true
+      });
     }
   }
 };

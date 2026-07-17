@@ -30,6 +30,14 @@ flowmind process --skill log-audit "查询最近1小时的错误日志"
 
 Use this mode when you want the fastest path with minimal setup.
 
+If you want to import local `SDD-Agent` resources and scene mappings into FlowMind, do it explicitly:
+
+```bash
+flowmind resource --sync-sdd-agent
+```
+
+For safety, cross-workspace auto-sync is disabled by default. Initialization only auto-syncs when you explicitly set `FLOWMIND_ENABLE_SDD_AGENT_AUTO_SYNC=1`.
+
 ### Codex-Friendly JSON
 
 If another tool needs machine-readable output:
@@ -148,4 +156,5 @@ FlowMind is a weaker fit when:
 
 - Demo walkthrough: [../demo/DEMO.md](../demo/DEMO.md)
 - Integration setup: [integration-guide.md](integration-guide.md)
+- Upgrade contracts: [upgrade-contracts.md](upgrade-contracts.md)
 - Release history: [../CHANGELOG.md](../CHANGELOG.md)

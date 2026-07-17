@@ -30,6 +30,14 @@ flowmind process --skill log-audit "查询最近1小时的错误日志"
 
 如果你想先最快跑通，这是最直接的入口。
 
+如果你要把本机 `SDD-Agent` 的资源配置和场景映射导入到 FlowMind，请显式执行：
+
+```bash
+flowmind resource --sync-sdd-agent
+```
+
+出于安全考虑，跨工作区自动同步默认关闭；只有在你明确设置 `FLOWMIND_ENABLE_SDD_AGENT_AUTO_SYNC=1` 时，初始化阶段才会自动同步。
+
 ### 面向 Codex 的 JSON 输出
 
 如果你的上层工具需要结构化输出：
@@ -148,4 +156,5 @@ flowmind "检查金额计算逻辑"
 
 - 终端演示： [../demo/DEMO_CN.md](../demo/DEMO_CN.md)
 - 集成接入： [integration-guide.md](integration-guide.md)
+- 升级契约： [upgrade-contracts.zh-CN.md](upgrade-contracts.zh-CN.md)
 - 版本更新： [../CHANGELOG.md](../CHANGELOG.md)

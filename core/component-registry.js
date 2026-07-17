@@ -4,7 +4,7 @@
  * Manages component discovery, registration, and provider switching.
  */
 
-const { ComponentType, ComponentTypeMeta } = require('./component-types');
+const { ComponentType } = require('./component-types');
 const McpCompatibility = require('./mcp-compatibility');
 
 class ComponentRegistry {
@@ -40,6 +40,10 @@ class ComponentRegistry {
     this.registerFactory('aliyun-dms', () => {
       const AliyunDmsAdapter = require('./providers/aliyun/dms-adapter');
       return new AliyunDmsAdapter(this.getProviderConfig('databaseManager', 'aliyun-dms'));
+    });
+    this.registerFactory('aliyun-rds-query', () => {
+      const AliyunRdsQueryAdapter = require('./providers/aliyun/rds-query-adapter');
+      return new AliyunRdsQueryAdapter(this.getProviderConfig('databaseQuery', 'aliyun-rds-query'));
     });
     this.registerFactory('aliyun-redis', () => {
       const AliyunRedisAdapter = require('./providers/aliyun/redis-adapter');
@@ -79,7 +83,21 @@ class ComponentRegistry {
     const components = this.config.get('components', {});
     const typeConfig = components[componentType] || {};
     const providers = typeConfig.providers || {};
-    return providers[providerName] || {};
+    const baseConfig = providers[providerName] || {};
+    const mcpServerName = McpCompatibility.getMcpServer(componentType, providerName);
+    const mcpServers = this.config.get('mcpServers', {});
+    const transport = mcpServerName ? mcpServers[mcpServerName] : null;
+
+    if (!transport) {
+      return baseConfig;
+    }
+
+    return {
+      ...baseConfig,
+      transport: {
+        ...transport
+      }
+    };
   }
 
   /**
@@ -126,7 +144,7 @@ class ComponentRegistry {
    * @param {object} providerConfig
    * @returns {BaseAdapter|null}
    */
-  createAdapter(providerName, providerConfig) {
+  createAdapter(providerName, _providerConfig) {
     const factory = this.providerFactories.get(providerName);
     if (!factory) {
       console.warn(`No factory registered for provider: ${providerName}`);
@@ -273,7 +291,6 @@ class ComponentRegistry {
   getStatus() {
     const status = {};
     for (const type of Object.values(ComponentType)) {
-      const adapter = this.getAdapter(type);
       status[type] = {
         active: this.activeProviders.get(type) || null,
         providers: this.getProviders(type).map(p => ({

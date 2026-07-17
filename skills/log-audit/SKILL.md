@@ -33,6 +33,16 @@ Analyze application logs, trace requests, and debug performance issues with Flow
 - Timeout identification
 - Resource bottleneck analysis
 
+## Resolution Strategy
+
+`log-audit` now resolves query conditions in this order:
+
+1. AI-extracted parameters when an AI provider is available
+2. Local parser fallback for any missing fields
+3. Direct raw SLS query reuse when the input already contains explicit conditions
+
+This keeps log queries usable even when the AI model is unavailable or temporarily failing.
+
 ## Trigger Patterns
 
 ```

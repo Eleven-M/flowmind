@@ -19,6 +19,8 @@ class ConfigManager {
    * Load configuration
    */
   async load() {
+    this.config = this.deepMerge({}, this.defaults);
+
     // Try to load from specified path
     if (this.configPath) {
       await this.loadFromFile(this.configPath);
@@ -44,6 +46,12 @@ class ConfigManager {
 
     // Load learning config
     await this.loadLearningConfig();
+
+    // Load AI config
+    await this.loadAiConfig();
+
+    // Load skill config
+    await this.loadSkillConfig();
 
     // Load component config
     await this.loadComponentConfig();
@@ -80,7 +88,10 @@ class ConfigManager {
     if (await fs.pathExists(resourceConfigPath)) {
       try {
         const resourceConfig = await fs.readJson(resourceConfigPath);
-        this.mergeConfig({ resources: resourceConfig.resources || {} });
+        this.mergeConfig({
+          resources: resourceConfig.resources || {},
+          mcpServers: resourceConfig.mcpServers || {}
+        });
       } catch (error) {
         console.warn('Failed to load resource config:', error.message);
       }
@@ -99,6 +110,38 @@ class ConfigManager {
         this.mergeConfig({ learning: learningConfig });
       } catch (error) {
         console.warn('Failed to load learning config:', error.message);
+      }
+    }
+  }
+
+  /**
+   * Load AI configuration
+   */
+  async loadAiConfig() {
+    const aiConfigPath = path.join(this.getHomeDir(), '.flowmind', 'ai-config.json');
+
+    if (await fs.pathExists(aiConfigPath)) {
+      try {
+        const aiConfig = await fs.readJson(aiConfigPath);
+        this.mergeConfig({ ai: aiConfig.ai || aiConfig });
+      } catch (error) {
+        console.warn('Failed to load AI config:', error.message);
+      }
+    }
+  }
+
+  /**
+   * Load skill configuration
+   */
+  async loadSkillConfig() {
+    const skillConfigPath = path.join(this.getHomeDir(), '.flowmind', 'skill-config.json');
+
+    if (await fs.pathExists(skillConfigPath)) {
+      try {
+        const skillConfig = await fs.readJson(skillConfigPath);
+        this.mergeConfig({ skillConfig });
+      } catch (error) {
+        console.warn('Failed to load skill config:', error.message);
       }
     }
   }
@@ -181,7 +224,17 @@ class ConfigManager {
         autoApply: true,
         confidenceThreshold: 0.7,
         maxRecordsPerSkill: 100,
-        storagePath: path.join(this.getHomeDir(), '.flowmind', 'learning')
+        storagePath: path.join(this.getHomeDir(), '.flowmind', 'learning'),
+        autoPromote: {
+          enabled: true,
+          resourceBindingMinUses: 3,
+          sceneMinUses: 2
+        }
+      },
+
+      // Skill-level defaults
+      skillConfig: {
+        skills: {}
       },
 
       // Scene mapping settings
@@ -209,7 +262,17 @@ class ConfigManager {
         redis: { enabled: false },
         logs: { enabled: false },
         apiDocs: { enabled: false }
-      }
+      },
+
+      // AI settings
+      ai: {
+        enabled: false,
+        defaultProvider: 'openai',
+        defaultModel: null,
+        providers: {}
+      },
+
+      mcpServers: {}
     };
   }
 

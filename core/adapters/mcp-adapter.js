@@ -4,6 +4,7 @@
  */
 
 const BaseAdapter = require('./base-adapter');
+const { callMcpTool, createMcpBindingError } = require('../mcp-http-client');
 
 class McpAdapter extends BaseAdapter {
   constructor(providerName, config = {}) {
@@ -59,6 +60,40 @@ class McpAdapter extends BaseAdapter {
       server: this.mcpServer,
       tools: this.getToolMappings()
     };
+  }
+
+  getTransportConfig() {
+    return this.config.transport || this.config.mcpServerConfig || this.config.mcpTransport || {};
+  }
+
+  async callTool(tool, args = {}) {
+    const transport = this.getTransportConfig();
+    const serverName = this.mcpServer || this.providerName;
+    if (!transport.url && !transport.endpoint && !transport.baseUrl) {
+      throw createMcpBindingError({
+        serverName,
+        tool,
+        args,
+        reason: `MCP transport URL not configured for ${serverName}`,
+        headers: transport.headers || {}
+      });
+    }
+    return callMcpTool({
+      url: transport.url || transport.endpoint || transport.baseUrl,
+      headers: transport.headers || {},
+      tool,
+      args,
+      timeoutMs: transport.timeoutMs || 60000,
+      serverName
+    });
+  }
+
+  async callMcpTool(localName, args = {}) {
+    const tool = this.resolveTool(localName);
+    if (!tool) {
+      throw new Error(`Unknown MCP tool mapping: ${localName}`);
+    }
+    return this.callTool(tool, args);
   }
 }
 

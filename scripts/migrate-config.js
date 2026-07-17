@@ -11,8 +11,6 @@
 const fs = require('fs-extra');
 const path = require('path');
 
-const { ComponentType } = require('../core/component-types');
-
 // Default MCP server to component provider mapping
 const DEFAULT_MAPPING = {
   'friday-sls-logs': { type: 'logService', provider: 'aliyun-sls' },

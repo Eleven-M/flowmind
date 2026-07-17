@@ -3,23 +3,27 @@
  * Validates data against schema rules and business logic
  */
 
+const { createSkillError, createSkillResult } = require('../../core/result-contract');
+
 module.exports = {
-  canHandle(input, context) {
+  canHandle(input, _context) {
     if (!input) return false;
     return /数据校验|数据验证|data valid|validate data|校验数据|检查数据/i.test(input);
   },
 
-  async execute(input, context) {
+  async execute(input, _context) {
     const data = extractData(input);
 
     if (!data) {
-      return {
-        type: 'result',
-        skill: 'data-validation',
-        message: 'No data found to validate. Provide JSON data or a file path.',
+      return createSkillError('data-validation', 'No data found to validate. Provide JSON data or a file path.', {
         input,
-        timestamp: new Date().toISOString()
-      };
+        kind: 'invalid-input',
+        retryable: true,
+        retryHints: [
+          'Include a JSON payload with rules and values in the request.',
+          'Or provide a file path if this skill is extended to load local validation input.'
+        ]
+      });
     }
 
     const issues = [];
@@ -50,16 +54,12 @@ module.exports = {
     const errors = issues.filter(i => i.severity === 'ERROR').length;
     const warnings = issues.filter(i => i.severity === 'WARNING').length;
 
-    return {
-      type: 'result',
-      skill: 'data-validation',
-      message: issues.length > 0
+    return createSkillResult('data-validation', issues.length > 0
         ? `Validation: ${errors} errors, ${warnings} warnings`
-        : 'All validations passed',
-      data: { issues, summary: { errors, warnings, passed: issues.length === 0 } },
+        : 'All validations passed', {
       input,
-      timestamp: new Date().toISOString()
-    };
+      data: { issues, summary: { errors, warnings, passed: issues.length === 0 } }
+    });
   }
 };
 

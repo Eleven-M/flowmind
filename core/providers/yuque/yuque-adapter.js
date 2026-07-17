@@ -27,51 +27,27 @@ class YuqueAdapter extends KnowledgeBaseAdapter {
   }
 
   async getRepos(params) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('getRepos'),
-      params
-    };
+    return this.callMcpTool('getRepos', params);
   }
 
   async getDocs(namespace, params = {}) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('getDocs'),
-      params: { namespace, ...params }
-    };
+    return this.callMcpTool('getDocs', { namespace, ...params });
   }
 
   async getDoc(namespace, slug) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('getDoc'),
-      params: { namespace, slug }
-    };
+    return this.callMcpTool('getDoc', { namespace, slug });
   }
 
   async createDoc(namespace, docData) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('createDoc'),
-      params: { namespace, ...docData }
-    };
+    return this.callMcpTool('createDoc', { namespace, ...docData });
   }
 
   async updateDoc(namespace, slug, docData) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('updateDoc'),
-      params: { namespace, slug, ...docData }
-    };
+    return this.callMcpTool('updateDoc', { namespace, slug, ...docData });
   }
 
   async search(query, type = 'doc') {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('search'),
-      params: { q: query, type }
-    };
+    return this.callMcpTool('search', { q: query, type });
   }
 
   /**
@@ -79,11 +55,7 @@ class YuqueAdapter extends KnowledgeBaseAdapter {
    * @returns {Promise<object>}
    */
   async getCurrentUser() {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('getCurrentUser'),
-      params: {}
-    };
+    return this.callMcpTool('getCurrentUser', {});
   }
 }
 

@@ -11,6 +11,11 @@ const ConfigManager = require('./config-manager');
 const ComponentRegistry = require('./component-registry');
 const ModelManager = require('./ai/model-manager');
 const eventBus = require('./event-bus');
+const { autoSyncSddAgentToFlowMind } = require('./sdd-agent-sync');
+const { inferSourceContext } = require('./source-inference');
+const { createLearningResponse, createSkillError, createSkillResult, isErrorResultPayload } = require('./result-contract');
+const { attachKnowledgeDepositionCandidates } = require('./knowledge-deposition');
+const { attachFollowUpChain } = require('./automation-chain');
 
 class FlowMind {
   constructor(options = {}) {
@@ -20,10 +25,12 @@ class FlowMind {
     this.matcher = new SceneMatcher(this.config, this.learning);
     this.components = new ComponentRegistry(this.config);
     this.skills = new SkillLoader(this.config, this.learning, this.components, this.honor);
-    this.ai = new ModelManager(options.ai || {});
+    this.aiOptions = { silenceWarnings: true, ...(options.ai || {}) };
+    this.ai = new ModelManager(this.aiOptions);
     this.initialized = false;
     this.conversationHistory = [];
     this.maxHistoryLength = options.maxHistoryLength || 50;
+    this.lastSkillRoute = null;
   }
 
   /**
@@ -32,6 +39,7 @@ class FlowMind {
   async init() {
     if (this.initialized) return this;
 
+    await autoSyncSddAgentToFlowMind();
     await this.config.load();
 
     // Validate configuration
@@ -49,6 +57,8 @@ class FlowMind {
 
     // Initialize AI model manager
     try {
+      const aiConfig = this.config.deepMerge(this.config.get('ai', {}), this.aiOptions || {});
+      this.ai = new ModelManager(aiConfig);
       await this.ai.init();
     } catch (error) {
       console.warn(`AI model initialization failed: ${error.message}. Falling back to rule-based engine.`);
@@ -96,13 +106,39 @@ class FlowMind {
 
     try {
       // 1. AI Intent Understanding (if available)
-      const intent = await this.ai.understandIntent(input, enhancedContext);
+      const intent = await this.safeUnderstandIntent(input, enhancedContext);
+
+      if (this.isAIStatusQuery(input)) {
+        const statusResult = await this.formatAIStatusResponse(input, enhancedContext, intent, Date.now() - startTime);
+        this.conversationHistory.push({
+          input,
+          output: statusResult,
+          skill: statusResult.metadata?.skill || 'ai-status',
+          timestamp: new Date().toISOString()
+        });
+        if (this.conversationHistory.length > this.maxHistoryLength) {
+          this.conversationHistory.shift();
+        }
+
+        eventBus.emit('process:complete', {
+          input,
+          skill: statusResult.metadata?.skill || 'ai-status',
+          duration: statusResult.metadata?.duration || 0,
+          success: true,
+          timestamp: statusResult.timestamp
+        });
+
+        return statusResult;
+      }
 
       // 2. Select skill (AI-assisted if available)
-      const skill = await this.selectSkill(input, context);
+      const skill = await this.selectSkill(input, {
+        ...enhancedContext,
+        intent
+      });
 
       if (!skill) {
-        return this.formatError('No matching skill found', input);
+        return await this.answerWithAI(input, enhancedContext, intent, startTime);
       }
 
       // 3. Capture explicit learning feedback after skill resolution so bindings are accurate.
@@ -112,12 +148,12 @@ class FlowMind {
           flowmind: this,
           currentSkill: this.resolveLearningTargetSkill(skill, enhancedContext)
         };
-        const aiLearningResult = await this.ai.analyzeLearningFeedback(input, learningContext);
+        const aiLearningResult = await this.safeAnalyzeLearningFeedback(input, learningContext);
         const learningResult = aiLearningResult?.isLearning
           ? aiLearningResult
           : await this.learning.detectLearning(input, learningContext);
         if (learningResult) {
-          return this.formatLearningResponse(learningResult);
+          return this.formatLearningResponse(learningResult, input);
         }
       }
 
@@ -128,7 +164,7 @@ class FlowMind {
       }
 
       // 5. Extract parameters using AI (if available)
-      const extractedParams = await this.ai.extractParameters(input, skill.name);
+      const extractedParams = await this.safeExtractParameters(input, skill.name);
 
       // 6. Execute with learning applied
       const executeContext = {
@@ -141,10 +177,14 @@ class FlowMind {
       const result = await this.executeWithLearning(skill, input, executeContext);
 
       // 7. Generate AI summary (if available)
-      const summary = await this.ai.summarizeResult(result, {
+      const summary = await this.safeSummarizeResult(result, {
         skill: skill.name,
         intent: intent
       });
+
+      const aiStatus = typeof this.ai?.getStatus === 'function'
+        ? this.ai.getStatus()
+        : {};
 
       // 8. Format and return
       const formatted = this.formatResult(summary || result, {
@@ -152,8 +192,12 @@ class FlowMind {
         duration: Date.now() - startTime,
         sceneMatch: sceneMatch,
         intent: intent,
-        aiEnhanced: !!summary
+        aiEnhanced: !!summary,
+        aiProvider: aiStatus.defaultProvider || null,
+        aiModel: aiStatus.defaultModel || null,
+        skillRoute: this.lastSkillRoute || 'rules'
       });
+      const processSucceeded = !isErrorResultPayload(formatted);
 
       // Save to conversation history
       this.conversationHistory.push({
@@ -170,7 +214,7 @@ class FlowMind {
         input,
         skill: skill.name,
         duration: formatted.metadata.duration,
-        success: true,
+        success: processSucceeded,
         timestamp: formatted.timestamp
       });
 
@@ -178,7 +222,10 @@ class FlowMind {
 
     } catch (error) {
       eventBus.emit('process:error', { input, error: error.message, timestamp: new Date().toISOString() });
-      return this.formatError(error.message, input);
+      return this.formatError(error.message, input, {
+        errorCode: error.code || null,
+        bindingHint: error.bindingHint || null
+      });
     }
   }
 
@@ -190,18 +237,47 @@ class FlowMind {
 
     // Get learning rules for this skill
     const learnings = await this.learning.getSkillLearnings(skill.name);
+    const resourceBinding = await this.learning.matchResourceBinding(input, skill.name);
+    let sourceInference = context.sourceInference || null;
+    if (!sourceInference) {
+      try {
+        sourceInference = await inferSourceContext(input);
+      } catch (error) {
+        sourceInference = null;
+      }
+    }
 
     // Apply learning rules to context
     const enhancedContext = {
       ...context,
       flowmind: context.flowmind || this,
+      componentRegistry: context.componentRegistry || this.components,
       currentSkill: context.currentSkill || skill.name,
       learnings: learnings,
-      preferences: await this.learning.getPreferences(skill.name)
+      skillConfig: this.config?.get?.(`skillConfig.skills.${skill.name}`, {}) || {},
+      preferences: {
+        ...(this.config?.get?.(`skillConfig.skills.${skill.name}`, {}) || {}),
+        ...(await this.learning.getPreferences(skill.name))
+      },
+      resourceBinding,
+      sourceInference
     };
 
     // Execute skill
     const result = await skill.execute(input, enhancedContext);
+    const resolvedResult = await this.resolveDeferredMcpResult(result, skill, enhancedContext);
+    const chainedResult = attachFollowUpChain(resolvedResult);
+    const finalResult = attachKnowledgeDepositionCandidates(chainedResult, {
+      repo: enhancedContext.preferences?.defaultNamespace
+    });
+
+    if (resourceBinding?.id) {
+      await this.learning.markResourceBindingUsed(resourceBinding.id, {
+        input,
+        skillName: skill.name,
+        currentSkill: enhancedContext.currentSkill
+      });
+    }
 
     const duration = Date.now() - skillStartTime;
 
@@ -209,14 +285,155 @@ class FlowMind {
     eventBus.emit('skill:executed', {
       name: skill.name,
       duration,
-      success: true,
+      success: !isErrorResultPayload(finalResult),
       timestamp: new Date().toISOString()
     });
 
     // Award honor point for skill use
     await this.honor.award('skill_use', `Used skill: ${skill.name}`);
 
-    return result;
+    return finalResult;
+  }
+
+  async resolveDeferredMcpResult(result, skill, context = {}) {
+    const invocation = this.extractMcpInvocation(result);
+    if (!invocation) {
+      return result;
+    }
+
+    const adapter = this.resolveDeferredAdapter(invocation, skill, context);
+    if (!adapter) {
+      return result;
+    }
+
+    const executor = typeof adapter.callTool === 'function'
+      ? adapter.callTool.bind(adapter)
+      : typeof adapter.callMcpTool === 'function'
+        ? adapter.callMcpTool.bind(adapter)
+        : null;
+
+    if (!executor) {
+      return result;
+    }
+
+    try {
+      const execution = await executor(invocation.tool, invocation.args || {});
+      const resultData = result && typeof result === 'object' && !Array.isArray(result) && result.data && typeof result.data === 'object'
+        ? result.data
+        : {};
+
+      return {
+        ...result,
+        data: {
+          ...resultData,
+          execution,
+          mcpTool: invocation.tool,
+          mcpExecuted: true,
+          mcpServer: invocation.mcpServer || adapter.mcpServer || adapter.providerName
+        }
+      };
+    } catch (error) {
+      const existingData = result && typeof result === 'object' && result.data && typeof result.data === 'object'
+        ? result.data
+        : {};
+      return createSkillError(result?.skill || skill?.name || context.currentSkill || null, result?.message || error.message, {
+        input: result?.input,
+        kind: existingData.kind || 'execution-failed',
+        retryable: existingData.retryable !== undefined ? existingData.retryable : true,
+        data: {
+          ...existingData,
+          mcpTool: invocation.tool,
+          mcpExecuted: false,
+          mcpError: error.message,
+          mcpErrorCode: error.code || null
+        },
+        bindingHint: error.bindingHint || result?.data?.bindingHint || null
+      });
+    }
+  }
+
+  extractMcpInvocation(result) {
+    if (!result || typeof result !== 'object') {
+      return null;
+    }
+
+    const candidates = [
+      result.data,
+      result
+    ];
+
+    for (const candidate of candidates) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+        continue;
+      }
+
+      const tool = candidate.mcpTool || candidate.tool;
+      if (!tool || typeof tool !== 'string') {
+        continue;
+      }
+
+      const args = candidate.args || candidate.params || {};
+      if (args && typeof args !== 'object') {
+        continue;
+      }
+
+      return {
+        tool,
+        args,
+        mcpServer: candidate.mcpServer || null
+      };
+    }
+
+    return null;
+  }
+
+  resolveDeferredAdapter(invocation, skill, context = {}) {
+    const registry = context.componentRegistry || this.components;
+    if (!registry) {
+      return null;
+    }
+
+    const bindingComponentType = context.resourceBinding?.componentType || context.resolvedBinding?.componentType || null;
+    const skillComponentType = this.inferSkillComponentType(skill, context);
+    const componentTypes = [
+      bindingComponentType,
+      skillComponentType,
+      invocation.componentType
+    ].filter(Boolean);
+
+    for (const componentType of componentTypes) {
+      const adapter = registry.getAdapter(componentType);
+      if (adapter) {
+        return adapter;
+      }
+    }
+
+    if (typeof registry.getAll === 'function') {
+      const allAdapters = registry.getAll();
+      for (const entry of allAdapters) {
+        const adapter = registry.getAdapterByProvider?.(entry.type, entry.provider) || null;
+        if (adapter && (adapter.mcpServer === invocation.mcpServer || adapter.providerName === invocation.provider)) {
+          return adapter;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  inferSkillComponentType(skill, context = {}) {
+    const name = skill?.name || context.currentSkill || '';
+    const mapping = {
+      'log-audit': 'logService',
+      'sls-log-audit': 'logService',
+      'yapi-sync-interface': 'apiDoc',
+      'yuque-sync-design': 'knowledgeBase',
+      'data-logic-validation': 'databaseQuery',
+      'resource-bind': null,
+      'auto-flow': 'workflow'
+    };
+
+    return mapping[name] || null;
   }
 
   /**
@@ -226,23 +443,29 @@ class FlowMind {
     const { scene, params } = sceneMatch;
     const results = [];
 
-    for (const step of scene.workflow.skills) {
-      const skill = this.skills.get(step.skill);
-      if (!skill) continue;
+    try {
+      for (const step of scene.workflow.skills) {
+        const skill = this.skills.get(step.skill);
+        if (!skill) continue;
 
-      const stepContext = {
-        ...context,
-        params: { ...step.params, ...params },
-        previousResults: results,
-        flowmind: this,
-        currentSkill: step.skill
-      };
+        const stepContext = {
+          ...context,
+          params: { ...step.params, ...params },
+          previousResults: results,
+          flowmind: this,
+          currentSkill: step.skill
+        };
 
-      const result = await this.executeWithLearning(skill, input, stepContext);
-      results.push({
-        skill: step.skill,
-        result: result
-      });
+        const result = await this.executeWithLearning(skill, input, stepContext);
+        results.push({
+          skill: step.skill,
+          result: result
+        });
+      }
+      await this.matcher.updateSceneStats(scene.id, true, { input });
+    } catch (error) {
+      await this.matcher.updateSceneStats(scene.id, false, { input });
+      throw error;
     }
 
     return {
@@ -256,40 +479,327 @@ class FlowMind {
   /**
    * Format learning response
    */
-  formatLearningResponse(learningResult) {
+  formatLearningResponse(learningResult, input = undefined) {
     const { type, record, confirmation } = learningResult;
 
-    return {
-      type: 'learning',
-      learningType: type,
-      record: record,
-      message: confirmation,
-      success: true
+    return createLearningResponse(type, confirmation, {
+      input,
+      record,
+      data: learningResult
+    });
+  }
+
+  isAIStatusQuery(input) {
+    const normalized = String(input || '').trim().toLowerCase();
+    if (!normalized) return false;
+
+    const patterns = [
+      /你.*是什么模型/,
+      /你.*用的.*模型/,
+      /当前.*模型/,
+      /ai.*(模型|状态|连接|正常|可用|配置)/,
+      /模型.*(状态|连接|正常|可用)/,
+      /mimo.*(状态|连接|正常|可用)/,
+      /openai.*(状态|连接|正常|可用)/,
+      /what model are you/,
+      /which model/,
+      /are you connected/,
+      /ai status/,
+      /model status/
+    ];
+
+    return patterns.some((pattern) => pattern.test(normalized));
+  }
+
+  async formatAIStatusResponse(input, context = {}, intent = null, duration = 0) {
+    const status = this.getAIStatus();
+    const providers = status.providers || {};
+    const providerEntries = Object.entries(providers);
+    const defaultProvider = status.defaultProvider || null;
+    const defaultProviderInfo = defaultProvider ? providers[defaultProvider] : null;
+    const activeEntry = defaultProviderInfo?.initialized
+      ? [defaultProvider, defaultProviderInfo]
+      : providerEntries.find(([, info]) => info?.initialized) || null;
+    const activeProvider = activeEntry?.[0] || null;
+    const activeProviderInfo = activeEntry?.[1] || null;
+    const activeModel = activeProviderInfo?.info?.model || status.defaultModel || null;
+    const ready = status.health
+      ? status.health === 'ready'
+      : !!activeEntry;
+
+    const providerSummary = {};
+    for (const [name, info] of providerEntries) {
+      providerSummary[name] = {
+        initialized: !!info?.initialized,
+        health: info?.health || (info?.initialized ? 'ready' : 'off'),
+        error: info?.error || null,
+        model: info?.info?.model || null,
+        baseUrl: info?.info?.baseUrl || null,
+        provider: info?.info?.provider || name
+      };
+    }
+
+    let aiReply = null;
+    let replyError = null;
+    try {
+      aiReply = await this.ai.answerQuery(input, {
+        ...context,
+        intent,
+        aiStatus: {
+          ...status,
+          ready,
+          activeProvider,
+          activeModel,
+          providers: providerSummary
+        },
+        skillCandidates: []
+      });
+    } catch (error) {
+      replyError = error?.message || String(error);
+    }
+
+    const message = aiReply || (replyError
+      ? `AI 状态查询失败：${replyError}`
+      : ready
+        ? `当前 AI 已连接，默认提供商是 ${defaultProvider || activeProvider}，模型是 ${activeModel || '未配置'}。`
+        : `当前 AI 还没有可用连接。请先配置 provider 和 apiKey，再运行 flowmind ai -s 检查状态。`);
+
+    const health = replyError || status.health === 'error'
+      ? 'error'
+      : ready
+        ? 'ready'
+        : 'not_ready';
+
+    const details = {
+      query: input,
+      health,
+      ready,
+      initialized: !!status.initialized,
+      defaultProvider,
+      defaultModel: status.defaultModel || null,
+      activeProvider,
+      activeModel,
+      providers: providerSummary,
+      features: status.features || {},
+      replyError,
+      recommendedChecks: ready
+        ? ['flowmind ai --status', `flowmind ai --test ${activeProvider || defaultProvider || ''}`.trim()]
+        : ['flowmind ai --status', 'flowmind init --ai <provider>']
     };
+
+    return this.formatResult({
+      message,
+      ...details,
+      data: details
+    }, {
+      skill: 'ai-status',
+      label: 'AI 状态',
+      duration,
+      sceneMatch: null,
+      intent: {
+        intent: 'query',
+        action: 'ai_status',
+        confidence: 1
+      },
+      aiEnhanced: false,
+      aiProvider: defaultProvider || activeProvider || null,
+      aiModel: activeModel,
+      skillRoute: 'ai-status'
+    });
+  }
+
+  async answerWithAI(input, context = {}, intent = null, startTime = Date.now()) {
+    const status = this.getAIStatus();
+    const skillCandidates = this.skills?.list?.() || [];
+    let aiReply = null;
+    let replyError = null;
+    try {
+      aiReply = await this.ai.answerQuery(input, {
+        ...context,
+        intent,
+        aiStatus: status,
+        skillCandidates
+      });
+    } catch (error) {
+      replyError = error?.message || String(error);
+    }
+
+    const fallbackMessage = aiReply
+      || (replyError
+        ? `AI 回答失败：${replyError}`
+        : '当前没有匹配到可执行的技能。我可以先用 AI 回答，如果你要实时数据或系统操作，请补充对应的 MCP 或 skill。');
+
+    const result = this.formatResult({
+      message: fallbackMessage,
+      query: input,
+      replyMode: 'ai-fallback',
+      replyError,
+      aiStatus: {
+        defaultProvider: status.defaultProvider || null,
+        defaultModel: status.defaultModel || null,
+        ready: this.hasAI(),
+        providers: Object.fromEntries(Object.entries(status.providers || {}).map(([name, info]) => [
+          name,
+          {
+            initialized: !!info?.initialized,
+            model: info?.info?.model || null,
+            provider: info?.info?.provider || name
+          }
+        ]))
+      }
+    }, {
+      skill: 'ai-fallback',
+      label: 'AI 回复',
+      duration: Date.now() - startTime,
+      sceneMatch: null,
+      intent,
+      aiEnhanced: true,
+      aiProvider: status.defaultProvider || null,
+      aiModel: status.defaultModel || null,
+      skillRoute: 'ai-only'
+    });
+
+    this.conversationHistory.push({
+      input,
+      output: result,
+      skill: 'ai-fallback',
+      timestamp: new Date().toISOString()
+    });
+    if (this.conversationHistory.length > this.maxHistoryLength) {
+      this.conversationHistory.shift();
+    }
+
+    eventBus.emit('process:complete', {
+      input,
+      skill: 'ai-fallback',
+      duration: result.metadata.duration,
+      success: true,
+      timestamp: result.timestamp
+    });
+
+    return result;
   }
 
   async selectSkill(input, context = {}) {
+    this.lastSkillRoute = 'rules';
+
     if (context.skill) {
       const explicitSkill = this.skills.get(context.skill);
       if (!explicitSkill) {
         return null;
       }
+      this.lastSkillRoute = 'explicit';
       return explicitSkill;
     }
 
-    const candidates = await this.skills.getCandidates(input, context);
+    const ruleCandidates = await this.skills.getCandidates(input, context);
+    const aiContext = {
+      ...context,
+      currentSkill: context.currentSkill || null
+    };
 
-    if (candidates.length > 0) {
-      const aiSelection = await this.ai.selectSkill(input, candidates);
-      if (aiSelection && aiSelection.selectedSkill) {
-        const selected = this.skills.get(aiSelection.selectedSkill);
-        if (selected) {
-          return selected;
+    const aiCandidateList = ruleCandidates.length > 0
+      ? ruleCandidates
+      : this.buildAiSkillCandidates();
+
+    const canUseAiSelection = this.ai && typeof this.ai.selectSkill === 'function';
+    let aiAttempted = false;
+
+    if (canUseAiSelection && aiCandidateList.length > 0) {
+      aiAttempted = true;
+      try {
+        const aiSelection = await this.ai.selectSkill(input, aiCandidateList, aiContext);
+        if (aiSelection && aiSelection.selectedSkill) {
+          const selected = this.skills.get(aiSelection.selectedSkill);
+          if (selected) {
+            this.lastSkillRoute = 'ai';
+            return selected;
+          }
         }
+      } catch (error) {
+        aiAttempted = true;
       }
     }
 
-    return this.skills.select(input, context);
+    if (ruleCandidates.length > 0) {
+      const selected = await this.skills.select(input, context);
+      this.lastSkillRoute = aiAttempted ? 'ai+rules' : 'rules';
+      return selected;
+    }
+
+    this.lastSkillRoute = aiAttempted ? 'ai' : 'rules';
+    return null;
+  }
+
+  async safeUnderstandIntent(input, context = {}) {
+    if (!this.ai || typeof this.ai.understandIntent !== 'function') {
+      return { intent: 'unknown', confidence: 0, source: 'rules' };
+    }
+
+    try {
+      return await this.ai.understandIntent(input, context);
+    } catch (error) {
+      return { intent: 'unknown', confidence: 0, source: 'rules' };
+    }
+  }
+
+  async safeAnalyzeLearningFeedback(input, context = {}) {
+    if (!this.ai || typeof this.ai.analyzeLearningFeedback !== 'function') {
+      return null;
+    }
+
+    try {
+      return await this.ai.analyzeLearningFeedback(input, context);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async safeExtractParameters(input, skillName) {
+    if (!this.ai || typeof this.ai.extractParameters !== 'function') {
+      return {};
+    }
+
+    try {
+      const params = await this.ai.extractParameters(input, skillName);
+      return params && typeof params === 'object' ? params : {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  async safeSummarizeResult(result, context = {}) {
+    if (!this.ai || typeof this.ai.summarizeResult !== 'function') {
+      return null;
+    }
+
+    try {
+      return await this.ai.summarizeResult(result, context);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  buildAiSkillCandidates() {
+    if (typeof this.skills.getAll === 'function') {
+      return this.skills.getAll().map((skill) => ({
+        name: skill.name,
+        skill,
+        description: skill.definition?.description || '',
+        triggers: skill.definition?.triggers || [],
+        category: skill.definition?.category || skill.definition?.metadata?.category || '',
+        score: 0
+      }));
+    }
+
+    return this.skills.list().map((info) => ({
+      name: info.name,
+      skill: this.skills.get(info.name),
+      description: info.description || '',
+      triggers: [],
+      category: info.category || '',
+      score: 0
+    })).filter((candidate) => candidate.skill);
   }
 
   shouldCaptureLearningInput(input, skill, context = {}) {
@@ -327,26 +837,31 @@ class FlowMind {
    * Format result
    */
   formatResult(result, metadata) {
-    return {
-      type: 'result',
-      success: true,
+    if (isErrorResultPayload(result)) {
+      const payload = result?.type === 'error'
+        ? result
+        : result?.data;
+      return createSkillError(null, payload?.message, {
+        input: payload?.input,
+        data: payload?.data,
+        metadata
+      });
+    }
+
+    return createSkillResult(null, undefined, {
       data: result,
-      metadata: metadata,
-      timestamp: new Date().toISOString()
-    };
+      metadata
+    });
   }
 
   /**
    * Format error
    */
-  formatError(message, input) {
-    return {
-      type: 'error',
-      success: false,
-      message: message,
-      input: input,
-      timestamp: new Date().toISOString()
-    };
+  formatError(message, input, details = {}) {
+    return createSkillError(null, message, {
+      input,
+      data: details
+    });
   }
 
   /**
@@ -393,7 +908,16 @@ class FlowMind {
    * @returns {object}
    */
   getAIStatus() {
-    return this.ai.getStatus();
+    if (typeof this.ai?.getStatus === 'function') {
+      return this.ai.getStatus();
+    }
+    return {
+      initialized: false,
+      defaultProvider: null,
+      defaultModel: null,
+      features: {},
+      providers: {}
+    };
   }
 
   /**
@@ -401,7 +925,9 @@ class FlowMind {
    * @returns {boolean}
    */
   hasAI() {
-    return this.ai.hasAvailableProvider();
+    return typeof this.ai?.hasAvailableProvider === 'function'
+      ? this.ai.hasAvailableProvider()
+      : false;
   }
 
   /**

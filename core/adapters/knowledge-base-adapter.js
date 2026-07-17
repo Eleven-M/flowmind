@@ -16,7 +16,7 @@ class KnowledgeBaseAdapter extends McpAdapter {
    * @param {object} params
    * @returns {Promise<object>}
    */
-  async getRepos(params) {
+  async getRepos(_params) {
     throw new Error('Subclasses must implement getRepos()');
   }
 
@@ -26,7 +26,7 @@ class KnowledgeBaseAdapter extends McpAdapter {
    * @param {object} params
    * @returns {Promise<object>}
    */
-  async getDocs(namespace, params) {
+  async getDocs(_namespace, _params) {
     throw new Error('Subclasses must implement getDocs()');
   }
 
@@ -36,7 +36,7 @@ class KnowledgeBaseAdapter extends McpAdapter {
    * @param {string} slug
    * @returns {Promise<object>}
    */
-  async getDoc(namespace, slug) {
+  async getDoc(_namespace, _slug) {
     throw new Error('Subclasses must implement getDoc()');
   }
 
@@ -46,7 +46,7 @@ class KnowledgeBaseAdapter extends McpAdapter {
    * @param {object} docData - { slug, title, body, format }
    * @returns {Promise<object>}
    */
-  async createDoc(namespace, docData) {
+  async createDoc(_namespace, _docData) {
     throw new Error('Subclasses must implement createDoc()');
   }
 
@@ -57,7 +57,7 @@ class KnowledgeBaseAdapter extends McpAdapter {
    * @param {object} docData
    * @returns {Promise<object>}
    */
-  async updateDoc(namespace, slug, docData) {
+  async updateDoc(_namespace, _slug, _docData) {
     throw new Error('Subclasses must implement updateDoc()');
   }
 
@@ -67,7 +67,7 @@ class KnowledgeBaseAdapter extends McpAdapter {
    * @param {string} type - 'doc' or 'repo'
    * @returns {Promise<object>}
    */
-  async search(query, type) {
+  async search(_query, _type) {
     throw new Error('Subclasses must implement search()');
   }
 }

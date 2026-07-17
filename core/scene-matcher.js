@@ -209,12 +209,17 @@ class SceneMatcher {
   /**
    * Extract parameters from input
    */
-  extractParams(input, scene) {
+  extractParams(input, _scene) {
     const params = {};
+
+    const bareTraceMatch = input.match(/(?:^|[^A-Za-z0-9])([a-f0-9]{12,32})(?:$|[^A-Za-z0-9])/i);
+    if (bareTraceMatch && bareTraceMatch[1] && !/^\d+$/.test(bareTraceMatch[1])) {
+      params.traceId = bareTraceMatch[1].toLowerCase();
+    }
 
     // Extract trace ID
     const traceMatch = input.match(/traceId\s*[:：]\s*(\w+)|traceId\s+(\w+)/i);
-    if (traceMatch) {
+    if (!params.traceId && traceMatch) {
       params.traceId = traceMatch[1] || traceMatch[2];
     }
 
@@ -239,7 +244,7 @@ class SceneMatcher {
   /**
    * Update scene usage stats
    */
-  async updateSceneStats(sceneId, success) {
+  async updateSceneStats(sceneId, success, context = {}) {
     const scene = this.scenes.find(s => s.id === sceneId);
     if (!scene) return;
 
@@ -254,6 +259,10 @@ class SceneMatcher {
 
     // Save updated scenes
     await this.saveScenes();
+
+    if (success && this.learning?.promoteSceneUsage) {
+      await this.learning.promoteSceneUsage(scene, context);
+    }
   }
 
   /**

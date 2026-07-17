@@ -16,7 +16,7 @@ class ReportAdapter extends McpAdapter {
    * @param {object} params
    * @returns {Promise<object>}
    */
-  async listBuilds(params) {
+  async listBuilds(_params) {
     throw new Error('Subclasses must implement listBuilds()');
   }
 
@@ -25,7 +25,7 @@ class ReportAdapter extends McpAdapter {
    * @param {string} buildId
    * @returns {Promise<object>}
    */
-  async getBuildInfo(buildId) {
+  async getBuildInfo(_buildId) {
     throw new Error('Subclasses must implement getBuildInfo()');
   }
 
@@ -34,7 +34,7 @@ class ReportAdapter extends McpAdapter {
    * @param {object} params
    * @returns {Promise<object>}
    */
-  async listJacocoReports(params) {
+  async listJacocoReports(_params) {
     throw new Error('Subclasses must implement listJacocoReports()');
   }
 
@@ -43,7 +43,7 @@ class ReportAdapter extends McpAdapter {
    * @param {object} params
    * @returns {Promise<object>}
    */
-  async listUnitReports(params) {
+  async listUnitReports(_params) {
     throw new Error('Subclasses must implement listUnitReports()');
   }
 
@@ -52,7 +52,7 @@ class ReportAdapter extends McpAdapter {
    * @param {string} jobName
    * @returns {Promise<object>}
    */
-  async getJobDetails(jobName) {
+  async getJobDetails(_jobName) {
     throw new Error('Subclasses must implement getJobDetails()');
   }
 }

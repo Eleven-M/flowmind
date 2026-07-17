@@ -3,8 +3,10 @@
  * Delegates to core LearningEngine for detecting and recording learning patterns
  */
 
+const { createSkillError, createSkillResult } = require('../../core/result-contract');
+
 module.exports = {
-  canHandle(input, context) {
+  canHandle(input, _context) {
     if (!input) return false;
     const lower = input.toLowerCase();
     const patterns = [
@@ -17,12 +19,11 @@ module.exports = {
   async execute(input, context) {
     const learning = context.flowmind?.learning;
     if (!learning) {
-      return {
-        type: 'error',
-        skill: 'learning-engine',
-        message: 'Learning engine not available',
-        input
-      };
+      return createSkillError('learning-engine', 'Learning engine not available', {
+        input,
+        kind: 'missing-component',
+        retryable: false
+      });
     }
 
     const result = await learning.detectLearning(input, context);
@@ -39,12 +40,8 @@ module.exports = {
       };
     }
 
-    return {
-      type: 'result',
-      skill: 'learning-engine',
-      message: 'No learning pattern detected in input',
-      input,
-      timestamp: new Date().toISOString()
-    };
+    return createSkillResult('learning-engine', 'No learning pattern detected in input', {
+      input
+    });
   }
 };

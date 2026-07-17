@@ -5,9 +5,29 @@
 
 const fs = require('fs-extra');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const eventBus = require('./event-bus');
 const { expandPath } = require('./utils');
+
+function shortId() {
+  return randomUUID().slice(0, 8);
+}
+
+function compareBindingFallback(left, right) {
+  const leftUses = Number(left?.stats?.useCount) || 0;
+  const rightUses = Number(right?.stats?.useCount) || 0;
+  if (leftUses !== rightUses) {
+    return rightUses - leftUses;
+  }
+
+  const leftLastUsed = Date.parse(left?.stats?.lastUsed || left?.timestamp || 0) || 0;
+  const rightLastUsed = Date.parse(right?.stats?.lastUsed || right?.timestamp || 0) || 0;
+  if (leftLastUsed !== rightLastUsed) {
+    return rightLastUsed - leftLastUsed;
+  }
+
+  return String(left?.id || '').localeCompare(String(right?.id || ''));
+}
 
 /**
  * Per-key write queue to prevent concurrent read-modify-write races
@@ -36,6 +56,8 @@ class LearningEngine {
     this.writeQueue = new WriteQueue();
     this.records = {};
     this.skillBindings = {};
+    this.resourceBindings = {};
+    this.scenes = { version: '1.0', mappings: [] };
     this.stats = {};
     this.initialized = false;
   }
@@ -54,7 +76,10 @@ class LearningEngine {
     await fs.ensureDir(path.join(this.expandPath(this.learningPath), 'records'));
 
     // Load existing data
+    await this.loadRecords();
     await this.loadSkillBindings();
+    await this.loadResourceBindings();
+    await this.loadScenes();
     await this.loadStats();
 
     this.initialized = true;
@@ -170,7 +195,7 @@ class LearningEngine {
    */
   async recordCorrection(correction, context) {
     const record = {
-      id: `learn-${Date.now()}-${uuidv4().slice(0, 8)}`,
+      id: `learn-${Date.now()}-${shortId()}`,
       timestamp: new Date().toISOString(),
       type: correction.type,
       severity: correction.severity,
@@ -217,7 +242,7 @@ class LearningEngine {
    */
   async recordSceneMapping(sceneMapping, context) {
     const record = {
-      id: `scene-${Date.now()}-${uuidv4().slice(0, 8)}`,
+      id: `scene-${Date.now()}-${shortId()}`,
       timestamp: new Date().toISOString(),
       type: 'scene_mapping',
       input: sceneMapping.input,
@@ -258,7 +283,7 @@ class LearningEngine {
    */
   async recordPreference(preference, context) {
     const record = {
-      id: `pref-${Date.now()}-${uuidv4().slice(0, 8)}`,
+      id: `pref-${Date.now()}-${shortId()}`,
       timestamp: new Date().toISOString(),
       type: 'preference',
       preferenceType: preference.preferenceType,
@@ -310,6 +335,220 @@ class LearningEngine {
   }
 
   /**
+   * Save a business/resource binding for later reuse.
+   */
+  async saveResourceBinding(binding, context = {}) {
+    const normalized = {
+      id: binding.id || `bind-${Date.now()}-${shortId()}`,
+      timestamp: binding.timestamp || new Date().toISOString(),
+      business: binding.business || 'default',
+      aliases: [...new Set([binding.business, ...(binding.aliases || [])].filter(Boolean))],
+      componentType: binding.componentType || null,
+      provider: binding.provider || null,
+      mcpServer: binding.mcpServer || null,
+      skill: binding.skill || context.currentSkill || 'resource-bind',
+      source: binding.source || 'manual',
+      keywords: [...new Set(binding.keywords || this.extractKeywords(binding.business || ''))],
+      connection: { ...(binding.connection || {}) },
+      metadata: { ...(binding.metadata || {}) },
+      stats: {
+        useCount: binding.stats?.useCount || 0,
+        lastUsed: binding.stats?.lastUsed || null
+      }
+    };
+
+    await this.writeQueue.run('resource-bindings', async () => {
+      this.resourceBindings.bindings = this.resourceBindings.bindings || [];
+      const index = this.resourceBindings.bindings.findIndex((item) => item.id === normalized.id
+        || (item.business === normalized.business
+          && item.componentType === normalized.componentType
+          && item.provider === normalized.provider));
+
+      if (index >= 0) {
+        const previous = this.resourceBindings.bindings[index];
+        this.resourceBindings.bindings[index] = {
+          ...previous,
+          ...normalized,
+          aliases: [...new Set([...(previous.aliases || []), ...normalized.aliases])],
+          keywords: [...new Set([...(previous.keywords || []), ...normalized.keywords])],
+          connection: { ...(previous.connection || {}), ...(normalized.connection || {}) },
+          metadata: { ...(previous.metadata || {}), ...(normalized.metadata || {}) },
+          timestamp: normalized.timestamp
+        };
+        normalized.id = this.resourceBindings.bindings[index].id;
+      } else {
+        this.resourceBindings.bindings.push(normalized);
+      }
+
+      this.resourceBindings.lastUpdated = new Date().toISOString();
+      await this.saveResourceBindings();
+    });
+
+    await this.updateStats('resource_binding', normalized.skill);
+
+    eventBus.emit('learning:recorded', {
+      type: 'resource_binding',
+      skill: normalized.skill,
+      recordId: normalized.id,
+      business: normalized.business,
+      componentType: normalized.componentType,
+      provider: normalized.provider
+    });
+
+    return normalized;
+  }
+
+  /**
+   * Return all stored resource bindings.
+   */
+  async listResourceBindings() {
+    return this.resourceBindings.bindings || [];
+  }
+
+  /**
+   * Find the best-matching binding for an input and skill context.
+   */
+  async matchResourceBinding(input, skillName = null) {
+    const bindings = this.resourceBindings.bindings || [];
+    if (!bindings.length) return null;
+
+    const componentType = this.inferComponentType(input, skillName);
+    const normalized = String(input || '').toLowerCase();
+    const requestedEnv = inferEnvToken(input);
+    const preferredBindingId = componentType
+      ? this.skillBindings.bindings?.[skillName]?.preferredResourceBindings?.[componentType] || null
+      : null;
+
+    let best = null;
+    let bestScore = 0;
+    const envMatches = [];
+
+    for (const binding of bindings) {
+      let score = 0;
+      const bindingEnv = inferBindingEnv(binding);
+
+      if (requestedEnv && bindingEnv && bindingEnv !== requestedEnv) {
+        continue;
+      }
+
+      if (requestedEnv && bindingEnv && bindingEnv === requestedEnv) {
+        score += 10;
+        envMatches.push(binding);
+      }
+
+      if (componentType && binding.componentType === componentType) {
+        score += 4;
+      }
+
+      if (binding.provider && normalized.includes(String(binding.provider).toLowerCase())) {
+        score += 3;
+      }
+
+      if (binding.mcpServer && normalized.includes(String(binding.mcpServer).toLowerCase())) {
+        score += 3;
+      }
+
+      if (preferredBindingId && binding.id === preferredBindingId) {
+        score += 8;
+      }
+
+      for (const alias of binding.aliases || []) {
+        if (alias && normalized.includes(String(alias).toLowerCase())) {
+          score += 6;
+        }
+      }
+
+      for (const keyword of binding.keywords || []) {
+        if (keyword && normalized.includes(String(keyword).toLowerCase())) {
+          score += 1;
+        }
+      }
+
+      if (!best || score > bestScore) {
+        best = binding;
+        bestScore = score;
+      }
+    }
+
+    if (!best) return null;
+
+    if (bestScore === 0) {
+      if (requestedEnv) {
+        if (envMatches.length === 0) {
+          return null;
+        }
+
+        const preferredEnvMatch = preferredBindingId
+          ? envMatches.find((binding) => binding.id === preferredBindingId)
+          : null;
+        if (preferredEnvMatch) {
+          return preferredEnvMatch;
+        }
+
+        return envMatches
+          .slice()
+          .sort(compareBindingFallback)
+          [0];
+      }
+
+      const sameComponent = componentType
+        ? bindings.filter((binding) => binding.componentType === componentType)
+        : [];
+      if (sameComponent.length === 0) {
+        return null;
+      }
+
+      if (sameComponent.length === 1) {
+        return sameComponent[0];
+      }
+
+      const preferredSameComponent = preferredBindingId
+        ? sameComponent.find((binding) => binding.id === preferredBindingId)
+        : null;
+      if (preferredSameComponent) {
+        return preferredSameComponent;
+      }
+
+      return sameComponent
+        .slice()
+        .sort(compareBindingFallback)
+        [0];
+    }
+
+    return best;
+  }
+
+  /**
+   * Mark a binding as used.
+   */
+  async markResourceBindingUsed(bindingId, context = {}) {
+    if (!bindingId) return;
+
+    let updatedBinding = null;
+    await this.writeQueue.run('resource-bindings', async () => {
+      const bindings = this.resourceBindings.bindings || [];
+      const index = bindings.findIndex((binding) => binding.id === bindingId);
+      if (index < 0) return;
+
+      const current = bindings[index];
+      updatedBinding = {
+        ...current,
+        stats: {
+          useCount: (current.stats?.useCount || 0) + 1,
+          lastUsed: new Date().toISOString()
+        }
+      };
+      bindings[index] = updatedBinding;
+      this.resourceBindings.lastUpdated = new Date().toISOString();
+      await this.saveResourceBindings();
+    });
+
+    if (updatedBinding) {
+      await this.promoteResourceBindingPreference(updatedBinding, context);
+    }
+  }
+
+  /**
    * Save learning record
    */
   async saveLearningRecord(record) {
@@ -341,11 +580,26 @@ class LearningEngine {
         scenes = await fs.readJson(scenesPath);
       }
 
-      scenes.mappings.push(record);
+      scenes.mappings = Array.isArray(scenes.mappings) ? scenes.mappings : [];
+      const index = scenes.mappings.findIndex((item) => item.id === record.id);
+      if (index >= 0) {
+        scenes.mappings[index] = record;
+      } else {
+        scenes.mappings.push(record);
+      }
       scenes.lastUpdated = new Date().toISOString();
 
       await fs.writeJson(scenesPath, scenes, { spaces: 2 });
     });
+
+    this.scenes.version = this.scenes.version || '1.0';
+    this.scenes.mappings = Array.isArray(this.scenes.mappings) ? this.scenes.mappings : [];
+    const index = this.scenes.mappings.findIndex((item) => item.id === record.id);
+    if (index >= 0) {
+      this.scenes.mappings[index] = record;
+    } else {
+      this.scenes.mappings.push(record);
+    }
   }
 
   /**
@@ -371,6 +625,191 @@ class LearningEngine {
       await fs.ensureDir(path.dirname(prefsPath));
       await fs.writeJson(prefsPath, prefs, { spaces: 2 });
     });
+  }
+
+  async saveAutoGeneratedRecord(record, skill = record.skill || '_global') {
+    const recordPath = path.join(
+      this.expandPath(this.learningPath),
+      'records',
+      skill,
+      `${record.id}.json`
+    );
+
+    const existed = await fs.pathExists(recordPath);
+    await fs.ensureDir(path.dirname(recordPath));
+    await fs.writeJson(recordPath, record, { spaces: 2 });
+
+    if (!this.records[skill]) {
+      this.records[skill] = [];
+    }
+    const index = this.records[skill].findIndex((item) => item.id === record.id);
+    if (index >= 0) {
+      this.records[skill][index] = record;
+    } else {
+      this.records[skill].push(record);
+    }
+
+    return { created: !existed, path: recordPath };
+  }
+
+  async savePassivePreferences(skillName, updates) {
+    const prefsPath = path.join(
+      this.expandPath(this.learningPath),
+      'records',
+      skillName,
+      'preferences.json'
+    );
+    const queueKey = `prefs:${skillName}`;
+    await this.writeQueue.run(queueKey, async () => {
+      let prefs = {};
+      if (await fs.pathExists(prefsPath)) {
+        prefs = await fs.readJson(prefsPath);
+      }
+
+      const next = typeof updates === 'function' ? updates(prefs) : { ...prefs, ...updates };
+      next.lastUpdated = new Date().toISOString();
+
+      await fs.ensureDir(path.dirname(prefsPath));
+      await fs.writeJson(prefsPath, next, { spaces: 2 });
+    });
+  }
+
+  getAutoPromoteConfig() {
+    return this.config.get('learning.autoPromote', {
+      enabled: true,
+      resourceBindingMinUses: 3,
+      sceneMinUses: 2
+    });
+  }
+
+  async promoteResourceBindingPreference(binding, context = {}) {
+    const config = this.getAutoPromoteConfig();
+    const skillName = context.skillName || context.currentSkill || binding.skill || null;
+    if (!config.enabled || !skillName || !binding.componentType) {
+      return false;
+    }
+
+    if ((binding.stats?.useCount || 0) < config.resourceBindingMinUses) {
+      return false;
+    }
+
+    this.skillBindings.bindings = this.skillBindings.bindings || {};
+    const skillBinding = this.skillBindings.bindings[skillName] || {
+      learningCount: 0,
+      records: [],
+      rules: [],
+      preferredResourceBindings: {}
+    };
+    skillBinding.preferredResourceBindings = skillBinding.preferredResourceBindings || {};
+
+    const existingPreferred = skillBinding.preferredResourceBindings[binding.componentType];
+    const changed = existingPreferred !== binding.id;
+    if (changed) {
+      skillBinding.preferredResourceBindings[binding.componentType] = binding.id;
+      skillBinding.lastLearning = new Date().toISOString();
+      this.skillBindings.bindings[skillName] = skillBinding;
+      await this.saveSkillBindings();
+    }
+
+    await this.savePassivePreferences(skillName, (prefs) => ({
+      ...prefs,
+      preferredResourceBindings: {
+        ...(prefs.preferredResourceBindings || {}),
+        [binding.componentType]: {
+          bindingId: binding.id,
+          business: binding.business,
+          provider: binding.provider,
+          componentType: binding.componentType,
+          useCount: binding.stats?.useCount || 0,
+          lastUsed: binding.stats?.lastUsed || null
+        }
+      }
+    }));
+
+    const record = {
+      id: `auto-resource-${skillName}-${binding.componentType}`,
+      timestamp: new Date().toISOString(),
+      type: 'resource_preference',
+      source: 'passive',
+      autoGenerated: true,
+      input: context.input || binding.metadata?.input || binding.business,
+      skill: skillName,
+      componentType: binding.componentType,
+      business: binding.business,
+      provider: binding.provider,
+      bindingId: binding.id,
+      useCount: binding.stats?.useCount || 0,
+      lastUsed: binding.stats?.lastUsed || null,
+      application: {
+        condition: `When ${skillName} resolves ${binding.componentType}`,
+        action: `Prefer resource binding ${binding.business}`,
+        priority: 'medium'
+      }
+    };
+    const saved = await this.saveAutoGeneratedRecord(record, skillName);
+    if (saved.created) {
+      await this.updateStats('resource_preference', skillName);
+    }
+
+    return changed || saved.created;
+  }
+
+  async promoteSceneUsage(scene, context = {}) {
+    const config = this.getAutoPromoteConfig();
+    if (!config.enabled || !scene?.id) {
+      return false;
+    }
+
+    if ((scene.stats?.useCount || 0) < config.sceneMinUses) {
+      return false;
+    }
+
+    const primarySkill = scene.workflow?.skills?.[0]?.skill || 'global';
+    const record = {
+      id: `auto-scene-${scene.id}`,
+      timestamp: new Date().toISOString(),
+      type: 'scene_preference',
+      source: 'passive',
+      autoGenerated: true,
+      input: context.input || scene.name,
+      skill: '_global',
+      sceneId: scene.id,
+      sceneName: scene.name,
+      primarySkill,
+      keywords: scene.keywords || [],
+      workflow: scene.workflow || {},
+      preferences: scene.preferences || {},
+      stats: {
+        useCount: scene.stats?.useCount || 0,
+        lastUsed: scene.stats?.lastUsed || null,
+        successRate: scene.stats?.successRate || 1.0
+      },
+      application: {
+        condition: `When request matches scene ${scene.name}`,
+        action: `Apply workflow starting with ${primarySkill}`,
+        priority: 'medium'
+      }
+    };
+
+    const saved = await this.saveAutoGeneratedRecord(record, '_global');
+    if (saved.created) {
+      await this.updateStats('scene_preference', 'global');
+    }
+
+    await this.savePassivePreferences('_global', (prefs) => ({
+      ...prefs,
+      preferredScenes: {
+        ...(prefs.preferredScenes || {}),
+        [scene.id]: {
+          name: scene.name,
+          primarySkill,
+          useCount: scene.stats?.useCount || 0,
+          successRate: scene.stats?.successRate || 1.0
+        }
+      }
+    }));
+
+    return saved.created;
   }
 
   /**
@@ -416,6 +855,77 @@ class LearningEngine {
   }
 
   /**
+   * Load resource bindings
+   */
+  async loadResourceBindings() {
+    const bindingsPath = path.join(this.expandPath(this.learningPath), 'resource-bindings.json');
+
+    if (await fs.pathExists(bindingsPath)) {
+      this.resourceBindings = await fs.readJson(bindingsPath);
+      this.resourceBindings.bindings = this.resourceBindings.bindings || [];
+    } else {
+      this.resourceBindings = { version: '1.0', bindings: [] };
+    }
+  }
+
+  /**
+   * Load learning records from disk
+   */
+  async loadRecords() {
+    const recordsPath = path.join(this.expandPath(this.learningPath), 'records');
+    this.records = {};
+
+    if (!(await fs.pathExists(recordsPath))) {
+      return;
+    }
+
+    const skillDirs = await fs.readdir(recordsPath);
+    for (const skill of skillDirs) {
+      const skillPath = path.join(recordsPath, skill);
+      const stat = await fs.stat(skillPath).catch(() => null);
+      if (!stat || !stat.isDirectory()) {
+        continue;
+      }
+
+      const files = await fs.readdir(skillPath);
+      for (const file of files) {
+        if (!file.endsWith('.json') || file === 'preferences.json') {
+          continue;
+        }
+
+        const recordPath = path.join(skillPath, file);
+        try {
+          const record = await fs.readJson(recordPath);
+          if (!this.records[skill]) {
+            this.records[skill] = [];
+          }
+          this.records[skill].push(record);
+        } catch (error) {
+          // Ignore malformed record files so one bad export does not block startup.
+        }
+      }
+    }
+  }
+
+  /**
+   * Load custom scene mappings from disk
+   */
+  async loadScenes() {
+    const scenesPath = path.join(this.expandPath(this.learningPath), 'scenes.json');
+    if (await fs.pathExists(scenesPath)) {
+      try {
+        this.scenes = await fs.readJson(scenesPath);
+        this.scenes.version = this.scenes.version || '1.0';
+        this.scenes.mappings = Array.isArray(this.scenes.mappings) ? this.scenes.mappings : [];
+      } catch (error) {
+        this.scenes = { version: '1.0', mappings: [] };
+      }
+    } else {
+      this.scenes = { version: '1.0', mappings: [] };
+    }
+  }
+
+  /**
    * Save skill bindings
    */
   async saveSkillBindings() {
@@ -424,6 +934,26 @@ class LearningEngine {
       this.skillBindings.lastUpdated = new Date().toISOString();
       await fs.writeJson(bindingsPath, this.skillBindings, { spaces: 2 });
     });
+  }
+
+  /**
+   * Save resource bindings
+   */
+  async saveResourceBindings() {
+    const bindingsPath = path.join(this.expandPath(this.learningPath), 'resource-bindings.json');
+    this.resourceBindings.lastUpdated = new Date().toISOString();
+    await fs.writeJson(bindingsPath, this.resourceBindings, { spaces: 2 });
+  }
+
+  /**
+   * Save custom scene mappings
+   */
+  async saveScenes() {
+    const scenesPath = path.join(this.expandPath(this.learningPath), 'scenes.json');
+    this.scenes.version = this.scenes.version || '1.0';
+    this.scenes.lastUpdated = new Date().toISOString();
+    this.scenes.mappings = Array.isArray(this.scenes.mappings) ? this.scenes.mappings : [];
+    await fs.writeJson(scenesPath, this.scenes, { spaces: 2 });
   }
 
   /**
@@ -475,11 +1005,17 @@ class LearningEngine {
    * Export learnings
    */
   async export(options = {}) {
+    if (options.bundle) {
+      return this.exportBundle(options);
+    }
+
     const exportData = {
       version: '1.0',
       exportedAt: new Date().toISOString(),
       stats: this.stats,
       skillBindings: this.skillBindings,
+      resourceBindings: this.resourceBindings,
+      scenes: this.scenes,
       records: this.records
     };
 
@@ -498,6 +1034,10 @@ class LearningEngine {
       data = await fs.readJson(data);
     }
 
+    if (isLearningBundle(data) || hasPortableLearningSections(data)) {
+      return this.importBundle(normalizeLearningBundle(data));
+    }
+
     // Merge stats
     this.stats.totalRecords += data.stats.totalRecords || 0;
     Object.assign(this.stats.byType, data.stats.byType || {});
@@ -506,18 +1046,131 @@ class LearningEngine {
     // Merge skill bindings
     for (const [skill, binding] of Object.entries(data.skillBindings.bindings || {})) {
       if (!this.skillBindings.bindings[skill]) {
-        this.skillBindings.bindings[skill] = binding;
+        this.skillBindings.bindings[skill] = cloneSkillBinding(binding);
       } else {
-        this.skillBindings.bindings[skill].records.push(...binding.records);
-        this.skillBindings.bindings[skill].rules.push(...binding.rules);
+        this.skillBindings.bindings[skill] = mergeSkillBindings(this.skillBindings.bindings[skill], binding);
       }
     }
 
+    // Merge resource bindings
+    for (const binding of data.resourceBindings?.bindings || []) {
+      mergeResourceBinding(this.resourceBindings, binding);
+    }
+
+    // Merge scenes when present
+    if (data.scenes) {
+      this.scenes.version = this.scenes.version || data.scenes.version || '1.0';
+      const existingScenes = Array.isArray(this.scenes.mappings) ? this.scenes.mappings : [];
+      for (const scene of data.scenes.mappings || []) {
+        const index = existingScenes.findIndex((item) => item.id === scene.id);
+        if (index >= 0) {
+          existingScenes[index] = mergeScene(existingScenes[index], scene);
+        } else {
+          existingScenes.push(scene);
+        }
+      }
+      this.scenes.mappings = existingScenes;
+    }
+
+    await this.importRecords(data.records || {});
+    await this.importPreferences(data.preferences || {});
+
     // Save
     await this.saveSkillBindings();
+    await this.saveResourceBindings();
+    await this.saveScenes();
     await this.saveStats();
 
     return { success: true, imported: data.stats.totalRecords };
+  }
+
+  async exportBundle(options = {}) {
+    const records = await this.collectRecords();
+    const preferences = await this.collectPreferences();
+    const bundle = {
+      kind: 'flowmind-learning-bundle',
+      formatVersion: '1.0',
+      exportedAt: new Date().toISOString(),
+      summary: {
+        totalRecords: this.stats.totalRecords || 0,
+        skills: Object.keys(this.skillBindings.bindings || {}).length,
+        resourceBindings: (this.resourceBindings.bindings || []).length,
+        scenes: (this.scenes?.mappings || []).length
+      },
+      stats: this.stats,
+      skillBindings: this.skillBindings,
+      resourceBindings: {
+        ...this.resourceBindings,
+        bindings: (this.resourceBindings.bindings || []).map((binding) => sanitizeResourceBinding(binding))
+      },
+      scenes: this.scenes,
+      preferences,
+      records
+    };
+
+    if (options.output) {
+      await fs.writeJson(options.output, bundle, { spaces: 2 });
+    }
+
+    return bundle;
+  }
+
+  async importBundle(bundle) {
+    const normalized = normalizeLearningBundle(bundle);
+
+    // Merge stats
+    this.stats.totalRecords += normalized.stats.totalRecords || 0;
+    Object.assign(this.stats.byType, normalized.stats.byType || {});
+    Object.assign(this.stats.bySkill, normalized.stats.bySkill || {});
+    if (normalized.stats.lastLearning) {
+      this.stats.lastLearning = normalized.stats.lastLearning;
+    }
+
+    // Merge skill bindings, preserving preferred resource bindings
+    for (const [skill, binding] of Object.entries(normalized.skillBindings.bindings || {})) {
+      if (!this.skillBindings.bindings[skill]) {
+        this.skillBindings.bindings[skill] = cloneSkillBinding(binding);
+      } else {
+        this.skillBindings.bindings[skill] = mergeSkillBindings(
+          this.skillBindings.bindings[skill],
+          binding
+        );
+      }
+    }
+
+    // Merge resource bindings
+    for (const binding of normalized.resourceBindings.bindings || []) {
+      mergeResourceBinding(this.resourceBindings, binding);
+    }
+
+    // Merge scenes
+    this.scenes.version = this.scenes.version || normalized.scenes.version || '1.0';
+    const existingScenes = Array.isArray(this.scenes.mappings) ? this.scenes.mappings : [];
+    for (const scene of normalized.scenes.mappings || []) {
+      const index = existingScenes.findIndex((item) => item.id === scene.id);
+      if (index >= 0) {
+        existingScenes[index] = mergeScene(existingScenes[index], scene);
+      } else {
+        existingScenes.push(scene);
+      }
+    }
+    this.scenes.mappings = existingScenes;
+
+    // Merge records and preferences
+    await this.importRecords(normalized.records || {});
+    await this.importPreferences(normalized.preferences || {});
+
+    // Save
+    await this.saveSkillBindings();
+    await this.saveResourceBindings();
+    await this.saveScenes();
+    await this.saveStats();
+
+    return {
+      success: true,
+      imported: normalized.stats.totalRecords || 0,
+      bundle: true
+    };
   }
 
   /**
@@ -585,6 +1238,91 @@ class LearningEngine {
     await fs.writeJson(statsPath, this.stats, { spaces: 2 });
   }
 
+  async collectRecords() {
+    const snapshot = {};
+    const basePath = path.join(this.expandPath(this.learningPath), 'records');
+    if (!(await fs.pathExists(basePath))) {
+      return snapshot;
+    }
+
+    const skillDirs = await fs.readdir(basePath);
+    for (const skill of skillDirs) {
+      const skillPath = path.join(basePath, skill);
+      const stat = await fs.stat(skillPath).catch(() => null);
+      if (!stat || !stat.isDirectory()) {
+        continue;
+      }
+
+      const files = await fs.readdir(skillPath);
+      snapshot[skill] = [];
+      for (const file of files) {
+        if (!file.endsWith('.json') || file === 'preferences.json') continue;
+        const record = await fs.readJson(path.join(skillPath, file)).catch(() => null);
+        if (record) {
+          snapshot[skill].push(record);
+        }
+      }
+    }
+
+    return snapshot;
+  }
+
+  async collectPreferences() {
+    const snapshot = {};
+    const basePath = path.join(this.expandPath(this.learningPath), 'records');
+    if (!(await fs.pathExists(basePath))) {
+      return snapshot;
+    }
+
+    const skillDirs = await fs.readdir(basePath);
+    for (const skill of skillDirs) {
+      const prefsPath = path.join(basePath, skill, 'preferences.json');
+      if (await fs.pathExists(prefsPath)) {
+        const prefs = await fs.readJson(prefsPath).catch(() => null);
+        if (prefs) {
+          snapshot[skill] = prefs;
+        }
+      }
+    }
+
+    return snapshot;
+  }
+
+  async importRecords(records) {
+    for (const [skill, list] of Object.entries(records)) {
+      if (!Array.isArray(list) || list.length === 0) {
+        continue;
+      }
+
+      if (!this.records[skill]) {
+        this.records[skill] = [];
+      }
+
+      for (const record of list) {
+        if (!record || !record.id) continue;
+        const exists = this.records[skill].some((item) => item.id === record.id);
+        if (!exists) {
+          this.records[skill].push(record);
+        }
+        await fs.ensureDir(path.join(this.expandPath(this.learningPath), 'records', skill));
+        await fs.writeJson(
+          path.join(this.expandPath(this.learningPath), 'records', skill, `${record.id}.json`),
+          record,
+          { spaces: 2 }
+        );
+      }
+    }
+  }
+
+  async importPreferences(preferences) {
+    for (const [skill, prefs] of Object.entries(preferences)) {
+      if (!prefs || typeof prefs !== 'object') continue;
+      const prefsPath = path.join(this.expandPath(this.learningPath), 'records', skill, 'preferences.json');
+      await fs.ensureDir(path.dirname(prefsPath));
+      await fs.writeJson(prefsPath, prefs, { spaces: 2 });
+    }
+  }
+
   /**
    * Helper methods
    */
@@ -619,7 +1357,21 @@ class LearningEngine {
     return [...new Set(words)].slice(0, 10);
   }
 
-  extractWorkflow(input) {
+  inferComponentType(input, skillName = null) {
+    const normalized = `${skillName || ''} ${input || ''}`.toLowerCase();
+
+    if (/yapi|api 文档|api doc|swagger|接口/.test(normalized)) return 'apiDoc';
+    if (/yuque|语雀|knowledge base|知识库|design/.test(normalized)) return 'knowledgeBase';
+    if (/redis|缓存|cache/.test(normalized)) return 'redisMonitor';
+    if (/sql|数据库|database|rds|dms/.test(normalized)) return 'databaseQuery';
+    if (/log|日志|trace|sls/.test(normalized)) return 'logService';
+    if (/pipeline|workflow|部署|流水线/.test(normalized)) return 'workflow';
+    if (/report|coverage|报告/.test(normalized)) return 'report';
+
+    return null;
+  }
+
+  extractWorkflow(_input) {
     // Extract workflow steps
     return {
       skills: ['auto-detect'],
@@ -653,6 +1405,15 @@ class LearningEngine {
     if (formatMatch) return formatMatch[1] || formatMatch[2];
 
     return input;
+  }
+
+  async getBundleSummary() {
+    return {
+      totalRecords: this.stats.totalRecords || 0,
+      skills: Object.keys(this.skillBindings.bindings || {}).length,
+      resourceBindings: (this.resourceBindings.bindings || []).length,
+      scenes: (this.scenes?.mappings || []).length
+    };
   }
 
   generateSummary(record) {
@@ -709,6 +1470,233 @@ class LearningEngine {
 └─────────────────────────────────────────────────────┘
     `.trim();
   }
+}
+
+function isLearningBundle(data) {
+  return data && typeof data === 'object' && data.kind === 'flowmind-learning-bundle';
+}
+
+function hasPortableLearningSections(data) {
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+
+  return Boolean(data.records || data.scenes || data.preferences || data.resourceBindings || data.skillBindings);
+}
+
+function normalizeLearningBundle(data) {
+  const normalized = isLearningBundle(data)
+    ? data
+    : {
+        kind: 'flowmind-learning-bundle',
+        formatVersion: '1.0',
+        exportedAt: data.exportedAt || new Date().toISOString(),
+        stats: data.stats || {},
+        skillBindings: data.skillBindings || { version: '1.0', bindings: {} },
+        resourceBindings: data.resourceBindings || { version: '1.0', bindings: [] },
+        scenes: data.scenes || { version: '1.0', mappings: [] },
+        preferences: data.preferences || {},
+        records: data.records || {}
+      };
+
+  normalized.stats = normalized.stats || {};
+  normalized.skillBindings = normalized.skillBindings || { version: '1.0', bindings: {} };
+  normalized.skillBindings.bindings = normalized.skillBindings.bindings || {};
+  normalized.resourceBindings = normalized.resourceBindings || { version: '1.0', bindings: [] };
+  normalized.resourceBindings.bindings = Array.isArray(normalized.resourceBindings.bindings)
+    ? normalized.resourceBindings.bindings
+    : [];
+  normalized.scenes = normalized.scenes || { version: '1.0', mappings: [] };
+  normalized.scenes.mappings = Array.isArray(normalized.scenes.mappings) ? normalized.scenes.mappings : [];
+  normalized.preferences = normalized.preferences || {};
+  normalized.records = normalized.records || {};
+
+  return normalized;
+}
+
+function cloneSkillBinding(binding = {}) {
+  return {
+    ...binding,
+    records: Array.isArray(binding.records) ? [...binding.records] : [],
+    rules: Array.isArray(binding.rules) ? [...binding.rules] : [],
+    preferredResourceBindings: { ...(binding.preferredResourceBindings || {}) }
+  };
+}
+
+function mergeSkillBindings(existing, incoming) {
+  const merged = cloneSkillBinding(existing);
+  merged.learningCount = (Number(existing?.learningCount) || 0) + (Number(incoming?.learningCount) || 0);
+  merged.lastLearning = incoming?.lastLearning || existing?.lastLearning || null;
+  merged.records = mergeUniqueByKey(
+    [...(existing.records || []), ...(incoming.records || [])],
+    'recordId'
+  );
+  merged.rules = mergeUniqueRules(existing.rules || [], incoming.rules || []);
+  merged.preferredResourceBindings = {
+    ...(existing.preferredResourceBindings || {}),
+    ...(incoming.preferredResourceBindings || {})
+  };
+  return merged;
+}
+
+function mergeUniqueRules(left, right) {
+  const merged = [];
+  const seen = new Set();
+  for (const rule of [...left, ...right]) {
+    const key = JSON.stringify(rule || {});
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(rule);
+  }
+  return merged;
+}
+
+function mergeUniqueByKey(items, keyName) {
+  const merged = [];
+  const seen = new Set();
+  for (const item of items || []) {
+    const key = item?.[keyName] || JSON.stringify(item || {});
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(item);
+  }
+  return merged;
+}
+
+function mergeResourceBinding(collection, binding) {
+  collection.bindings = collection.bindings || [];
+  const index = collection.bindings.findIndex((item) => item.id === binding.id
+    || (item.business === binding.business
+      && item.componentType === binding.componentType
+      && item.provider === binding.provider));
+
+  if (index < 0) {
+    collection.bindings.push(binding);
+    return;
+  }
+
+  const previous = collection.bindings[index];
+  collection.bindings[index] = {
+    ...previous,
+    ...binding,
+    aliases: [...new Set([...(previous.aliases || []), ...(binding.aliases || [])])],
+    keywords: [...new Set([...(previous.keywords || []), ...(binding.keywords || [])])],
+    connection: { ...(previous.connection || {}), ...(binding.connection || {}) },
+    metadata: { ...(previous.metadata || {}), ...(binding.metadata || {}) },
+    stats: {
+      useCount: Math.max(Number(previous.stats?.useCount) || 0, Number(binding.stats?.useCount) || 0),
+      lastUsed: binding.stats?.lastUsed || previous.stats?.lastUsed || null
+    }
+  };
+}
+
+function mergeScene(existing, incoming) {
+  return {
+    ...existing,
+    ...incoming,
+    keywords: [...new Set([...(existing.keywords || []), ...(incoming.keywords || [])])],
+    patterns: [...new Set([...(existing.patterns || []), ...(incoming.patterns || [])])],
+    workflow: {
+      ...(existing.workflow || {}),
+      ...(incoming.workflow || {})
+    },
+    preferences: {
+      ...(existing.preferences || {}),
+      ...(incoming.preferences || {})
+    },
+    stats: {
+      ...(existing.stats || {}),
+      ...(incoming.stats || {})
+    }
+  };
+}
+
+function sanitizeResourceBinding(binding) {
+  const clone = {
+    ...binding,
+    aliases: Array.isArray(binding.aliases) ? [...binding.aliases] : [],
+    keywords: Array.isArray(binding.keywords) ? [...binding.keywords] : [],
+    connection: redactSensitiveDeep(binding.connection || {}),
+    metadata: redactSensitiveDeep(binding.metadata || {})
+  };
+
+  clone.stats = {
+    useCount: Number(binding.stats?.useCount) || 0,
+    lastUsed: binding.stats?.lastUsed || null
+  };
+  return clone;
+}
+
+function inferEnvToken(value) {
+  const normalized = String(value || '').toLowerCase();
+  if (/(?:^|[^a-z])uat(?:[^a-z]|$)|预发/.test(normalized)) return 'uat';
+  if (/(?:^|[^a-z])test(?:[^a-z]|$)|测试/.test(normalized)) return 'test';
+  if (/(?:^|[^a-z])gray(?:[^a-z]|$)|灰度/.test(normalized)) return 'gray';
+  if (/(?:^|[^a-z])prod(?:[^a-z]|$)|生产|线上|正式/.test(normalized)) return 'prod';
+  return null;
+}
+
+function inferBindingEnv(binding) {
+  if (!binding || typeof binding !== 'object') {
+    return null;
+  }
+
+  const candidates = [
+    binding.connection?.env,
+    binding.metadata?.env,
+    binding.env,
+    binding.business,
+    ...(binding.aliases || []),
+    ...(binding.keywords || [])
+  ];
+
+  for (const candidate of candidates) {
+    const env = inferEnvToken(candidate);
+    if (env) return env;
+  }
+
+  return null;
+}
+
+function redactSensitiveDeep(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactSensitiveDeep(item));
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const safe = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (isSensitiveKey(key)) {
+      continue;
+    }
+
+    if (isSensitiveValue(key, nested)) {
+      continue;
+    }
+
+    safe[key] = redactSensitiveDeep(nested);
+  }
+
+  return safe;
+}
+
+function isSensitiveKey(key) {
+  return /headers?|token|secret|password|passwd|api[-_ ]?key|authorization|auth|credential|cookie|session/i.test(String(key || ''));
+}
+
+function isSensitiveValue(key, value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  if (/headers?/i.test(String(key || ''))) {
+    return true;
+  }
+
+  return /^(Bearer\s+.+|Basic\s+.+)$/i.test(value.trim());
 }
 
 module.exports = LearningEngine;

@@ -26,6 +26,7 @@ class FridayFlowAdapter extends WorkflowAdapter {
     this.registerTool('logPipelineJobRun', 'flowLogPipelineJobRun');
     this.registerTool('passPipelineValidate', 'flowPassPipelineValidate');
     this.registerTool('refusePipelineValidate', 'flowRefusePipelineValidate');
+    this.registerTool('listDeployChecklists', 'listDeployChecklists');
 
     // Order/task tools
     this.registerTool('orderList', 'orderList');
@@ -42,43 +43,39 @@ class FridayFlowAdapter extends WorkflowAdapter {
   }
 
   async listPipelineGroups(params) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('listPipelineGroups'),
-      params: params || { perPage: '20', page: '1' }
-    };
+    return this.callMcpTool('listPipelineGroups', params || { perPage: '20', page: '1' });
   }
 
   async listPipelines(params) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('listPipelines'),
-      params: params || {}
-    };
+    return this.callMcpTool('listPipelines', params || {});
+  }
+
+  async getCurrentIterate() {
+    return this.callMcpTool('getCurrentIterate', {});
+  }
+
+  async listDeployChecklists(params) {
+    return this.callMcpTool('listDeployChecklists', params || {});
+  }
+
+  async orderList(params) {
+    return this.callMcpTool('orderList', params || {});
   }
 
   async startPipelineRun(pipelineId) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('startPipelineRun'),
-      params: { pipelineId }
-    };
+    return this.callMcpTool('startPipelineRun', { pipelineId });
+  }
+
+  async startBatchPipelineRun(params) {
+    return this.callMcpTool('startBatchPipelineRun', params || {});
   }
 
   async getPipelineRun(pipelineId, runId) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('getPipelineRun'),
-      params: { pipelineId, pipelineRunId: runId }
-    };
+    return this.callMcpTool('getPipelineRun', { pipelineId, pipelineRunId: runId });
   }
 
   async listPipelineRuns(pipelineId, params) {
-    return {
-      mcpServer: this.mcpServer,
-      tool: this.resolveTool('listPipelineRuns'),
-      params: { pipelineId, ...(params || {}) }
-    };
+    return this.callMcpTool('listPipelineRuns', { pipelineId, ...(params || {}) });
   }
 }
 

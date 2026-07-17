@@ -25,7 +25,7 @@ class LogServiceAdapter extends McpAdapter {
    * @param {object} params - { project, logstore, query, from, to, line }
    * @returns {Promise<object>}
    */
-  async queryLogs(params) {
+  async queryLogs(_params) {
     throw new Error('Subclasses must implement queryLogs()');
   }
 
