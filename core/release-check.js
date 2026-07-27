@@ -26,6 +26,25 @@ async function scanFileForSecrets(filePath) {
   }));
 }
 
+async function collectFilesForSecretScan(rootDir, relativeDirs = []) {
+  const files = [];
+  for (const relativeDir of relativeDirs) {
+    const fullDir = path.join(rootDir, relativeDir);
+    if (!(await fs.pathExists(fullDir))) continue;
+    const entries = await fs.readdir(fullDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(fullDir, entry.name);
+      if (entry.isDirectory()) {
+        const nestedRelative = path.join(relativeDir, entry.name);
+        files.push(...(await collectFilesForSecretScan(rootDir, [nestedRelative])));
+      } else if (/\.(?:md|json|ya?ml)$/i.test(entry.name)) {
+        files.push(fullPath);
+      }
+    }
+  }
+  return files;
+}
+
 async function collectPackageFiles(rootDir) {
   const files = packageJson.files || [];
   const results = [];
@@ -149,8 +168,11 @@ async function runReleaseCheck(options = {}) {
     changelogPath,
     path.join(rootDir, 'README.md'),
     path.join(rootDir, 'README_CN.md'),
+    path.join(rootDir, 'SECURITY.md'),
+    path.join(rootDir, 'SUPPORT.md'),
     releasePath,
-    path.join(rootDir, 'package.json')
+    path.join(rootDir, 'package.json'),
+    ...(await collectFilesForSecretScan(rootDir, ['docs', 'config']))
   ];
   const secretFindings = [];
   for (const filePath of secretTargets) {

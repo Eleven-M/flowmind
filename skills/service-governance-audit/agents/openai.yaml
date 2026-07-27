@@ -1,0 +1,4 @@
+interface:
+  display_name: "Service Governance Audit"
+  short_description: "Audit multi-cloud microservice health and policies"
+  default_prompt: "Use $service-governance-audit to inspect service health, topology, and governance policy risks."

@@ -36,6 +36,23 @@ If you want to import local `SDD-Agent` resources and scene mappings into FlowMi
 flowmind resource --sync-sdd-agent
 ```
 
+Inspect learned feedback, skill rules, scenes, resource bindings, and local material package metadata with:
+
+```bash
+flowmind learn --assets
+flowmind learn --assets --skill log-audit --json
+```
+
+Guarded follow-up workflows can be resumed from local history:
+
+```bash
+flowmind workflow --chain follow-up-chain.json
+flowmind workflow --chain follow-up-chain.json --execute --approval-token <token>
+flowmind workflow-history
+flowmind workflow-history --status failed --resumable
+flowmind workflow-resume --execution-id <id> --approval-token <token>
+```
+
 For safety, cross-workspace auto-sync is disabled by default. Initialization only auto-syncs when you explicitly set `FLOWMIND_ENABLE_SDD_AGENT_AUTO_SYNC=1`.
 
 ### Codex-Friendly JSON

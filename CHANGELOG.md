@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### Added
+- Added GitHub CI and npm provenance release workflows for open-source maintenance
+- Added security, support, code of conduct, security model, skills catalog, provider adapter guide, and Chinese integration documentation
+- Added configuration-free `flowmind demo code-review` and `flowmind demo workflow` scenarios alongside the log-audit demo
+- Added private local JSON writes for FlowMind config, task, workflow, scene, and Codex workspace state
+
+### Changed
+- README pages now document capability boundaries, Node.js runtime versus contributor requirements, and configuration-free demos
+- Development dependency auditing now resolves to zero known vulnerabilities through updated tooling and a `minimatch` override
+- Test execution suppresses noisy runtime warnings so CI logs stay focused on actionable failures
+
+## [2.0.2] - 2026-07-24
+
+### Added
+- Added workflow history filters for status and resumable executions across CLI and MCP
+
+### Changed
+- Workflow execution records now persist resumable state so operators can quickly find failed chains that can continue
+
+## [2.0.1] - 2026-07-24
+
+### Added
+- Added CLI workflow history listing and resume commands for guarded workflow executions
+
+### Fixed
+- Persisted CLI guarded workflow executions to the local workflow history store so failed chains can be resumed consistently with MCP executions
+- Updated release maintenance metadata for the current package version
+
+## [2.0.0] - 2026-07-19
+
+### Added
+- Added multi-cloud service governance skills for audit, diagnosis, and guarded policy changes across Alibaba Cloud MSE, Huawei Cloud CSE, and Baidu Cloud MSE/CSM
+- Added configurable governance provider adapters, resource bindings, and MCP capability exposure
+- Added local workflow execution history and resumable workflow execution for guarded follow-up chains
+- Added provider-specific rollback strategy previews for governance policy changes
+- Added a sanitized learning-assets view for skill feedback, scenes, bindings, and local material packages through CLI and MCP
+
 ## [1.5.15] - 2026-07-17
 
 ### Added

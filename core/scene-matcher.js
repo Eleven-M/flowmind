@@ -5,6 +5,7 @@
 
 const fs = require('fs-extra');
 const path = require('path');
+const { writePrivateJson } = require('./secure-files');
 const { expandPath } = require('./utils');
 
 class SceneMatcher {
@@ -278,7 +279,7 @@ class SceneMatcher {
       mappings: this.scenes.filter(s => !s.id.startsWith('builtin-'))
     };
 
-    await fs.writeJson(scenesPath, data, { spaces: 2 });
+    await writePrivateJson(scenesPath, data);
   }
 
   /**

@@ -4,6 +4,7 @@ const { program } = require('commander');
 const fs = require('fs-extra');
 const path = require('path');
 const FlowMind = require('../core');
+const { ensurePrivateDir, writePrivateJson } = require('../core/secure-files');
 const { version } = require('../package.json');
 
 function printJson(data) {
@@ -26,17 +27,17 @@ async function createFlowMind() {
   process.env.FLOWMIND_HOME = process.env.FLOWMIND_HOME || codexHome;
 
   const configPath = path.join(codexHome, 'config.json');
-  await fs.ensureDir(codexHome);
+  await ensurePrivateDir(codexHome);
 
   if (!await fs.pathExists(configPath)) {
-    await fs.writeJson(configPath, {
+    await writePrivateJson(configPath, {
       version: '1.0.0',
       name: 'FlowMind Codex Workspace',
       storagePath: codexHome,
       learning: {
         storagePath: path.join(codexHome, 'learning')
       }
-    }, { spaces: 2 });
+    });
   }
 
   const flowmind = new FlowMind({ configPath });

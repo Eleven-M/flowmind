@@ -49,6 +49,12 @@ class ComponentRegistry {
       const AliyunRedisAdapter = require('./providers/aliyun/redis-adapter');
       return new AliyunRedisAdapter(this.getProviderConfig('redisMonitor', 'aliyun-redis'));
     });
+    for (const providerName of ['aliyun-mse', 'huawei-cse', 'baidu-mse']) {
+      this.registerFactory(providerName, () => {
+        const { McpServiceGovernanceAdapter } = require('./providers/governance/mcp-service-governance-adapter');
+        return new McpServiceGovernanceAdapter(providerName, this.getProviderConfig('serviceGovernance', providerName));
+      });
+    }
 
     // YApi provider
     this.registerFactory('yapi', () => {
@@ -293,7 +299,7 @@ class ComponentRegistry {
     for (const type of Object.values(ComponentType)) {
       status[type] = {
         active: this.activeProviders.get(type) || null,
-        providers: this.getProviders(type).map(p => ({
+        providers: this.getProviders(type).map((p) => ({
           name: p.name,
           enabled: p.enabled,
           mcpServer: p.mcpServer

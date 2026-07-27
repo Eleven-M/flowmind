@@ -88,4 +88,23 @@ describe('config manager defaults', () => {
 
     await fs.remove(tempHome);
   });
+
+  test('save writes config with private file permissions when supported', async () => {
+    const tempHome = path.join(os.tmpdir(), `flowmind-private-config-${Date.now()}`);
+    await fs.ensureDir(tempHome);
+    process.env.FLOWMIND_HOME = tempHome;
+
+    const config = new ConfigManager();
+    await config.load();
+    config.set('ai.providers.openai.apiKey', 'sk-private');
+
+    const configPath = await config.save();
+    const mode = (await fs.stat(configPath)).mode & 0o777;
+
+    if (process.platform !== 'win32') {
+      expect(mode).toBe(0o600);
+    }
+
+    await fs.remove(tempHome);
+  });
 });

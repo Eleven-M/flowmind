@@ -23,8 +23,12 @@ cd flowmind
 ### 2. Install Dependencies
 
 ```bash
+nvm use 20
 npm install
 ```
+
+FlowMind runtime supports Node.js 18 and newer.
+Contributor tooling uses ESLint 10 and is validated on Node.js 20.19+ and Node.js 22 in CI.
 
 ### 3. Create Branch
 
@@ -39,7 +43,8 @@ Make your changes, following our coding standards.
 ### 5. Test
 
 ```bash
-npm test
+npm run quality
+npm audit
 ```
 
 ### 6. Submit PR
@@ -76,15 +81,19 @@ Types:
 ### Testing
 
 - Write unit tests for new features
-- Ensure all tests pass
+- Ensure all tests and release checks pass
 - Aim for >80% coverage
 
 ```bash
+npm run quality
 npm test
 npm run test:coverage
+npm audit
 ```
 
 ## 🛠️ Creating Skills
+
+Review the public skill matrix first: [docs/skills-catalog.md](docs/skills-catalog.md).
 
 ### Skill Structure
 
@@ -95,6 +104,18 @@ skills/
     ├── index.js        # Implementation
     └── tests/          # Tests
 ```
+
+## 🔌 Adding Providers or Adapters
+
+Read [docs/provider-adapter-guide.md](docs/provider-adapter-guide.md) before adding provider code.
+
+Provider PRs should include:
+
+- A focused adapter contract
+- Tests with fake responses
+- Clear credential and dry-run behavior
+- Secret redaction in user-facing output
+- Documentation for required MCP or provider configuration
 
 ### Skill Definition (SKILL.md)
 
@@ -192,9 +213,10 @@ describe('Skill Integration', () => {
 1. Update version in package.json
 2. Update CHANGELOG.md
 3. Create release branch
-4. Run full test suite
-5. Create GitHub release
-6. Publish to npm
+4. Run `npm run quality`
+5. Run `npm audit`
+6. Create GitHub release
+7. Publish to npm with provenance
 
 ## 📋 PR Checklist
 

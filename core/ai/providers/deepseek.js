@@ -77,6 +77,16 @@ class DeepSeekProvider extends BaseModel {
     }
   }
 
+  async listModels() {
+    if (!this.apiKey) {
+      return [];
+    }
+
+    return this.listOpenAICompatibleModels({
+      'Authorization': `Bearer ${this.apiKey}`
+    });
+  }
+
   getInfo() {
     return {
       ...super.getInfo(),

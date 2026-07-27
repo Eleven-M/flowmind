@@ -10,8 +10,9 @@ const { runReleaseCheck } = require('../core/release-check');
 const { buildKnowledgeDepositionCandidates } = require('../core/knowledge-deposition');
 const { buildFollowUpChain } = require('../core/automation-chain');
 const { previewWorkflow } = require('../core/dry-run');
-const { executeWorkflow } = require('../core/workflow-executor');
+const { executeWorkflow, resumeWorkflow } = require('../core/workflow-executor');
 const { TaskStore } = require('../core/task-store');
+const { WorkflowHistoryStore } = require('../core/workflow-history');
 const { FlowMindMCPServer } = require('../mcp/server');
 
 const execFileAsync = promisify(execFile);
@@ -156,6 +157,103 @@ describe('upgrade direction tooling', () => {
     );
   });
 
+  test('workflow execution is recorded and can be resumed from the first failed step', async () => {
+    const tempHome = path.join(os.tmpdir(), `flowmind-workflow-history-${Date.now()}`);
+    const historyStore = new WorkflowHistoryStore({ filePath: path.join(tempHome, 'workflows.json') });
+    const chain = buildFollowUpChain({
+      data: {
+        nextActions: [
+          { skill: 'knowledge-ops', suggestedInput: '保存知识 path=README.md repo=team/docs' },
+          { skill: 'archive-change', suggestedInput: '归档变更 add-multicloud-service-governance' }
+        ]
+      }
+    });
+    const preview = previewWorkflow(chain);
+    const failingFlowmind = {
+      skills: {
+        get: (name) =>
+          ({
+            'knowledge-ops': { name: 'knowledge-ops' },
+            'archive-change': { name: 'archive-change' }
+          })[name] || null
+      },
+      executeWithLearning: jest
+        .fn()
+        .mockResolvedValueOnce({ type: 'result', success: true, data: { ok: true } })
+        .mockRejectedValueOnce(new Error('simulated resume point'))
+    };
+
+    const firstRun = await executeWorkflow(chain, {
+      flowmind: failingFlowmind,
+      dryRun: false,
+      approvalToken: preview.approvalToken,
+      historyStore
+    });
+
+    expect(firstRun).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        resumable: true,
+        nextStepIndex: 1
+      })
+    );
+
+    const recorded = await historyStore.get(firstRun.executionId);
+    expect(recorded).toEqual(
+      expect.objectContaining({
+        executionId: firstRun.executionId,
+        status: 'failed',
+        resumable: true,
+        nextStepIndex: 1
+      })
+    );
+    expect(recorded).not.toHaveProperty('approvalToken');
+    expect(recorded.preview).not.toHaveProperty('approvalToken');
+    const resumableHistory = await historyStore.list({ resumable: true, status: 'failed' });
+    expect(resumableHistory).toEqual([expect.objectContaining({ executionId: firstRun.executionId })]);
+
+    await expect(
+      resumeWorkflow(recorded, {
+        flowmind: failingFlowmind,
+        historyStore
+      })
+    ).rejects.toMatchObject({ code: 'APPROVAL_REQUIRED' });
+
+    await expect(
+      resumeWorkflow(recorded, {
+        flowmind: failingFlowmind,
+        approvalToken: 'invalid-token',
+        historyStore
+      })
+    ).rejects.toMatchObject({ code: 'APPROVAL_REQUIRED' });
+
+    const resumedFlowmind = {
+      skills: failingFlowmind.skills,
+      executeWithLearning: jest.fn().mockResolvedValue({ type: 'result', success: true, data: { ok: true } })
+    };
+
+    const resumed = await resumeWorkflow(recorded, {
+      flowmind: resumedFlowmind,
+      approvalToken: preview.approvalToken,
+      historyStore
+    });
+
+    expect(resumed).toEqual(
+      expect.objectContaining({
+        executionId: recorded.executionId,
+        status: 'succeeded',
+        resumable: false,
+        nextStepIndex: 2
+      })
+    );
+    expect(resumed.results).toHaveLength(2);
+
+    const publicHistory = await historyStore.list();
+    expect(JSON.stringify(publicHistory)).not.toContain('approvalToken');
+
+    await fs.remove(tempHome);
+  });
+
   test('task store persists serializable task state', async () => {
     const tempHome = path.join(os.tmpdir(), `flowmind-task-store-${Date.now()}`);
     const filePath = path.join(tempHome, 'tasks.json');
@@ -284,9 +382,29 @@ describe('upgrade direction tooling', () => {
       cwd: path.join(__dirname, '..'),
       env
     });
+    const workflowHistory = await execFileAsync('node', [cliPath, 'workflow-history'], {
+      cwd: path.join(__dirname, '..'),
+      env
+    });
+    const filteredWorkflowHistory = await execFileAsync(
+      'node',
+      [cliPath, 'workflow-history', '--status', 'failed', '--resumable'],
+      {
+        cwd: path.join(__dirname, '..'),
+        env
+      }
+    );
+    const help = await execFileAsync('node', [cliPath, '--help'], {
+      cwd: path.join(__dirname, '..'),
+      env
+    });
 
     expect(JSON.parse(upgrade.stdout).directions.map((item) => item.id)).toEqual(['1', '2', '6', '7', '8']);
     expect(JSON.parse(release.stdout).ok).toBe(true);
+    expect(JSON.parse(workflowHistory.stdout).workflows).toEqual([]);
+    expect(JSON.parse(filteredWorkflowHistory.stdout).workflows).toEqual([]);
+    expect(help.stdout).toContain('workflow-resume');
+    expect(help.stdout).toContain('workflow-history');
 
     await fs.remove(tempHome);
   });

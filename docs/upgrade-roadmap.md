@@ -74,7 +74,7 @@ Status: completed for the current upgraded skill surface.
 
 ### Phase 3: Deep Integrations
 
-Status: completed in the `1.5.15` upgrade line.
+Status: completed in the `2.0.0` upgrade line.
 
 - Impact review linked to YApi/Yuque/resource bindings
 - Data risk audit linked to live explain/metadata providers
@@ -83,22 +83,23 @@ Status: completed in the `1.5.15` upgrade line.
 
 ## Current Upgrade Status
 
-As of the current `1.5.15` workspace, local contracts, orchestration, and guarded live execution are complete:
+As of the current `2.0.2` workspace, local contracts, orchestration, and guarded live execution are complete:
 
 - MCP capability catalog and async task tools are implemented
 - Automation candidates, sync recommendations, and next actions now produce a guarded `followUpChain` for explicit step-by-step execution
-- `flowmind workflow` and the MCP preview/execute tools provide dry-run review, content-bound approval tokens, and allowlisted execution
-- YApi, Yuque, local archive, and knowledge-deposition actions can execute through the guarded workflow runtime
+- `flowmind workflow`, filtered `flowmind workflow-history`, `flowmind workflow-resume`, and the MCP preview/execute/history/resume tools provide dry-run review, content-bound approval tokens, allowlisted execution, and resumable execution history
+- YApi, Yuque, local archive, knowledge-deposition, and multi-cloud service-governance actions can execute through the guarded workflow runtime
 - MCP task state is persisted locally and now carries attempts, retry count, timeout, cancellation, and progress history metadata
-- Report, knowledge, data-risk, and change-impact skill families are present
+- Workflow execution history is persisted locally and can be resumed from the first failed step
+- Report, knowledge, data-risk, change-impact, and service-governance skill families are present
 - Structured `retryHints`, `bindingHint`, `automationCandidates`, `nextActions`, `knowledgeDepositionCandidates`, and progress contracts are documented and covered by tests
 - CLI upgrade operations are exposed through `flowmind upgrade-status` and `flowmind release-check`
 - Open-source maintenance tooling now covers linting, scoped formatting checks, dependency-cycle detection, CLI output assertions, packlist validation, and publint package checks
-- Full local regression suite passes with `20` suites and `204` tests
+- Full local regression suite passes with `21` suites and `216` tests
 
 `flowmind upgrade-status` reports local and live acceptance separately. File or contract presence is local evidence only; live completion requires the executable workflow runtime and dry-run implementation.
 
-The next meaningful upgrade direction is operational hardening: workflow audit history, resumable multi-step execution, and provider-specific rollback strategies.
+The next meaningful upgrade direction is live cloud validation and provider smoke tests.
 
 ## Test Scope
 

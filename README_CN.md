@@ -11,11 +11,9 @@
 [![npm version](https://img.shields.io/npm/v/flowmind.svg)](https://www.npmjs.com/package/flowmind)
 [![npm downloads](https://img.shields.io/npm/dw/flowmind.svg)](https://www.npmjs.com/package/flowmind)
 
-[English](README.md) | [快速开始](#快速开始) | [演示](demo/DEMO_CN.md) | [详细指南](docs/guide.zh-CN.md) | [升级契约](docs/upgrade-contracts.zh-CN.md) | [集成指南](docs/integration-guide.md) | [更新记录](CHANGELOG.md)
+[English](README.md) | [快速开始](#快速开始) | [演示](#无需配置的演示) | [技能目录](docs/skills-catalog.md) | [详细指南](docs/guide.zh-CN.md) | [集成指南](docs/integration-guide.zh-CN.md) | [更新记录](CHANGELOG.md)
 
 </div>
-
-本周下载量：3,280 次
 
 ---
 
@@ -28,6 +26,7 @@ FlowMind 是一个面向重复开发工作流的记忆层。
 - 把重复任务路由到可复用的 skill
 - 把显式反馈沉淀下来，下次自动复用
 - 让同一套工作流同时可用于 CLI、Codex 和 MCP 客户端
+- 通过受保护 workflow 审计和变更多云微服务治理策略
 
 当前最适合的使用方向：
 
@@ -40,6 +39,8 @@ FlowMind 是一个面向重复开发工作流的记忆层。
 ```bash
 npm install -g flowmind
 flowmind doctor
+flowmind demo log-audit
+flowmind demo code-review
 flowmind skills
 flowmind process --skill log-audit "查询最近的错误日志"
 ```
@@ -55,8 +56,36 @@ flowmind-codex --skill log-audit "查询 traceId abc123 的日志"
 
 ```bash
 npx flowmind@latest doctor
+npx flowmind@latest demo log-audit
 npx flowmind@latest skills
 ```
+
+运行时支持 Node.js 18 及以上版本。贡献者开发工具建议使用 Node.js 20.19 或更高版本。
+
+## 无需配置的演示
+
+![FlowMind terminal demo](demo/flowmind-demo.gif)
+
+在接入任何 provider 或 MCP server 之前，可以先运行内置 mock demo：
+
+```bash
+flowmind demo log-audit
+flowmind demo code-review
+flowmind demo workflow
+flowmind demo log-audit --json
+```
+
+这些 demo 不依赖 SLS、数据库、内部平台或 AI provider 凭证。
+
+## 能力边界
+
+| 能力 | 开箱可用 | 需要配置 |
+| --- | --- | --- |
+| Skill 发现 | `flowmind skills` | 无 |
+| Mock demo | `flowmind demo log-audit`、`flowmind demo code-review`、`flowmind demo workflow` | 无 |
+| 学习数据查看 | `flowmind learn --assets` | 本地 FlowMind 状态 |
+| 日志、数据、文档、workflow skill | skill 路由和结果契约 | MCP server、provider 凭证或 adapter |
+| 多云治理 | 受保护 workflow 契约 | provider-specific MCP governance adapter |
 
 ## 本地状态
 
@@ -70,6 +99,8 @@ flowmind resource --sync-sdd-agent
 ```
 
 出于安全考虑，跨工作区自动同步默认关闭；只有在你明确设置 `FLOWMIND_ENABLE_SDD_AGENT_AUTO_SYNC=1` 时，初始化阶段才会自动同步。
+
+可能包含凭证或 workflow 状态的文件会在 POSIX 文件系统上使用私有权限写入。详见 [SECURITY.md](SECURITY.md) 和 [docs/security-model.md](docs/security-model.md)。
 
 ## 为什么它比直接写 Prompt 更稳
 
@@ -89,8 +120,10 @@ flowmind "下次用表格格式"
 ## 按目标阅读
 
 - 想看完整产品说明： [docs/guide.zh-CN.md](docs/guide.zh-CN.md)
+- 想看 skill 能力矩阵： [docs/skills-catalog.md](docs/skills-catalog.md)
+- 想新增 provider 或 adapter： [docs/provider-adapter-guide.md](docs/provider-adapter-guide.md)
 - 想看升级后的 skill 输出契约和串联方式： [docs/upgrade-contracts.zh-CN.md](docs/upgrade-contracts.zh-CN.md)
-- 想看 Claude Code、Codex、Cursor、MCP 接入： [docs/integration-guide.md](docs/integration-guide.md)
+- 想看 Claude Code、Codex、Cursor、MCP 接入： [docs/integration-guide.zh-CN.md](docs/integration-guide.zh-CN.md)
 - 想先看终端演示： [demo/DEMO_CN.md](demo/DEMO_CN.md)
 - 想看版本变化： [CHANGELOG.md](CHANGELOG.md)
 
@@ -106,6 +139,13 @@ npm 发布页更适合作为入口页，而不是整本使用手册。
 ## 贡献
 
 欢迎提交 PR。先看 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+提交 PR 前建议运行：
+
+```bash
+npm run quality
+npm audit
+```
 
 ## 许可证
 

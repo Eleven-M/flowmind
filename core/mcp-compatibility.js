@@ -66,6 +66,21 @@ const McpServerMapping = Object.freeze({
     type: ComponentType.REPORT,
     provider: 'friday-report',
     description: 'Friday automated test and coverage reporting'
+  },
+  'aliyun-mse-mcp': {
+    type: ComponentType.SERVICE_GOVERNANCE,
+    provider: 'aliyun-mse',
+    description: 'Alibaba Cloud MSE service governance'
+  },
+  'huawei-cse-mcp': {
+    type: ComponentType.SERVICE_GOVERNANCE,
+    provider: 'huawei-cse',
+    description: 'Huawei Cloud CSE service governance'
+  },
+  'baidu-mse-mcp': {
+    type: ComponentType.SERVICE_GOVERNANCE,
+    provider: 'baidu-mse',
+    description: 'Baidu Cloud MSE and CSM service governance'
   }
 });
 
@@ -80,7 +95,10 @@ const ProviderToMcp = Object.freeze({
   'apiDoc:yapi': 'yapi-mcp',
   'knowledgeBase:yuque': 'yuque-mcp',
   'workflow:friday-flow': 'friday-auto-flow',
-  'report:friday-report': 'friday-auto-report'
+  'report:friday-report': 'friday-auto-report',
+  'serviceGovernance:aliyun-mse': 'aliyun-mse-mcp',
+  'serviceGovernance:huawei-cse': 'huawei-cse-mcp',
+  'serviceGovernance:baidu-mse': 'baidu-mse-mcp'
 });
 
 class McpCompatibility {

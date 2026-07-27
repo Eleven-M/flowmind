@@ -11,11 +11,9 @@
 [![npm version](https://img.shields.io/npm/v/flowmind.svg)](https://www.npmjs.com/package/flowmind)
 [![npm downloads](https://img.shields.io/npm/dw/flowmind.svg)](https://www.npmjs.com/package/flowmind)
 
-[中文](README_CN.md) | [Quick Start](#quick-start) | [Demo](demo/DEMO.md) | [Detailed Guide](docs/guide.md) | [Upgrade Contracts](docs/upgrade-contracts.md) | [Integration](docs/integration-guide.md) | [Changelog](CHANGELOG.md)
+[中文](README_CN.md) | [Quick Start](#quick-start) | [Demo](#configuration-free-demo) | [Skills](docs/skills-catalog.md) | [Integration](docs/integration-guide.md) | [Security](SECURITY.md) | [Changelog](CHANGELOG.md)
 
 </div>
-
-Weekly downloads: 3,280
 
 ---
 
@@ -28,6 +26,7 @@ Use it when you already have tools and want a better execution surface:
 - Route recurring tasks through reusable skills
 - Capture explicit feedback and reuse it later
 - Run the same workflow from CLI, Codex, or MCP clients
+- Audit and change microservice governance across Alibaba Cloud, Huawei Cloud, and Baidu Cloud through guarded workflows
 
 Best-fit use cases today:
 
@@ -35,13 +34,33 @@ Best-fit use cases today:
 - Code review with fixed standards
 - Data validation and internal tool orchestration
 
+## Strong Features
+
+- Reusable skill routing turns repeated work into one-command workflows instead of prompt rewrites
+- Guarded workflow execution adds dry-run review, approval tokens, and resumable follow-up chains
+- Multi-cloud service governance supports audit, diagnosis, and policy changes with provider-aware rollback previews
+- Local workflow history preserves execution state so interrupted chains can be resumed instead of restarted
+- MCP exposure keeps FlowMind usable from CLI, Codex, and other integrated clients
+
 ## Quick Start
 
 ```bash
 npm install -g flowmind
 flowmind doctor
+flowmind demo log-audit
+flowmind demo code-review
 flowmind skills
 flowmind process --skill log-audit "query the latest error logs"
+```
+
+Guarded follow-up workflows can be reviewed, executed, listed, and resumed from the CLI:
+
+```bash
+flowmind workflow --chain follow-up-chain.json
+flowmind workflow --chain follow-up-chain.json --execute --approval-token <token>
+flowmind workflow-history
+flowmind workflow-history --status failed --resumable
+flowmind workflow-resume --execution-id <id> --approval-token <token>
 ```
 
 If you want Codex-friendly JSON output:
@@ -55,8 +74,36 @@ If you prefer `npx`:
 
 ```bash
 npx flowmind@latest doctor
+npx flowmind@latest demo log-audit
 npx flowmind@latest skills
 ```
+
+Runtime supports Node.js 18 and newer. Contributor tooling runs best on Node.js 20.19 or newer.
+
+## Configuration-Free Demo
+
+![FlowMind terminal demo](demo/flowmind-demo.gif)
+
+Run the built-in mock demo before connecting any provider or MCP server:
+
+```bash
+flowmind demo log-audit
+flowmind demo code-review
+flowmind demo workflow
+flowmind demo log-audit --json
+```
+
+This shows the shape of a log-audit result without requiring SLS, databases, internal platforms, or AI provider credentials.
+
+## Capability Scope
+
+| Area | Works out of the box | Requires configuration |
+| --- | --- | --- |
+| Skill discovery | `flowmind skills` | None |
+| Mock demo | `flowmind demo log-audit`, `flowmind demo code-review`, `flowmind demo workflow` | None |
+| Learning inspection | `flowmind learn --assets` | Local FlowMind state |
+| Log, data, docs, workflow skills | Skill routing and result contracts | MCP servers, provider credentials, or adapters |
+| Multi-cloud governance | Guarded workflow contracts | Provider-specific MCP governance adapters |
 
 ## Local State
 
@@ -69,7 +116,18 @@ To import local `SDD-Agent` resources and scene mappings, run:
 flowmind resource --sync-sdd-agent
 ```
 
+To inspect the currently learned skill feedback and local material packages:
+
+```bash
+flowmind learn --assets
+flowmind learn --assets --skill log-audit --limit 20 --json
+```
+
+MCP clients can use `flowmind_learning_assets` for the same sanitized, read-only view.
+
 For safety, cross-workspace auto-sync is disabled by default. Initialization only auto-syncs when you explicitly set `FLOWMIND_ENABLE_SDD_AGENT_AUTO_SYNC=1`.
+
+Files that may contain credentials or workflow state are written with private permissions on POSIX filesystems. See [SECURITY.md](SECURITY.md) and [docs/security-model.md](docs/security-model.md).
 
 ## Why It Works
 
@@ -89,6 +147,8 @@ On the next similar request, FlowMind can reuse that explicit formatting prefere
 ## Read By Goal
 
 - Need the full product walkthrough: [docs/guide.md](docs/guide.md)
+- Need the skill capability matrix: [docs/skills-catalog.md](docs/skills-catalog.md)
+- Need to add a provider or adapter: [docs/provider-adapter-guide.md](docs/provider-adapter-guide.md)
 - Need the upgraded skill contracts and chaining patterns: [docs/upgrade-contracts.md](docs/upgrade-contracts.md)
 - Need Claude Code, Codex, Cursor, or MCP setup: [docs/integration-guide.md](docs/integration-guide.md)
 - Want to see terminal output first: [demo/DEMO.md](demo/DEMO.md)
@@ -106,6 +166,13 @@ Package release details are maintained outside the published README.
 ## Contributing
 
 PRs are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md).
+
+Before opening a PR, run:
+
+```bash
+npm run quality
+npm run audit:prod
+```
 
 ## License
 

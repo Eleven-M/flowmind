@@ -7,32 +7,52 @@ const { inferSourceContext } = require('../../core/source-inference');
 const { createSkillError, createSkillResult } = require('../../core/result-contract');
 
 const PROVIDER_MAP = {
-  'friday-rds-redis-query': { componentType: 'databaseQuery', provider: 'aliyun-rds-query', mcpServer: 'friday-rds-redis-query' },
-  'aliyun-rds-query': { componentType: 'databaseQuery', provider: 'aliyun-rds-query', mcpServer: 'friday-rds-redis-query' },
+  'friday-rds-redis-query': {
+    componentType: 'databaseQuery',
+    provider: 'aliyun-rds-query',
+    mcpServer: 'friday-rds-redis-query'
+  },
+  'aliyun-rds-query': {
+    componentType: 'databaseQuery',
+    provider: 'aliyun-rds-query',
+    mcpServer: 'friday-rds-redis-query'
+  },
   'yapi-mcp': { componentType: 'apiDoc', provider: 'yapi', mcpServer: 'yapi-mcp' },
   yapi: { componentType: 'apiDoc', provider: 'yapi', mcpServer: 'yapi-mcp' },
   'yuque-mcp': { componentType: 'knowledgeBase', provider: 'yuque', mcpServer: 'yuque-mcp' },
   yuque: { componentType: 'knowledgeBase', provider: 'yuque', mcpServer: 'yuque-mcp' },
-  'aliyun-dms-mcp-server': { componentType: 'databaseManager', provider: 'aliyun-dms', mcpServer: 'aliyun-dms-mcp-server' },
+  'aliyun-dms-mcp-server': {
+    componentType: 'databaseManager',
+    provider: 'aliyun-dms',
+    mcpServer: 'aliyun-dms-mcp-server'
+  },
   'aliyun-dms': { componentType: 'databaseManager', provider: 'aliyun-dms', mcpServer: 'aliyun-dms-mcp-server' },
   'aliyun-redis': { componentType: 'redisMonitor', provider: 'aliyun-redis', mcpServer: 'aliyun-redis' },
   redis: { componentType: 'redisMonitor', provider: 'aliyun-redis', mcpServer: 'aliyun-redis' },
   'friday-auto-flow': { componentType: 'workflow', provider: 'friday-flow', mcpServer: 'friday-auto-flow' },
   'friday-flow': { componentType: 'workflow', provider: 'friday-flow', mcpServer: 'friday-auto-flow' },
   'aliyun-sls': { componentType: 'logService', provider: 'aliyun-sls', mcpServer: 'aliyun-sls' },
-  sls: { componentType: 'logService', provider: 'aliyun-sls', mcpServer: 'aliyun-sls' }
+  sls: { componentType: 'logService', provider: 'aliyun-sls', mcpServer: 'aliyun-sls' },
+  'aliyun-mse-mcp': { componentType: 'serviceGovernance', provider: 'aliyun-mse', mcpServer: 'aliyun-mse-mcp' },
+  'aliyun-mse': { componentType: 'serviceGovernance', provider: 'aliyun-mse', mcpServer: 'aliyun-mse-mcp' },
+  'huawei-cse-mcp': { componentType: 'serviceGovernance', provider: 'huawei-cse', mcpServer: 'huawei-cse-mcp' },
+  'huawei-cse': { componentType: 'serviceGovernance', provider: 'huawei-cse', mcpServer: 'huawei-cse-mcp' },
+  'baidu-mse-mcp': { componentType: 'serviceGovernance', provider: 'baidu-mse', mcpServer: 'baidu-mse-mcp' },
+  'baidu-mse': { componentType: 'serviceGovernance', provider: 'baidu-mse', mcpServer: 'baidu-mse-mcp' }
 };
 
 module.exports = {
   canHandle(input) {
     if (!input) return false;
-    return /资源绑定|resource.*bind|数据库.*连接|redis.*连接|连接.*管理|connection.*manage|绑定.*(mcp|token|地址|endpoint|url|host)|使用.*已绑定/i.test(input);
+    return /资源绑定|resource.*bind|数据库.*连接|redis.*连接|连接.*管理|connection.*manage|绑定.*(mcp|token|地址|endpoint|url|host)|使用.*已绑定/i.test(
+      input
+    );
   },
 
   async execute(input, context) {
     const registry = context.componentRegistry;
     const params = parseResourceParams(input);
-    const sourceInference = context.sourceInference || await safeInferSourceContext(input);
+    const sourceInference = context.sourceInference || (await safeInferSourceContext(input));
 
     if (params.action === 'bind') {
       return bindResource(input, context, params, sourceInference);
@@ -40,40 +60,49 @@ module.exports = {
 
     if (params.action === 'list') {
       const components = registry?.getAll ? registry.getAll() : [];
-      const bindings = await context.flowmind?.learning?.listResourceBindings?.() || [];
-      return createSkillResult('resource-bind', `Found ${components.length} configured component(s) and ${bindings.length} learned binding(s)`, {
-        input,
-        data: {
-          components: components.map((c) => ({
-            name: c.name,
-            type: c.type,
-            provider: c.provider,
-            active: c.active,
-            initialized: c.initialized,
-            mcpServer: c.mcpServer
-          })),
-          bindings,
-          inferredSource: summarizeSourceInference(sourceInference)
+      const bindings = (await context.flowmind?.learning?.listResourceBindings?.()) || [];
+      return createSkillResult(
+        'resource-bind',
+        `Found ${components.length} configured component(s) and ${bindings.length} learned binding(s)`,
+        {
+          input,
+          data: {
+            components: components.map((c) => ({
+              name: c.name,
+              type: c.type,
+              provider: c.provider,
+              active: c.active,
+              initialized: c.initialized,
+              mcpServer: c.mcpServer
+            })),
+            bindings,
+            inferredSource: summarizeSourceInference(sourceInference)
+          }
         }
-      });
+      );
     }
 
     if (params.action === 'status' || params.action === 'use' || params.action === 'show') {
       const status = registry?.getStatus ? registry.getStatus() : {};
-      const matchedBinding = context.resourceBinding
-        || await context.flowmind?.learning?.matchResourceBinding?.(input, 'resource-bind')
-        || null;
+      const matchedBinding =
+        context.resourceBinding ||
+        (await context.flowmind?.learning?.matchResourceBinding?.(input, 'resource-bind')) ||
+        null;
 
-      return createSkillResult('resource-bind', matchedBinding
+      return createSkillResult(
+        'resource-bind',
+        matchedBinding
           ? `Using learned binding for business: ${matchedBinding.business}`
-          : 'Resource connection status', {
-        input,
-        data: {
-          status,
-          matchedBinding,
-          inferredSource: summarizeSourceInference(sourceInference)
+          : 'Resource connection status',
+        {
+          input,
+          data: {
+            status,
+            matchedBinding,
+            inferredSource: summarizeSourceInference(sourceInference)
+          }
         }
-      });
+      );
     }
 
     return createSkillResult('resource-bind', 'Resource binding. Available actions: bind, list, status, use', {
@@ -85,7 +114,7 @@ module.exports = {
           'status - Show connection status and matched binding',
           'use - Resolve a learned binding for the current business'
         ],
-        supportedTypes: ['MySQL', 'PostgreSQL', 'Redis', 'REST API', 'YApi', 'Yuque', 'Workflow'],
+        supportedTypes: ['MySQL', 'PostgreSQL', 'Redis', 'REST API', 'YApi', 'Yuque', 'Workflow', 'Service Governance'],
         inferredSource: summarizeSourceInference(sourceInference)
       }
     });
@@ -136,7 +165,11 @@ function buildBinding(input, params, context, sourceInference) {
   return {
     business,
     aliases,
-    componentType: params.componentType || inferred.componentType || context.flowmind?.learning?.inferComponentType?.(input, 'resource-bind') || null,
+    componentType:
+      params.componentType ||
+      inferred.componentType ||
+      context.flowmind?.learning?.inferComponentType?.(input, 'resource-bind') ||
+      null,
     provider: params.provider || inferred.provider || null,
     mcpServer: params.mcpServer || inferred.mcpServer || null,
     connection: {
@@ -200,7 +233,9 @@ function parseResourceParams(input) {
   }
 
   if (!params.business) {
-    const bizKeywordMatch = input.match(/(?:绑定|bind)\s*([\u4e00-\u9fa5A-Za-z0-9._-]+?)\s*(平台|服务|环境|工程|项目)/i);
+    const bizKeywordMatch = input.match(
+      /(?:绑定|bind)\s*([\u4e00-\u9fa5A-Za-z0-9._-]+?)\s*(平台|服务|环境|工程|项目)/i
+    );
     if (bizKeywordMatch) {
       params.business = `${bizKeywordMatch[1]}${bizKeywordMatch[2]}`;
     }
@@ -239,7 +274,9 @@ function inferBusiness(input, params, inferred = {}, sourceInference = null) {
   const explicit = params.business || params.project || sourceInference?.project || params.namespace;
   if (explicit) return explicit;
 
-  const keywordMatch = String(input || '').match(/(?:绑定|bind)\s*([\u4e00-\u9fa5A-Za-z0-9._-]+?)\s*(平台|服务|环境|工程|项目)/i);
+  const keywordMatch = String(input || '').match(
+    /(?:绑定|bind)\s*([\u4e00-\u9fa5A-Za-z0-9._-]+?)\s*(平台|服务|环境|工程|项目)/i
+  );
   if (keywordMatch) {
     return `${keywordMatch[1]}${keywordMatch[2]}`;
   }
@@ -274,9 +311,7 @@ async function safeInferSourceContext(input) {
 
 function summarizeSourceInference(sourceInference) {
   if (!sourceInference?.matched) {
-    return sourceInference?.environment
-      ? { matched: false, environment: sourceInference.environment }
-      : null;
+    return sourceInference?.environment ? { matched: false, environment: sourceInference.environment } : null;
   }
 
   return {

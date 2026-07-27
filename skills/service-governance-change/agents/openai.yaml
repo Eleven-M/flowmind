@@ -1,0 +1,4 @@
+interface:
+  display_name: "Service Governance Change"
+  short_description: "Preview and apply guarded governance policy changes"
+  default_prompt: "Use $service-governance-change to dry-run a governed microservice policy change before approval."

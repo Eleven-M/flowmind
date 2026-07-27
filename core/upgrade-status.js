@@ -14,6 +14,8 @@ const UPGRADE_DIRECTIONS = [
     checks: [
       { key: 'changeImpactSkill', label: 'change-impact-review skill', file: 'skills/change-impact-review/index.js' },
       { key: 'reportSkill', label: 'report-insights skill', file: 'skills/report-insights/index.js' },
+      { key: 'workflowHistory', label: 'workflow audit history store', file: 'core/workflow-history.js' },
+      { key: 'workflowResume', label: 'resumable workflow execution', search: 'flowmind_resume_workflow' },
       { key: 'automationCandidates', label: 'automation candidate contract', search: 'automationCandidates' },
       { key: 'followUpChain', label: 'guarded follow-up chain builder', file: 'core/automation-chain.js' },
       {
@@ -23,7 +25,7 @@ const UPGRADE_DIRECTIONS = [
         phase: 'live'
       }
     ],
-    next: 'Add resumable execution, audit history, and provider-specific rollback strategies.'
+    next: 'Add live cloud validation and provider smoke tests.'
   },
   {
     id: '2',

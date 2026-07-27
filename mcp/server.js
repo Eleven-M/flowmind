@@ -9,10 +9,11 @@ const FlowMind = require('../core');
 const eventBus = require('../core/event-bus');
 const { isErrorResultPayload } = require('../core/result-contract');
 const { TaskStore } = require('../core/task-store');
+const { WorkflowHistoryStore } = require('../core/workflow-history');
 const { attachKnowledgeDepositionCandidates } = require('../core/knowledge-deposition');
 const { buildFollowUpChain } = require('../core/automation-chain');
 const { previewWorkflow } = require('../core/dry-run');
-const { executeWorkflow } = require('../core/workflow-executor');
+const { executeWorkflow, resumeWorkflow } = require('../core/workflow-executor');
 const { version } = require('../package.json');
 
 const CAPABILITY_GROUPS = Object.freeze({
@@ -23,6 +24,7 @@ const CAPABILITY_GROUPS = Object.freeze({
   workflow: ['auto-flow'],
   docs: ['yapi-sync-interface', 'yuque-sync-design'],
   logs: ['log-audit', 'sls-log-audit'],
+  governance: ['service-governance-audit', 'service-governance-diagnosis', 'service-governance-change'],
   resources: ['resource-bind']
 });
 
@@ -34,6 +36,7 @@ class FlowMindMCPServer {
     this.tasks = new Map();
     this.taskCounter = 0;
     this.taskStore = options.taskStore || new TaskStore(options.taskStoreOptions || {});
+    this.workflowHistory = options.workflowHistory || new WorkflowHistoryStore(options.workflowHistoryOptions || {});
   }
 
   async init() {
@@ -180,6 +183,34 @@ class FlowMindMCPServer {
     });
 
     tools.push({
+      name: 'flowmind_resume_workflow',
+      description: 'Resume a previously recorded workflow execution from the first unfinished step',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          executionId: { type: 'string', description: 'Workflow execution id returned by flowmind_execute_workflow' },
+          approvalToken: { type: 'string', description: 'Token returned by the original workflow preview' },
+          continueOnError: { type: 'boolean' },
+          context: { type: 'object' }
+        },
+        required: ['executionId', 'approvalToken']
+      }
+    });
+
+    tools.push({
+      name: 'flowmind_workflow_history',
+      description: 'List recent recorded workflow executions and their resume state',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'Maximum number of workflow records to return' },
+          status: { type: 'string', description: 'Filter workflow records by status' },
+          resumable: { type: 'boolean', description: 'Only return workflow records that can be resumed' }
+        }
+      }
+    });
+
+    tools.push({
       name: 'flowmind_list_skills',
       description: 'List all available FlowMind skills',
       inputSchema: {
@@ -221,12 +252,27 @@ class FlowMindMCPServer {
       }
     });
 
+    tools.push({
+      name: 'flowmind_learning_assets',
+      description: 'View sanitized learned skill feedback, scenes, bindings, and local material package metadata',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          skill: { type: 'string', description: 'Optional skill-name filter' },
+          limit: { type: 'number', description: 'Maximum feedback records to return' }
+        }
+      }
+    });
+
     // 添加每个技能作为独立工具
     for (const skill of skills) {
       const capabilityTags = this.getCapabilityTagsForSkill(skill.name);
       tools.push({
         name: `flowmind_skill_${skill.name}`,
-        description: [skill.description || `Execute ${skill.name} skill`, capabilityTags.length > 0 ? `Capabilities: ${capabilityTags.join(', ')}` : null]
+        description: [
+          skill.description || `Execute ${skill.name} skill`,
+          capabilityTags.length > 0 ? `Capabilities: ${capabilityTags.join(', ')}` : null
+        ]
           .filter(Boolean)
           .join(' | '),
         inputSchema: skill.inputSchema || {
@@ -259,30 +305,29 @@ class FlowMindMCPServer {
   getCapabilityCatalog() {
     const skills = this.flowmind.skills.list();
     const loadedNames = new Set(skills.map((skill) => skill.name));
-    return Object.entries(CAPABILITY_GROUPS).map(([capability, mappedSkills]) => ({
-      capability,
-      skills: mappedSkills
-        .filter((name) => loadedNames.has(name))
-        .map((name) => {
-          const skill = skills.find((item) => item.name === name);
-          return {
-            name,
-            description: skill?.description || '',
-            category: skill?.category || '',
-            inputSchema: this.flowmind.skills.get(name)?.inputSchema || null,
-            outputSchema: this.flowmind.skills.get(name)?.outputSchema || null
-          };
-        })
-    })).filter((entry) => entry.skills.length > 0);
+    return Object.entries(CAPABILITY_GROUPS)
+      .map(([capability, mappedSkills]) => ({
+        capability,
+        skills: mappedSkills
+          .filter((name) => loadedNames.has(name))
+          .map((name) => {
+            const skill = skills.find((item) => item.name === name);
+            return {
+              name,
+              description: skill?.description || '',
+              category: skill?.category || '',
+              inputSchema: this.flowmind.skills.get(name)?.inputSchema || null,
+              outputSchema: this.flowmind.skills.get(name)?.outputSchema || null
+            };
+          })
+      }))
+      .filter((entry) => entry.skills.length > 0);
   }
 
   isTaskManagementTool(name) {
-    return [
-      'flowmind_start_task',
-      'flowmind_task_status',
-      'flowmind_list_tasks',
-      'flowmind_cancel_task'
-    ].includes(name);
+    return ['flowmind_start_task', 'flowmind_task_status', 'flowmind_list_tasks', 'flowmind_cancel_task'].includes(
+      name
+    );
   }
 
   buildTaskId() {
@@ -347,14 +392,10 @@ class FlowMindMCPServer {
   }
 
   normalizeTaskProgress(status, progress = {}) {
-    const payload = typeof progress === 'string'
-      ? { message: progress }
-      : progress || {};
+    const payload = typeof progress === 'string' ? { message: progress } : progress || {};
     const defaultProgress = this.getTaskProgress(status);
     const rawPercent = Number(payload.percent);
-    const percent = Number.isFinite(rawPercent)
-      ? Math.max(0, Math.min(100, rawPercent))
-      : defaultProgress.percent;
+    const percent = Number.isFinite(rawPercent) ? Math.max(0, Math.min(100, rawPercent)) : defaultProgress.percent;
 
     return {
       stage: payload.stage || defaultProgress.stage,
@@ -364,14 +405,15 @@ class FlowMindMCPServer {
   }
 
   appendProgressHistory(task, progress) {
-    const previous = Array.isArray(task.progressHistory) && task.progressHistory.length > 0
-      ? task.progressHistory[task.progressHistory.length - 1]
-      : null;
+    const previous =
+      Array.isArray(task.progressHistory) && task.progressHistory.length > 0
+        ? task.progressHistory[task.progressHistory.length - 1]
+        : null;
     if (
-      previous
-      && previous.stage === progress.stage
-      && previous.percent === progress.percent
-      && previous.message === progress.message
+      previous &&
+      previous.stage === progress.stage &&
+      previous.percent === progress.percent &&
+      previous.message === progress.message
     ) {
       return;
     }
@@ -387,30 +429,25 @@ class FlowMindMCPServer {
   }
 
   updateTask(task, patch = {}) {
-    const {
-      progress,
-      progressMessage,
-      progressPercent,
-      progressStage,
-      ...statePatch
-    } = patch;
+    const { progress, progressMessage, progressPercent, progressStage, ...statePatch } = patch;
 
     Object.assign(task, statePatch);
 
     if (
-      progress !== undefined
-      || statePatch.status
-      || progressMessage
-      || Number.isFinite(progressPercent)
-      || progressStage
+      progress !== undefined ||
+      statePatch.status ||
+      progressMessage ||
+      Number.isFinite(progressPercent) ||
+      progressStage
     ) {
-      task.progress = progress !== undefined
-        ? this.normalizeTaskProgress(statePatch.status || task.status, progress)
-        : this.normalizeTaskProgress(statePatch.status || task.status, {
-          stage: progressStage,
-          percent: progressPercent,
-          message: progressMessage || task.progress?.message
-        });
+      task.progress =
+        progress !== undefined
+          ? this.normalizeTaskProgress(statePatch.status || task.status, progress)
+          : this.normalizeTaskProgress(statePatch.status || task.status, {
+              stage: progressStage,
+              percent: progressPercent,
+              message: progressMessage || task.progress?.message
+            });
       this.appendProgressHistory(task, task.progress);
     }
 
@@ -456,10 +493,12 @@ class FlowMindMCPServer {
       timeoutMs: Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : null,
       status: 'queued',
       progress: initialProgress,
-      progressHistory: [{
-        ...initialProgress,
-        timestamp: new Date().toISOString()
-      }],
+      progressHistory: [
+        {
+          ...initialProgress,
+          timestamp: new Date().toISOString()
+        }
+      ],
       createdAt: new Date().toISOString(),
       startedAt: null,
       completedAt: null,
@@ -494,9 +533,10 @@ class FlowMindMCPServer {
         progress: {
           stage: task.attempts > 1 ? 'retry' : 'dispatch',
           percent: 5,
-          message: task.attempts > 1
-            ? `Retrying ${task.tool} (${task.attempts}/${task.maxRetries + 1})`
-            : `Running ${task.tool}`
+          message:
+            task.attempts > 1
+              ? `Retrying ${task.tool} (${task.attempts}/${task.maxRetries + 1})`
+              : `Running ${task.tool}`
         }
       });
 
@@ -563,14 +603,16 @@ class FlowMindMCPServer {
     const timeout = new Promise((resolve) => {
       task.timeoutTimer = setTimeout(() => {
         resolve({
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              error: `Task timed out after ${task.timeoutMs}ms`,
-              kind: 'execution-timeout',
-              retryable: task.attempts <= task.maxRetries
-            })
-          }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                error: `Task timed out after ${task.timeoutMs}ms`,
+                kind: 'execution-timeout',
+                retryable: task.attempts <= task.maxRetries
+              })
+            }
+          ],
           isError: true
         });
       }, task.timeoutMs);
@@ -588,10 +630,12 @@ class FlowMindMCPServer {
       const enriched = attachKnowledgeDepositionCandidates(payload);
       return {
         ...result,
-        content: [{
-          ...result.content[0],
-          text: JSON.stringify(enriched, null, 2)
-        }],
+        content: [
+          {
+            ...result.content[0],
+            text: JSON.stringify(enriched, null, 2)
+          }
+        ],
         isError: result.isError
       };
     } catch {
@@ -601,11 +645,7 @@ class FlowMindMCPServer {
 
   createTaskProgressReporter(task) {
     return (progress) => {
-      if (
-        !task
-        || ['succeeded', 'failed', 'cancelled'].includes(task.status)
-        || task.cancellation?.requested
-      ) {
+      if (!task || ['succeeded', 'failed', 'cancelled'].includes(task.status) || task.cancellation?.requested) {
         return;
       }
 
@@ -636,12 +676,18 @@ class FlowMindMCPServer {
       retries: args.retries
     });
     return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          task: this.serializeTask(task)
-        }, null, 2)
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              task: this.serializeTask(task)
+            },
+            null,
+            2
+          )
+        }
+      ]
     };
   }
 
@@ -649,21 +695,29 @@ class FlowMindMCPServer {
     const task = this.tasks.get(args.taskId);
     if (!task) {
       return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ error: `Task not found: ${args.taskId}` })
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ error: `Task not found: ${args.taskId}` })
+          }
+        ],
         isError: true
       };
     }
 
     return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          task: this.serializeTask(task)
-        }, null, 2)
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              task: this.serializeTask(task)
+            },
+            null,
+            2
+          )
+        }
+      ]
     };
   }
 
@@ -675,10 +729,12 @@ class FlowMindMCPServer {
       .map((task) => this.serializeTask(task));
 
     return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({ tasks }, null, 2)
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ tasks }, null, 2)
+        }
+      ]
     };
   }
 
@@ -686,10 +742,12 @@ class FlowMindMCPServer {
     const task = this.tasks.get(args.taskId);
     if (!task) {
       return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ error: `Task not found: ${args.taskId}` })
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ error: `Task not found: ${args.taskId}` })
+          }
+        ],
         isError: true
       };
     }
@@ -731,12 +789,18 @@ class FlowMindMCPServer {
     }
 
     return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          task: this.serializeTask(task)
-        }, null, 2)
-      }]
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              task: this.serializeTask(task)
+            },
+            null,
+            2
+          )
+        }
+      ]
     };
   }
 
@@ -746,33 +810,39 @@ class FlowMindMCPServer {
     if (name === 'flowmind_process') {
       const processContext = executionContext.progressReporter
         ? {
-          ...(args.context || {}),
-          onProgress: executionContext.progressReporter,
-          taskProgress: executionContext.progressReporter
-        }
-        : (args.context || {});
+            ...(args.context || {}),
+            onProgress: executionContext.progressReporter,
+            taskProgress: executionContext.progressReporter
+          }
+        : args.context || {};
       const data = await this.flowmind.process(args.input, processContext);
       result = {
-        content: [{
-          type: 'text',
-          text: JSON.stringify(data, null, 2)
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(data, null, 2)
+          }
+        ],
         isError: isErrorResultPayload(data)
       };
     } else if (name === 'flowmind_list_skills') {
       const skills = this.flowmind.skills.list();
       result = {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ skills }, null, 2)
-        }]
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ skills }, null, 2)
+          }
+        ]
       };
     } else if (name === 'flowmind_capability_catalog') {
       result = {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ capabilities: this.getCapabilityCatalog() }, null, 2)
-        }]
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ capabilities: this.getCapabilityCatalog() }, null, 2)
+          }
+        ]
       };
     } else if (name === 'flowmind_preview_workflow') {
       const chain = args.chain || buildFollowUpChain(args.result);
@@ -785,55 +855,113 @@ class FlowMindMCPServer {
         approvalToken: args.approvalToken,
         continueOnError: args.continueOnError === true,
         context: args.context || {},
-        dryRun: false
+        dryRun: false,
+        historyStore: this.workflowHistory
       });
       result = {
         content: [{ type: 'text', text: JSON.stringify(execution, null, 2) }],
         isError: execution.status === 'failed'
       };
+    } else if (name === 'flowmind_resume_workflow') {
+      const record = await this.workflowHistory.get(args.executionId);
+      if (!record) {
+        result = {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ error: `Workflow execution not found: ${args.executionId}` })
+            }
+          ],
+          isError: true
+        };
+      } else {
+        const execution = await resumeWorkflow(record, {
+          flowmind: this.flowmind,
+          approvalToken: args.approvalToken,
+          continueOnError: args.continueOnError === true,
+          context: args.context || {},
+          dryRun: false,
+          historyStore: this.workflowHistory
+        });
+        result = {
+          content: [{ type: 'text', text: JSON.stringify(execution, null, 2) }],
+          isError: execution.status === 'failed'
+        };
+      }
+    } else if (name === 'flowmind_workflow_history') {
+      const workflows = await this.workflowHistory.list({
+        limit: args.limit,
+        status: args.status,
+        resumable: args.resumable === true
+      });
+      result = {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ workflows }, null, 2)
+          }
+        ]
+      };
     } else if (name === 'flowmind_get_skill') {
       const skill = this.flowmind.skills.get(args.name);
       if (!skill) {
         result = {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({ error: `Skill not found: ${args.name}` })
-          }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ error: `Skill not found: ${args.name}` })
+            }
+          ],
           isError: true
         };
       } else {
         const skillName = skill.name || args.name;
         result = {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              name: skillName,
-              description: skill.definition?.description,
-              category: skill.definition?.category,
-              triggers: skill.definition?.triggers,
-              componentDependencies: skill.definition?.componentDependencies,
-              capabilities: this.getCapabilityTagsForSkill(skillName),
-              inputSchema: skill.inputSchema || null,
-              outputSchema: skill.outputSchema || null
-            }, null, 2)
-          }]
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  name: skillName,
+                  description: skill.definition?.description,
+                  category: skill.definition?.category,
+                  triggers: skill.definition?.triggers,
+                  componentDependencies: skill.definition?.componentDependencies,
+                  capabilities: this.getCapabilityTagsForSkill(skillName),
+                  inputSchema: skill.inputSchema || null,
+                  outputSchema: skill.outputSchema || null
+                },
+                null,
+                2
+              )
+            }
+          ]
         };
       }
     } else if (name === 'flowmind_ai_status') {
       const status = this.flowmind.getAIStatus();
       result = {
-        content: [{
-          type: 'text',
-          text: JSON.stringify(status, null, 2)
-        }]
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(status, null, 2)
+          }
+        ]
       };
     } else if (name === 'flowmind_learning_stats') {
       const stats = await this.flowmind.getStats();
       result = {
-        content: [{
-          type: 'text',
-          text: JSON.stringify(stats, null, 2)
-        }]
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(stats, null, 2)
+          }
+        ]
+      };
+    } else if (name === 'flowmind_learning_assets') {
+      const assets = await this.flowmind.getLearningAssets({ skill: args.skill, limit: args.limit });
+      result = {
+        content: [{ type: 'text', text: JSON.stringify(assets, null, 2) }]
       };
     } else if (name.startsWith('flowmind_skill_')) {
       const skillName = name.replace('flowmind_skill_', '');
@@ -841,35 +969,41 @@ class FlowMindMCPServer {
 
       if (!skill) {
         result = {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({ error: `Skill not found: ${skillName}` })
-          }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ error: `Skill not found: ${skillName}` })
+            }
+          ],
           isError: true
         };
       } else {
         const skillContext = executionContext.progressReporter
           ? {
-            ...(args.context || {}),
-            onProgress: executionContext.progressReporter,
-            taskProgress: executionContext.progressReporter
-          }
-          : (args.context || {});
+              ...(args.context || {}),
+              onProgress: executionContext.progressReporter,
+              taskProgress: executionContext.progressReporter
+            }
+          : args.context || {};
         const data = await this.flowmind.executeWithLearning(skill, args.input, skillContext);
         result = {
-          content: [{
-            type: 'text',
-            text: JSON.stringify(data, null, 2)
-          }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(data, null, 2)
+            }
+          ],
           isError: isErrorResultPayload(data)
         };
       }
     } else {
       result = {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ error: `Unknown tool: ${name}` })
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ error: `Unknown tool: ${name}` })
+          }
+        ],
         isError: true
       };
     }
@@ -910,7 +1044,6 @@ class FlowMindMCPServer {
       });
 
       return result;
-
     } catch (error) {
       eventBus.emit('mcp:tool_called', {
         tool: name,
@@ -922,10 +1055,12 @@ class FlowMindMCPServer {
       });
 
       return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ error: error.message })
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ error: error.message })
+          }
+        ],
         isError: true
       };
     }

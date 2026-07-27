@@ -33,6 +33,4 @@ __tests__/
 *.test.js
 *.spec.js
 
-# Documentation (keep README)
-docs/
-CONTRIBUTING.md
+# Repository-only docs are controlled by package.json files.

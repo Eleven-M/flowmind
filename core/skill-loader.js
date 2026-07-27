@@ -58,6 +58,10 @@ class SkillLoader {
         implementation = require(indexPath);
       }
 
+      if (Array.isArray(implementation.componentDependencies)) {
+        definition.componentDependencies = implementation.componentDependencies;
+      }
+
       // Create skill object
       const skill = {
         name: name,

@@ -108,12 +108,26 @@ class OllamaProvider extends BaseModel {
    */
   async listModels() {
     try {
-      const response = await fetch(`${this.baseUrl}/api/tags`);
-      if (!response.ok) return [];
+      const response = await this.fetchWithRetry(`${this.baseUrl}/api/tags`, {
+        method: 'GET',
+        retries: 1,
+        timeout: 5000
+      });
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Model discovery failed: ${response.status} - ${error}`);
+      }
       const data = await response.json();
-      return data.models || [];
-    } catch {
-      return [];
+      const models = Array.isArray(data?.models) ? data.models : [];
+      return models
+        .map((item) => ({
+          id: item?.name,
+          label: item?.name,
+          raw: item
+        }))
+        .filter((item) => typeof item.id === 'string' && item.id.trim());
+    } catch (error) {
+      throw new Error(`Ollama model discovery failed: ${error.message}`);
     }
   }
 

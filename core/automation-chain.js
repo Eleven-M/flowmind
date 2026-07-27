@@ -6,7 +6,8 @@ const EXECUTABLE_FOLLOW_UP_SKILLS = new Set([
   'yapi-sync-interface',
   'yuque-sync-design',
   'archive-change',
-  'knowledge-ops'
+  'knowledge-ops',
+  'service-governance-change'
 ]);
 
 function normalizeCandidate(candidate, index, source) {

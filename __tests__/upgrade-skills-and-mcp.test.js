@@ -48,23 +48,23 @@ describe('upgrade skills and MCP capability catalog', () => {
     });
 
     expect(result.type).toBe('result');
-    expect(result.data).toEqual(expect.objectContaining({
-      impactedDomains: expect.arrayContaining([
-        expect.objectContaining({ domain: 'api' }),
-        expect.objectContaining({ domain: 'database' })
-      ]),
-      risk: expect.objectContaining({
-        level: expect.stringMatching(/low|medium|high/)
-      }),
-      regressionChecklist: expect.arrayContaining([
-        expect.stringMatching(/API|Smoke|data/i)
-      ]),
-      syncRecommendations: expect.arrayContaining([
-        expect.objectContaining({ skill: 'yapi-sync-interface' }),
-        expect.objectContaining({ skill: 'yuque-sync-design' })
-      ]),
-      relatedSkills: expect.arrayContaining(['data-risk-audit'])
-    }));
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        impactedDomains: expect.arrayContaining([
+          expect.objectContaining({ domain: 'api' }),
+          expect.objectContaining({ domain: 'database' })
+        ]),
+        risk: expect.objectContaining({
+          level: expect.stringMatching(/low|medium|high/)
+        }),
+        regressionChecklist: expect.arrayContaining([expect.stringMatching(/API|Smoke|data/i)]),
+        syncRecommendations: expect.arrayContaining([
+          expect.objectContaining({ skill: 'yapi-sync-interface' }),
+          expect.objectContaining({ skill: 'yuque-sync-design' })
+        ]),
+        relatedSkills: expect.arrayContaining(['data-risk-audit'])
+      })
+    );
 
     await fs.remove(tempRepo);
   });
@@ -74,11 +74,13 @@ describe('upgrade skills and MCP capability catalog', () => {
 
     expect(result.type).toBe('result');
     expect(result.data.risk.level).toBe('high');
-    expect(result.data.findings).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        issue: expect.stringContaining('without WHERE')
-      })
-    ]));
+    expect(result.data.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          issue: expect.stringContaining('without WHERE')
+        })
+      ])
+    );
   });
 
   test('data-risk-audit flags broad Redis key access', async () => {
@@ -86,23 +88,21 @@ describe('upgrade skills and MCP capability catalog', () => {
 
     expect(result.type).toBe('result');
     expect(result.data.risk.level).toBe('high');
-    expect(result.data.findings).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        issue: expect.stringContaining('KEYS')
-      })
-    ]));
+    expect(result.data.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          issue: expect.stringContaining('KEYS')
+        })
+      ])
+    );
   });
 
   test('data-risk-audit runs EXPLAIN preview when databaseQuery adapter is available', async () => {
     const queryExec = jest.fn().mockResolvedValue({
-      rows: [
-        { table: 'orders', type: 'ALL', rows: 12000, Extra: 'Using filesort' }
-      ]
+      rows: [{ table: 'orders', type: 'ALL', rows: 12000, Extra: 'Using filesort' }]
     });
     const fetchTables = jest.fn().mockResolvedValue({
-      tables: [
-        { tableName: 'orders' }
-      ]
+      tables: [{ tableName: 'orders' }]
     });
     const fetchFields = jest.fn().mockResolvedValue({
       fields: [
@@ -131,35 +131,39 @@ describe('upgrade skills and MCP capability catalog', () => {
       }
     });
 
-    expect(queryExec).toHaveBeenCalledWith(expect.objectContaining({
-      sql: expect.stringMatching(/^EXPLAIN /),
-      source_id: 'source-1',
-      database_id: 'db-1',
-      schema: 'retail'
-    }));
-    expect(fetchTables).toHaveBeenCalledWith(expect.objectContaining({
-      source_id: 'source-1',
-      database_id: 'db-1',
-      schema: 'retail'
-    }));
-    expect(result.data.explain).toEqual(expect.objectContaining({
-      attempted: true,
-      summary: expect.objectContaining({
-        warnings: expect.arrayContaining([
-          expect.stringContaining('Full table scan'),
-          expect.stringContaining('filesort')
-        ])
+    expect(queryExec).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sql: expect.stringMatching(/^EXPLAIN /),
+        source_id: 'source-1',
+        database_id: 'db-1',
+        schema: 'retail'
       })
-    }));
-    expect(result.data.metadata).toEqual(expect.objectContaining({
-      attempted: true,
-      matchedTables: expect.arrayContaining([
-        expect.objectContaining({ name: 'orders', exists: true })
-      ]),
-      sampledFields: expect.arrayContaining([
-        expect.objectContaining({ name: 'id' })
-      ])
-    }));
+    );
+    expect(fetchTables).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source_id: 'source-1',
+        database_id: 'db-1',
+        schema: 'retail'
+      })
+    );
+    expect(result.data.explain).toEqual(
+      expect.objectContaining({
+        attempted: true,
+        summary: expect.objectContaining({
+          warnings: expect.arrayContaining([
+            expect.stringContaining('Full table scan'),
+            expect.stringContaining('filesort')
+          ])
+        })
+      })
+    );
+    expect(result.data.metadata).toEqual(
+      expect.objectContaining({
+        attempted: true,
+        matchedTables: expect.arrayContaining([expect.objectContaining({ name: 'orders', exists: true })]),
+        sampledFields: expect.arrayContaining([expect.objectContaining({ name: 'id' })])
+      })
+    );
   });
 
   test('report-insights summarizes report adapter output', async () => {
@@ -178,33 +182,35 @@ describe('upgrade skills and MCP capability catalog', () => {
     });
 
     expect(result.type).toBe('result');
-    expect(result.data.summary).toEqual(expect.objectContaining({
-      total: 2,
-      failed: 1,
-      items: expect.arrayContaining([
-        expect.objectContaining({ name: 'retail-service', status: 'SUCCESS' })
+    expect(result.data.summary).toEqual(
+      expect.objectContaining({
+        total: 2,
+        failed: 1,
+        items: expect.arrayContaining([expect.objectContaining({ name: 'retail-service', status: 'SUCCESS' })])
+      })
+    );
+    expect(result.data.automationCandidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ skill: 'change-impact-review' }),
+        expect.objectContaining({ skill: 'archive-change' })
       ])
-    }));
-    expect(result.data.automationCandidates).toEqual(expect.arrayContaining([
-      expect.objectContaining({ skill: 'change-impact-review' }),
-      expect.objectContaining({ skill: 'archive-change' })
-    ]));
+    );
   });
 
   test('report-insights returns binding and retry hints when report adapter is missing', async () => {
     const result = await reportInsights.execute('构建报告 job=retail-service');
 
     expect(result.type).toBe('error');
-    expect(result.data).toEqual(expect.objectContaining({
-      kind: 'missing-component',
-      retryable: true,
-      retryHints: expect.arrayContaining([
-        expect.stringContaining('Configure the report component')
-      ]),
-      bindingHint: expect.objectContaining({
-        suggestedCommand: expect.stringContaining('绑定报告')
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        kind: 'missing-component',
+        retryable: true,
+        retryHints: expect.arrayContaining([expect.stringContaining('Configure the report component')]),
+        bindingHint: expect.objectContaining({
+          suggestedCommand: expect.stringContaining('绑定报告')
+        })
       })
-    }));
+    );
   });
 
   test('change-impact-review and knowledge-ops emit staged progress updates when a reporter is provided', async () => {
@@ -213,7 +219,10 @@ describe('upgrade skills and MCP capability catalog', () => {
     const impactProgress = jest.fn();
     const knowledgeProgress = jest.fn();
     await fs.ensureDir(path.join(tempRepo, 'src', 'controller'));
-    await fs.writeFile(path.join(tempRepo, 'src', 'controller', 'DemoController.java'), '@GetMapping("/demo") class DemoController {}');
+    await fs.writeFile(
+      path.join(tempRepo, 'src', 'controller', 'DemoController.java'),
+      '@GetMapping("/demo") class DemoController {}'
+    );
     await fs.writeFile(sourcePath, '# 发布回滚\n\ncontent', 'utf-8');
 
     await changeImpactReview.execute('变更影响', {
@@ -221,14 +230,18 @@ describe('upgrade skills and MCP capability catalog', () => {
       onProgress: impactProgress
     });
 
-    expect(impactProgress).toHaveBeenCalledWith(expect.objectContaining({
-      stage: 'resolve-repo',
-      percent: 10
-    }));
-    expect(impactProgress).toHaveBeenCalledWith(expect.objectContaining({
-      stage: 'classify-files',
-      percent: 55
-    }));
+    expect(impactProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'resolve-repo',
+        percent: 10
+      })
+    );
+    expect(impactProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'classify-files',
+        percent: 55
+      })
+    );
 
     await knowledgeOps.execute(`保存知识 path=${sourcePath} repo=team/release`, {
       onProgress: knowledgeProgress,
@@ -239,14 +252,18 @@ describe('upgrade skills and MCP capability catalog', () => {
       }
     });
 
-    expect(knowledgeProgress).toHaveBeenCalledWith(expect.objectContaining({
-      stage: 'persist',
-      percent: 75
-    }));
-    expect(knowledgeProgress).toHaveBeenCalledWith(expect.objectContaining({
-      stage: 'finalize',
-      percent: 95
-    }));
+    expect(knowledgeProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'persist',
+        percent: 75
+      })
+    );
+    expect(knowledgeProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'finalize',
+        percent: 95
+      })
+    );
 
     await fs.remove(tempRepo);
   });
@@ -267,18 +284,24 @@ describe('upgrade skills and MCP capability catalog', () => {
       }
     });
 
-    expect(autoProgress).toHaveBeenCalledWith(expect.objectContaining({
-      stage: 'parse',
-      percent: 10
-    }));
-    expect(autoProgress).toHaveBeenCalledWith(expect.objectContaining({
-      stage: 'list-pipelines',
-      percent: 60
-    }));
-    expect(autoProgress).toHaveBeenCalledWith(expect.objectContaining({
-      stage: 'finalize',
-      percent: 95
-    }));
+    expect(autoProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'parse',
+        percent: 10
+      })
+    );
+    expect(autoProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'list-pipelines',
+        percent: 60
+      })
+    );
+    expect(autoProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'finalize',
+        percent: 95
+      })
+    );
 
     await logAudit.execute('查询 traceId abc123 的日志', {
       onProgress: logProgress,
@@ -287,31 +310,39 @@ describe('upgrade skills and MCP capability catalog', () => {
           providerName: 'aliyun-sls',
           buildQueryParams: (params) => params,
           queryLogs: jest.fn().mockResolvedValue({
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                status: 'ok',
-                total: 1,
-                logs: [{ service: 'demo', message: 'hit' }]
-              })
-            }]
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  status: 'ok',
+                  total: 1,
+                  logs: [{ service: 'demo', message: 'hit' }]
+                })
+              }
+            ]
           })
         })
       }
     });
 
-    expect(logProgress).toHaveBeenCalledWith(expect.objectContaining({
-      stage: 'query-logs',
-      percent: 60
-    }));
-    expect(logProgress).toHaveBeenCalledWith(expect.objectContaining({
-      stage: 'summarize',
-      percent: 80
-    }));
-    expect(logProgress).toHaveBeenCalledWith(expect.objectContaining({
-      stage: 'finalize',
-      percent: 95
-    }));
+    expect(logProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'query-logs',
+        percent: 60
+      })
+    );
+    expect(logProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'summarize',
+        percent: 80
+      })
+    );
+    expect(logProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'finalize',
+        percent: 95
+      })
+    );
   });
 
   test('build-report, test-report, and coverage-report route to report-insights actions', async () => {
@@ -337,18 +368,16 @@ describe('upgrade skills and MCP capability catalog', () => {
       componentRegistry: {
         getAdapter: () => ({
           search: async () => ({
-            docs: [
-              { id: 'doc-1', title: '发布回滚手册', type: 'markdown' }
-            ]
+            docs: [{ id: 'doc-1', title: '发布回滚手册', type: 'markdown' }]
           })
         })
       }
     });
 
     expect(result.type).toBe('result');
-    expect(result.data.summary.items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ title: '发布回滚手册' })
-    ]));
+    expect(result.data.summary.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ title: '发布回滚手册' })])
+    );
   });
 
   test('knowledge-ops updates entries and generates runbook templates', async () => {
@@ -366,14 +395,20 @@ describe('upgrade skills and MCP capability catalog', () => {
       }
     });
 
-    expect(updateDoc).toHaveBeenCalledWith('team/ops', 'rollback-guide', expect.objectContaining({
-      title: '发布回滚手册'
-    }));
+    expect(updateDoc).toHaveBeenCalledWith(
+      'team/ops',
+      'rollback-guide',
+      expect.objectContaining({
+        title: '发布回滚手册'
+      })
+    );
     expect(updateResult.data.action).toBe('update');
-    expect(updateResult.data.deposition).toEqual(expect.objectContaining({
-      mode: 'update',
-      namespace: 'team/ops'
-    }));
+    expect(updateResult.data.deposition).toEqual(
+      expect.objectContaining({
+        mode: 'update',
+        namespace: 'team/ops'
+      })
+    );
 
     const templatePath = path.join(tempDir, 'template.md');
     const templateResult = await knowledgeOps.execute(`runbook 模板 path=${templatePath} title=发布回滚`, {
@@ -389,9 +424,9 @@ describe('upgrade skills and MCP capability catalog', () => {
     const content = await fs.readFile(templatePath, 'utf-8');
     expect(content).toContain('# 发布回滚');
     expect(content).toContain('## Diagnosis');
-    expect(templateResult.data.nextActions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ skill: 'knowledge-ops' })
-    ]));
+    expect(templateResult.data.nextActions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ skill: 'knowledge-ops' })])
+    );
 
     await fs.remove(tempDir);
   });
@@ -411,13 +446,18 @@ describe('upgrade skills and MCP capability catalog', () => {
       }
     });
 
-    expect(createDoc).toHaveBeenCalledWith('team/release', expect.objectContaining({
-      title: '发布说明'
-    }));
-    expect(saveResult.data.deposition).toEqual(expect.objectContaining({
-      mode: 'save',
-      namespace: 'team/release'
-    }));
+    expect(createDoc).toHaveBeenCalledWith(
+      'team/release',
+      expect.objectContaining({
+        title: '发布说明'
+      })
+    );
+    expect(saveResult.data.deposition).toEqual(
+      expect.objectContaining({
+        mode: 'save',
+        namespace: 'team/release'
+      })
+    );
 
     const missingNamespaceResult = await knowledgeOps.execute(`保存知识 path=${sourcePath}`, {
       componentRegistry: {
@@ -428,55 +468,67 @@ describe('upgrade skills and MCP capability catalog', () => {
     });
 
     expect(missingNamespaceResult.type).toBe('error');
-    expect(missingNamespaceResult.data.bindingHint).toEqual(expect.objectContaining({
-      suggestedCommand: expect.stringContaining('绑定知识库')
-    }));
-    expect(missingNamespaceResult.data).toEqual(expect.objectContaining({
-      kind: 'missing-parameter',
-      retryable: true
-    }));
+    expect(missingNamespaceResult.data.bindingHint).toEqual(
+      expect.objectContaining({
+        suggestedCommand: expect.stringContaining('绑定知识库')
+      })
+    );
+    expect(missingNamespaceResult.data).toEqual(
+      expect.objectContaining({
+        kind: 'missing-parameter',
+        retryable: true
+      })
+    );
 
     await fs.remove(tempDir);
   });
 
   test('yapi-sync-interface and yuque-sync-design return contract errors when components are missing', async () => {
     const yapiResult = await yapiSyncInterface.execute('同步 YApi');
-    expect(yapiResult).toEqual(expect.objectContaining({
-      type: 'error',
-      data: expect.objectContaining({
-        kind: 'missing-component',
-        retryable: true
+    expect(yapiResult).toEqual(
+      expect.objectContaining({
+        type: 'error',
+        data: expect.objectContaining({
+          kind: 'missing-component',
+          retryable: true
+        })
       })
-    }));
+    );
 
     const yuqueResult = await yuqueSyncDesign.execute('同步语雀 path=docs/design.md');
-    expect(yuqueResult).toEqual(expect.objectContaining({
-      type: 'error',
-      data: expect.objectContaining({
-        kind: 'missing-component',
-        retryable: true
+    expect(yuqueResult).toEqual(
+      expect.objectContaining({
+        type: 'error',
+        data: expect.objectContaining({
+          kind: 'missing-component',
+          retryable: true
+        })
       })
-    }));
+    );
   });
 
   test('data-validation and data-logic-validation surface invalid input as contract errors', async () => {
     const validationResult = await dataValidation.execute('验证一下');
-    expect(validationResult).toEqual(expect.objectContaining({
-      type: 'error',
-      data: expect.objectContaining({
-        kind: 'invalid-input',
-        retryable: true
+    expect(validationResult).toEqual(
+      expect.objectContaining({
+        type: 'error',
+        data: expect.objectContaining({
+          kind: 'invalid-input',
+          retryable: true
+        })
       })
-    }));
+    );
 
     const logicResult = await dataLogicValidation.execute('帮我检查数据逻辑');
-    expect(logicResult).toEqual(expect.objectContaining({
-      type: 'error',
-      data: expect.objectContaining({
-        kind: 'invalid-input',
-        retryable: true
+    expect(logicResult).toEqual(
+      expect.objectContaining({
+        type: 'error',
+        data: expect.objectContaining({
+          kind: 'invalid-input',
+          retryable: true
+        })
       })
-    }));
+    );
   });
 
   test('auto-flow returns a contract error when workflow service is missing', async () => {
@@ -486,14 +538,16 @@ describe('upgrade skills and MCP capability catalog', () => {
       }
     });
 
-    expect(result).toEqual(expect.objectContaining({
-      type: 'error',
-      data: expect.objectContaining({
-        kind: 'missing-component',
-        retryable: true,
-        status: 'not_configured'
+    expect(result).toEqual(
+      expect.objectContaining({
+        type: 'error',
+        data: expect.objectContaining({
+          kind: 'missing-component',
+          retryable: true,
+          status: 'not_configured'
+        })
       })
-    }));
+    );
   });
 
   test('MCP server exposes a capability catalog tool and capability mapping', async () => {
@@ -507,47 +561,70 @@ describe('upgrade skills and MCP capability catalog', () => {
           { name: 'knowledge-ops', description: 'knowledge', category: 'knowledge' },
           { name: 'build-report', description: 'build', category: 'reporting' }
         ],
-        get: (name) => ({
-          'change-impact-review': changeImpactReview,
-          'data-risk-audit': dataRiskAudit,
-          'knowledge-ops': knowledgeOps,
-          'build-report': buildReport
-        }[name] || null)
+        get: (name) =>
+          ({
+            'change-impact-review': changeImpactReview,
+            'data-risk-audit': dataRiskAudit,
+            'knowledge-ops': knowledgeOps,
+            'build-report': buildReport
+          })[name] || null
       }
     };
 
     const tools = server.getTools();
-    expect(tools).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'flowmind_capability_catalog' }),
-      expect.objectContaining({ name: 'flowmind_preview_workflow' }),
-      expect.objectContaining({ name: 'flowmind_execute_workflow' }),
-      expect.objectContaining({ name: 'flowmind_skill_change-impact-review' })
-    ]));
+    expect(tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'flowmind_capability_catalog' }),
+        expect.objectContaining({ name: 'flowmind_learning_assets' }),
+        expect.objectContaining({ name: 'flowmind_preview_workflow' }),
+        expect.objectContaining({ name: 'flowmind_execute_workflow' }),
+        expect.objectContaining({ name: 'flowmind_skill_change-impact-review' })
+      ])
+    );
 
     const result = await server.callTool('flowmind_capability_catalog', {});
     const payload = JSON.parse(result.content[0].text);
-    expect(payload.capabilities).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        capability: 'review',
-        skills: expect.arrayContaining([
-          expect.objectContaining({ name: 'change-impact-review' })
-        ])
-      }),
-      expect.objectContaining({
-        capability: 'data',
-        skills: expect.arrayContaining([
-          expect.objectContaining({ name: 'data-risk-audit' })
-        ])
-      })
-    ]));
+    expect(payload.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          capability: 'review',
+          skills: expect.arrayContaining([expect.objectContaining({ name: 'change-impact-review' })])
+        }),
+        expect.objectContaining({
+          capability: 'data',
+          skills: expect.arrayContaining([expect.objectContaining({ name: 'data-risk-audit' })])
+        })
+      ])
+    );
 
     const skillResult = await server.callTool('flowmind_get_skill', { name: 'change-impact-review' });
     const skillPayload = JSON.parse(skillResult.content[0].text);
-    expect(skillPayload).toEqual(expect.objectContaining({
-      capabilities: expect.arrayContaining(['review']),
-      inputSchema: expect.any(Object),
-      outputSchema: expect.any(Object)
-    }));
+    expect(skillPayload).toEqual(
+      expect.objectContaining({
+        capabilities: expect.arrayContaining(['review']),
+        inputSchema: expect.any(Object),
+        outputSchema: expect.any(Object)
+      })
+    );
+  });
+
+  test('MCP server returns the current learning-assets view', async () => {
+    const server = new FlowMindMCPServer();
+    server.initialized = true;
+    server.flowmind = {
+      skills: { list: () => [], get: () => null },
+      getLearningAssets: jest.fn().mockResolvedValue({
+        summary: { returnedFeedback: 1, sourceFiles: 1 },
+        feedback: [{ id: 'learn-1', skill: 'log-audit' }],
+        packages: { sourceFiles: [{ path: 'RESOURCE_INDEX.md' }] }
+      })
+    };
+
+    const result = await server.callTool('flowmind_learning_assets', { skill: 'log-audit', limit: 5 });
+    const payload = JSON.parse(result.content[0].text);
+
+    expect(server.flowmind.getLearningAssets).toHaveBeenCalledWith({ skill: 'log-audit', limit: 5 });
+    expect(payload.summary).toEqual(expect.objectContaining({ returnedFeedback: 1, sourceFiles: 1 }));
   });
 
   test('MCP server supports async task start, status polling, and task listing', async () => {
@@ -555,12 +632,11 @@ describe('upgrade skills and MCP capability catalog', () => {
     server.initialized = true;
     server.flowmind = {
       skills: {
-        list: () => [
-          { name: 'change-impact-review', description: 'impact', category: 'review' }
-        ],
-        get: (name) => ({
-          'change-impact-review': changeImpactReview
-        }[name] || null)
+        list: () => [{ name: 'change-impact-review', description: 'impact', category: 'review' }],
+        get: (name) =>
+          ({
+            'change-impact-review': changeImpactReview
+          })[name] || null
       },
       executeWithLearning: jest.fn(async (_skill, input) => {
         await new Promise((resolve) => setTimeout(resolve, 10));
@@ -581,30 +657,34 @@ describe('upgrade skills and MCP capability catalog', () => {
     });
     const startPayload = JSON.parse(startResult.content[0].text);
 
-    expect(startPayload.task).toEqual(expect.objectContaining({
-      id: expect.stringMatching(/^task-\d+$/),
-      status: 'queued'
-    }));
+    expect(startPayload.task).toEqual(
+      expect.objectContaining({
+        id: expect.stringMatching(/^task-\d+$/),
+        status: 'queued'
+      })
+    );
 
     const finishedTask = await waitForTask(server, startPayload.task.id);
-    expect(finishedTask).toEqual(expect.objectContaining({
-      status: 'succeeded',
-      progress: expect.objectContaining({ percent: 100 }),
-      result: expect.objectContaining({
-        content: expect.arrayContaining([
-          expect.objectContaining({ type: 'text' })
-        ])
+    expect(finishedTask).toEqual(
+      expect.objectContaining({
+        status: 'succeeded',
+        progress: expect.objectContaining({ percent: 100 }),
+        result: expect.objectContaining({
+          content: expect.arrayContaining([expect.objectContaining({ type: 'text' })])
+        })
       })
-    }));
+    );
 
     const listResult = await server.callTool('flowmind_list_tasks', { limit: 5 });
     const listPayload = JSON.parse(listResult.content[0].text);
-    expect(listPayload.tasks).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: startPayload.task.id,
-        status: 'succeeded'
-      })
-    ]));
+    expect(listPayload.tasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: startPayload.task.id,
+          status: 'succeeded'
+        })
+      ])
+    );
   });
 
   test('MCP server persists async task failures for later inspection', async () => {
@@ -612,12 +692,11 @@ describe('upgrade skills and MCP capability catalog', () => {
     server.initialized = true;
     server.flowmind = {
       skills: {
-        list: () => [
-          { name: 'change-impact-review', description: 'impact', category: 'review' }
-        ],
-        get: (name) => ({
-          'change-impact-review': changeImpactReview
-        }[name] || null)
+        list: () => [{ name: 'change-impact-review', description: 'impact', category: 'review' }],
+        get: (name) =>
+          ({
+            'change-impact-review': changeImpactReview
+          })[name] || null
       },
       executeWithLearning: jest.fn(async () => {
         await new Promise((resolve) => setTimeout(resolve, 5));
@@ -634,12 +713,14 @@ describe('upgrade skills and MCP capability catalog', () => {
     const startPayload = JSON.parse(startResult.content[0].text);
 
     const finishedTask = await waitForTask(server, startPayload.task.id);
-    expect(finishedTask).toEqual(expect.objectContaining({
-      status: 'failed',
-      error: expect.objectContaining({
-        error: 'simulated failure'
+    expect(finishedTask).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        error: expect.objectContaining({
+          error: 'simulated failure'
+        })
       })
-    }));
+    );
   });
 
   test('MCP server marks skill-level contract errors as failed results', async () => {
@@ -647,12 +728,11 @@ describe('upgrade skills and MCP capability catalog', () => {
     server.initialized = true;
     server.flowmind = {
       skills: {
-        list: () => [
-          { name: 'report-insights', description: 'report', category: 'reporting' }
-        ],
-        get: (name) => ({
-          'report-insights': reportInsights
-        }[name] || null)
+        list: () => [{ name: 'report-insights', description: 'report', category: 'reporting' }],
+        get: (name) =>
+          ({
+            'report-insights': reportInsights
+          })[name] || null
       },
       executeWithLearning: jest.fn(async () => reportInsights.execute('构建报告 job=demo-service'))
     };
@@ -662,12 +742,14 @@ describe('upgrade skills and MCP capability catalog', () => {
     });
     expect(directResult.isError).toBe(true);
     const directPayload = JSON.parse(directResult.content[0].text);
-    expect(directPayload).toEqual(expect.objectContaining({
-      type: 'error',
-      data: expect.objectContaining({
-        kind: 'missing-component'
+    expect(directPayload).toEqual(
+      expect.objectContaining({
+        type: 'error',
+        data: expect.objectContaining({
+          kind: 'missing-component'
+        })
       })
-    }));
+    );
 
     const startResult = await server.callTool('flowmind_start_task', {
       tool: 'flowmind_skill_report-insights',
@@ -678,15 +760,17 @@ describe('upgrade skills and MCP capability catalog', () => {
     const startPayload = JSON.parse(startResult.content[0].text);
 
     const finishedTask = await waitForTask(server, startPayload.task.id);
-    expect(finishedTask).toEqual(expect.objectContaining({
-      status: 'failed',
-      error: expect.objectContaining({
-        type: 'error',
-        data: expect.objectContaining({
-          kind: 'missing-component'
+    expect(finishedTask).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        error: expect.objectContaining({
+          type: 'error',
+          data: expect.objectContaining({
+            kind: 'missing-component'
+          })
         })
       })
-    }));
+    );
   });
 
   test('MCP server can cancel queued async tasks before execution starts', async () => {
@@ -694,12 +778,11 @@ describe('upgrade skills and MCP capability catalog', () => {
     server.initialized = true;
     server.flowmind = {
       skills: {
-        list: () => [
-          { name: 'change-impact-review', description: 'impact', category: 'review' }
-        ],
-        get: (name) => ({
-          'change-impact-review': changeImpactReview
-        }[name] || null)
+        list: () => [{ name: 'change-impact-review', description: 'impact', category: 'review' }],
+        get: (name) =>
+          ({
+            'change-impact-review': changeImpactReview
+          })[name] || null
       },
       executeWithLearning: jest.fn(async () => ({
         type: 'result',
@@ -720,13 +803,15 @@ describe('upgrade skills and MCP capability catalog', () => {
     });
     const cancelPayload = JSON.parse(cancelResult.content[0].text);
 
-    expect(cancelPayload.task).toEqual(expect.objectContaining({
-      id: startPayload.task.id,
-      status: 'cancelled',
-      cancellation: expect.objectContaining({
-        supported: true
+    expect(cancelPayload.task).toEqual(
+      expect.objectContaining({
+        id: startPayload.task.id,
+        status: 'cancelled',
+        cancellation: expect.objectContaining({
+          supported: true
+        })
       })
-    }));
+    );
     expect(server.flowmind.executeWithLearning).not.toHaveBeenCalled();
   });
 
@@ -735,12 +820,11 @@ describe('upgrade skills and MCP capability catalog', () => {
     server.initialized = true;
     server.flowmind = {
       skills: {
-        list: () => [
-          { name: 'change-impact-review', description: 'impact', category: 'review' }
-        ],
-        get: (name) => ({
-          'change-impact-review': changeImpactReview
-        }[name] || null)
+        list: () => [{ name: 'change-impact-review', description: 'impact', category: 'review' }],
+        get: (name) =>
+          ({
+            'change-impact-review': changeImpactReview
+          })[name] || null
       },
       executeWithLearning: jest.fn(async (_skill, _input, context) => {
         context.onProgress({ stage: 'analyze', percent: 20, message: 'Analyzing change set' });
@@ -768,25 +852,32 @@ describe('upgrade skills and MCP capability catalog', () => {
     const midResult = await server.callTool('flowmind_task_status', { taskId: startPayload.task.id });
     const midPayload = JSON.parse(midResult.content[0].text);
     expect(midPayload.task.status).toBe('running');
-    expect(midPayload.task.progress).toEqual(expect.objectContaining({
-      stage: expect.stringMatching(/analyze|validate/),
-      percent: expect.any(Number)
-    }));
+    expect(midPayload.task.progress).toEqual(
+      expect.objectContaining({
+        stage: expect.stringMatching(/analyze|validate/),
+        percent: expect.any(Number)
+      })
+    );
     expect(midPayload.task.progressHistory.length).toBeGreaterThanOrEqual(2);
 
     const finishedTask = await waitForTask(server, startPayload.task.id);
-    expect(finishedTask.progressHistory).toEqual(expect.arrayContaining([
-      expect.objectContaining({ stage: 'analyze', percent: 20 }),
-      expect.objectContaining({ stage: 'validate', percent: 70 }),
-      expect.objectContaining({ stage: 'completed', percent: 100 })
-    ]));
+    expect(finishedTask.progressHistory).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stage: 'analyze', percent: 20 }),
+        expect.objectContaining({ stage: 'validate', percent: 70 }),
+        expect.objectContaining({ stage: 'completed', percent: 100 })
+      ])
+    );
   });
 
   test('change-impact-review exposes follow-up automation candidates', async () => {
     const tempRepo = path.join(os.tmpdir(), `flowmind-impact-actions-${Date.now()}`);
     await fs.ensureDir(path.join(tempRepo, 'src', 'controller'));
     await fs.ensureDir(path.join(tempRepo, 'src', 'repository'));
-    await fs.writeFile(path.join(tempRepo, 'src', 'controller', 'DemoController.java'), '@GetMapping("/demo") class DemoController {}');
+    await fs.writeFile(
+      path.join(tempRepo, 'src', 'controller', 'DemoController.java'),
+      '@GetMapping("/demo") class DemoController {}'
+    );
     await fs.writeFile(path.join(tempRepo, 'src', 'repository', 'DemoRepository.java'), 'select * from orders');
 
     const result = await changeImpactReview.execute('变更影响', {
@@ -805,10 +896,12 @@ describe('upgrade skills and MCP capability catalog', () => {
       }
     });
 
-    expect(result.data.automationCandidates).toEqual(expect.arrayContaining([
-      expect.objectContaining({ skill: 'yapi-sync-interface', configured: true }),
-      expect.objectContaining({ skill: 'data-risk-audit', configured: true })
-    ]));
+    expect(result.data.automationCandidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ skill: 'yapi-sync-interface', configured: true }),
+        expect.objectContaining({ skill: 'data-risk-audit', configured: true })
+      ])
+    );
 
     await fs.remove(tempRepo);
   });

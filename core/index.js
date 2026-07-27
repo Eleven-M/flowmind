@@ -13,7 +13,12 @@ const ModelManager = require('./ai/model-manager');
 const eventBus = require('./event-bus');
 const { autoSyncSddAgentToFlowMind } = require('./sdd-agent-sync');
 const { inferSourceContext } = require('./source-inference');
-const { createLearningResponse, createSkillError, createSkillResult, isErrorResultPayload } = require('./result-contract');
+const {
+  createLearningResponse,
+  createSkillError,
+  createSkillResult,
+  isErrorResultPayload
+} = require('./result-contract');
 const { attachKnowledgeDepositionCandidates } = require('./knowledge-deposition');
 const { attachFollowUpChain } = require('./automation-chain');
 
@@ -77,7 +82,11 @@ class FlowMind {
 
     const result = await this.process(input, context);
 
-    yield { type: 'progress', message: `Skill: ${result.metadata?.skill || 'unknown'}`, timestamp: new Date().toISOString() };
+    yield {
+      type: 'progress',
+      message: `Skill: ${result.metadata?.skill || 'unknown'}`,
+      timestamp: new Date().toISOString()
+    };
     yield { type: 'result', data: result, timestamp: new Date().toISOString() };
   }
 
@@ -182,9 +191,7 @@ class FlowMind {
         intent: intent
       });
 
-      const aiStatus = typeof this.ai?.getStatus === 'function'
-        ? this.ai.getStatus()
-        : {};
+      const aiStatus = typeof this.ai?.getStatus === 'function' ? this.ai.getStatus() : {};
 
       // 8. Format and return
       const formatted = this.formatResult(summary || result, {
@@ -219,7 +226,6 @@ class FlowMind {
       });
 
       return formatted;
-
     } catch (error) {
       eventBus.emit('process:error', { input, error: error.message, timestamp: new Date().toISOString() });
       return this.formatError(error.message, input, {
@@ -306,11 +312,12 @@ class FlowMind {
       return result;
     }
 
-    const executor = typeof adapter.callTool === 'function'
-      ? adapter.callTool.bind(adapter)
-      : typeof adapter.callMcpTool === 'function'
-        ? adapter.callMcpTool.bind(adapter)
-        : null;
+    const executor =
+      typeof adapter.callTool === 'function'
+        ? adapter.callTool.bind(adapter)
+        : typeof adapter.callMcpTool === 'function'
+          ? adapter.callMcpTool.bind(adapter)
+          : null;
 
     if (!executor) {
       return result;
@@ -318,9 +325,10 @@ class FlowMind {
 
     try {
       const execution = await executor(invocation.tool, invocation.args || {});
-      const resultData = result && typeof result === 'object' && !Array.isArray(result) && result.data && typeof result.data === 'object'
-        ? result.data
-        : {};
+      const resultData =
+        result && typeof result === 'object' && !Array.isArray(result) && result.data && typeof result.data === 'object'
+          ? result.data
+          : {};
 
       return {
         ...result,
@@ -333,22 +341,25 @@ class FlowMind {
         }
       };
     } catch (error) {
-      const existingData = result && typeof result === 'object' && result.data && typeof result.data === 'object'
-        ? result.data
-        : {};
-      return createSkillError(result?.skill || skill?.name || context.currentSkill || null, result?.message || error.message, {
-        input: result?.input,
-        kind: existingData.kind || 'execution-failed',
-        retryable: existingData.retryable !== undefined ? existingData.retryable : true,
-        data: {
-          ...existingData,
-          mcpTool: invocation.tool,
-          mcpExecuted: false,
-          mcpError: error.message,
-          mcpErrorCode: error.code || null
-        },
-        bindingHint: error.bindingHint || result?.data?.bindingHint || null
-      });
+      const existingData =
+        result && typeof result === 'object' && result.data && typeof result.data === 'object' ? result.data : {};
+      return createSkillError(
+        result?.skill || skill?.name || context.currentSkill || null,
+        result?.message || error.message,
+        {
+          input: result?.input,
+          kind: existingData.kind || 'execution-failed',
+          retryable: existingData.retryable !== undefined ? existingData.retryable : true,
+          data: {
+            ...existingData,
+            mcpTool: invocation.tool,
+            mcpExecuted: false,
+            mcpError: error.message,
+            mcpErrorCode: error.code || null
+          },
+          bindingHint: error.bindingHint || result?.data?.bindingHint || null
+        }
+      );
     }
   }
 
@@ -357,10 +368,7 @@ class FlowMind {
       return null;
     }
 
-    const candidates = [
-      result.data,
-      result
-    ];
+    const candidates = [result.data, result];
 
     for (const candidate of candidates) {
       if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
@@ -393,13 +401,10 @@ class FlowMind {
       return null;
     }
 
-    const bindingComponentType = context.resourceBinding?.componentType || context.resolvedBinding?.componentType || null;
+    const bindingComponentType =
+      context.resourceBinding?.componentType || context.resolvedBinding?.componentType || null;
     const skillComponentType = this.inferSkillComponentType(skill, context);
-    const componentTypes = [
-      bindingComponentType,
-      skillComponentType,
-      invocation.componentType
-    ].filter(Boolean);
+    const componentTypes = [bindingComponentType, skillComponentType, invocation.componentType].filter(Boolean);
 
     for (const componentType of componentTypes) {
       const adapter = registry.getAdapter(componentType);
@@ -490,7 +495,9 @@ class FlowMind {
   }
 
   isAIStatusQuery(input) {
-    const normalized = String(input || '').trim().toLowerCase();
+    const normalized = String(input || '')
+      .trim()
+      .toLowerCase();
     if (!normalized) return false;
 
     const patterns = [
@@ -523,9 +530,7 @@ class FlowMind {
     const activeProvider = activeEntry?.[0] || null;
     const activeProviderInfo = activeEntry?.[1] || null;
     const activeModel = activeProviderInfo?.info?.model || status.defaultModel || null;
-    const ready = status.health
-      ? status.health === 'ready'
-      : !!activeEntry;
+    const ready = status.health ? status.health === 'ready' : !!activeEntry;
 
     const providerSummary = {};
     for (const [name, info] of providerEntries) {
@@ -558,17 +563,15 @@ class FlowMind {
       replyError = error?.message || String(error);
     }
 
-    const message = aiReply || (replyError
-      ? `AI 状态查询失败：${replyError}`
-      : ready
-        ? `当前 AI 已连接，默认提供商是 ${defaultProvider || activeProvider}，模型是 ${activeModel || '未配置'}。`
-        : `当前 AI 还没有可用连接。请先配置 provider 和 apiKey，再运行 flowmind ai -s 检查状态。`);
+    const message =
+      aiReply ||
+      (replyError
+        ? `AI 状态查询失败：${replyError}`
+        : ready
+          ? `当前 AI 已连接，默认提供商是 ${defaultProvider || activeProvider}，模型是 ${activeModel || '未配置'}。`
+          : `当前 AI 还没有可用连接。请先配置 provider 和 apiKey，再运行 flowmind ai -s 检查状态。`);
 
-    const health = replyError || status.health === 'error'
-      ? 'error'
-      : ready
-        ? 'ready'
-        : 'not_ready';
+    const health = replyError || status.health === 'error' ? 'error' : ready ? 'ready' : 'not_ready';
 
     const details = {
       query: input,
@@ -587,25 +590,28 @@ class FlowMind {
         : ['flowmind ai --status', 'flowmind init --ai <provider>']
     };
 
-    return this.formatResult({
-      message,
-      ...details,
-      data: details
-    }, {
-      skill: 'ai-status',
-      label: 'AI 状态',
-      duration,
-      sceneMatch: null,
-      intent: {
-        intent: 'query',
-        action: 'ai_status',
-        confidence: 1
+    return this.formatResult(
+      {
+        message,
+        ...details,
+        data: details
       },
-      aiEnhanced: false,
-      aiProvider: defaultProvider || activeProvider || null,
-      aiModel: activeModel,
-      skillRoute: 'ai-status'
-    });
+      {
+        skill: 'ai-status',
+        label: 'AI 状态',
+        duration,
+        sceneMatch: null,
+        intent: {
+          intent: 'query',
+          action: 'ai_status',
+          confidence: 1
+        },
+        aiEnhanced: false,
+        aiProvider: defaultProvider || activeProvider || null,
+        aiModel: activeModel,
+        skillRoute: 'ai-status'
+      }
+    );
   }
 
   async answerWithAI(input, context = {}, intent = null, startTime = Date.now()) {
@@ -624,40 +630,46 @@ class FlowMind {
       replyError = error?.message || String(error);
     }
 
-    const fallbackMessage = aiReply
-      || (replyError
+    const fallbackMessage =
+      aiReply ||
+      (replyError
         ? `AI 回答失败：${replyError}`
         : '当前没有匹配到可执行的技能。我可以先用 AI 回答，如果你要实时数据或系统操作，请补充对应的 MCP 或 skill。');
 
-    const result = this.formatResult({
-      message: fallbackMessage,
-      query: input,
-      replyMode: 'ai-fallback',
-      replyError,
-      aiStatus: {
-        defaultProvider: status.defaultProvider || null,
-        defaultModel: status.defaultModel || null,
-        ready: this.hasAI(),
-        providers: Object.fromEntries(Object.entries(status.providers || {}).map(([name, info]) => [
-          name,
-          {
-            initialized: !!info?.initialized,
-            model: info?.info?.model || null,
-            provider: info?.info?.provider || name
-          }
-        ]))
+    const result = this.formatResult(
+      {
+        message: fallbackMessage,
+        query: input,
+        replyMode: 'ai-fallback',
+        replyError,
+        aiStatus: {
+          defaultProvider: status.defaultProvider || null,
+          defaultModel: status.defaultModel || null,
+          ready: this.hasAI(),
+          providers: Object.fromEntries(
+            Object.entries(status.providers || {}).map(([name, info]) => [
+              name,
+              {
+                initialized: !!info?.initialized,
+                model: info?.info?.model || null,
+                provider: info?.info?.provider || name
+              }
+            ])
+          )
+        }
+      },
+      {
+        skill: 'ai-fallback',
+        label: 'AI 回复',
+        duration: Date.now() - startTime,
+        sceneMatch: null,
+        intent,
+        aiEnhanced: true,
+        aiProvider: status.defaultProvider || null,
+        aiModel: status.defaultModel || null,
+        skillRoute: 'ai-only'
       }
-    }, {
-      skill: 'ai-fallback',
-      label: 'AI 回复',
-      duration: Date.now() - startTime,
-      sceneMatch: null,
-      intent,
-      aiEnhanced: true,
-      aiProvider: status.defaultProvider || null,
-      aiModel: status.defaultModel || null,
-      skillRoute: 'ai-only'
-    });
+    );
 
     this.conversationHistory.push({
       input,
@@ -698,9 +710,7 @@ class FlowMind {
       currentSkill: context.currentSkill || null
     };
 
-    const aiCandidateList = ruleCandidates.length > 0
-      ? ruleCandidates
-      : this.buildAiSkillCandidates();
+    const aiCandidateList = ruleCandidates.length > 0 ? ruleCandidates : this.buildAiSkillCandidates();
 
     const canUseAiSelection = this.ai && typeof this.ai.selectSkill === 'function';
     let aiAttempted = false;
@@ -792,14 +802,17 @@ class FlowMind {
       }));
     }
 
-    return this.skills.list().map((info) => ({
-      name: info.name,
-      skill: this.skills.get(info.name),
-      description: info.description || '',
-      triggers: [],
-      category: info.category || '',
-      score: 0
-    })).filter((candidate) => candidate.skill);
+    return this.skills
+      .list()
+      .map((info) => ({
+        name: info.name,
+        skill: this.skills.get(info.name),
+        description: info.description || '',
+        triggers: [],
+        category: info.category || '',
+        score: 0
+      }))
+      .filter((candidate) => candidate.skill);
   }
 
   shouldCaptureLearningInput(input, skill, context = {}) {
@@ -813,8 +826,9 @@ class FlowMind {
       /^(wrong|should be|change to|next time|remember|don't|do not)/i
     ];
 
-    return explicitFeedbackPatterns.some((pattern) => pattern.test(normalized))
-      && context.conversationHistory?.length > 0;
+    return (
+      explicitFeedbackPatterns.some((pattern) => pattern.test(normalized)) && context.conversationHistory?.length > 0
+    );
   }
 
   resolveLearningTargetSkill(skill, context = {}) {
@@ -838,9 +852,7 @@ class FlowMind {
    */
   formatResult(result, metadata) {
     if (isErrorResultPayload(result)) {
-      const payload = result?.type === 'error'
-        ? result
-        : result?.data;
+      const payload = result?.type === 'error' ? result : result?.data;
       return createSkillError(null, payload?.message, {
         input: payload?.input,
         data: payload?.data,
@@ -869,6 +881,10 @@ class FlowMind {
    */
   async getStats() {
     return this.learning.getStats();
+  }
+
+  async getLearningAssets(options = {}) {
+    return this.learning.getLearningAssets(options);
   }
 
   /**
@@ -925,9 +941,7 @@ class FlowMind {
    * @returns {boolean}
    */
   hasAI() {
-    return typeof this.ai?.hasAvailableProvider === 'function'
-      ? this.ai.hasAvailableProvider()
-      : false;
+    return typeof this.ai?.hasAvailableProvider === 'function' ? this.ai.hasAvailableProvider() : false;
   }
 
   /**
@@ -949,7 +963,7 @@ class FlowMind {
    */
   getConversationHistory(sessionId) {
     if (sessionId) {
-      return this.conversationHistory.filter(h => h.sessionId === sessionId);
+      return this.conversationHistory.filter((h) => h.sessionId === sessionId);
     }
     return this.conversationHistory;
   }
@@ -1037,8 +1051,12 @@ class FlowMind {
     try {
       const aiStatus = this.ai.getStatus();
       const providerCount = Object.keys(aiStatus.providers || {}).length;
-      const activeCount = Object.values(aiStatus.providers || {}).filter(p => p.initialized).length;
-      checks.push({ name: 'AI Providers', status: activeCount > 0 ? 'ok' : 'warning', message: `${activeCount}/${providerCount} active` });
+      const activeCount = Object.values(aiStatus.providers || {}).filter((p) => p.initialized).length;
+      checks.push({
+        name: 'AI Providers',
+        status: activeCount > 0 ? 'ok' : 'warning',
+        message: `${activeCount}/${providerCount} active`
+      });
     } catch (e) {
       checks.push({ name: 'AI Providers', status: 'warning', message: e.message });
     }
@@ -1074,13 +1092,13 @@ class FlowMind {
       checks.push({ name: 'Learning Storage', status: 'warning', message: e.message });
     }
 
-    const errors = checks.filter(c => c.status === 'error').length;
-    const warnings = checks.filter(c => c.status === 'warning').length;
+    const errors = checks.filter((c) => c.status === 'error').length;
+    const warnings = checks.filter((c) => c.status === 'warning').length;
 
     return {
       healthy: errors === 0,
       checks,
-      summary: { total: checks.length, ok: checks.filter(c => c.status === 'ok').length, warnings, errors }
+      summary: { total: checks.length, ok: checks.filter((c) => c.status === 'ok').length, warnings, errors }
     };
   }
 }

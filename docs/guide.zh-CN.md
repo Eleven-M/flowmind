@@ -36,6 +36,23 @@ flowmind process --skill log-audit "查询最近1小时的错误日志"
 flowmind resource --sync-sdd-agent
 ```
 
+查看当前已经学习的技能反馈、规则、场景、资源绑定和本地资料包元数据：
+
+```bash
+flowmind learn --assets
+flowmind learn --assets --skill log-audit --json
+```
+
+受保护的后续工作流可以通过本地历史恢复：
+
+```bash
+flowmind workflow --chain follow-up-chain.json
+flowmind workflow --chain follow-up-chain.json --execute --approval-token <token>
+flowmind workflow-history
+flowmind workflow-history --status failed --resumable
+flowmind workflow-resume --execution-id <id> --approval-token <token>
+```
+
 出于安全考虑，跨工作区自动同步默认关闭；只有在你明确设置 `FLOWMIND_ENABLE_SDD_AGENT_AUTO_SYNC=1` 时，初始化阶段才会自动同步。
 
 ### 面向 Codex 的 JSON 输出

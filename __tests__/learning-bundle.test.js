@@ -26,31 +26,34 @@ describe('learning bundle export and install', () => {
     const learning = new LearningEngine(config);
     await learning.init();
 
-    await learning.saveResourceBinding({
-      id: 'bind-retail-yapi',
-      business: '零售',
-      aliases: ['retail', '零售项目'],
-      keywords: ['retail', 'api'],
-      componentType: 'apiDoc',
-      provider: 'yapi',
-      mcpServer: 'yapi-mcp',
-      connection: {
-        endpoint: 'https://yapi.example.com',
-        project: 'retail-project',
-        token: 'secret-token',
-        headers: {
-          Authorization: 'Bearer secret-token',
-          'X-Api-Key': 'hidden'
+    await learning.saveResourceBinding(
+      {
+        id: 'bind-retail-yapi',
+        business: '零售',
+        aliases: ['retail', '零售项目'],
+        keywords: ['retail', 'api'],
+        componentType: 'apiDoc',
+        provider: 'yapi',
+        mcpServer: 'yapi-mcp',
+        connection: {
+          endpoint: 'https://yapi.example.com',
+          project: 'retail-project',
+          token: 'secret-token',
+          headers: {
+            Authorization: 'Bearer secret-token',
+            'X-Api-Key': 'hidden'
+          }
+        },
+        metadata: {
+          token: 'secret-token',
+          note: 'team binding',
+          credentials: {
+            password: 'secret-password'
+          }
         }
       },
-      metadata: {
-        token: 'secret-token',
-        note: 'team binding',
-        credentials: {
-          password: 'secret-password'
-        }
-      }
-    }, { currentSkill: 'resource-bind' });
+      { currentSkill: 'resource-bind' }
+    );
 
     const record = {
       id: 'learn-1',
@@ -100,23 +103,23 @@ describe('learning bundle export and install', () => {
     const bundle = await learning.export({ bundle: true, output: outputPath });
 
     expect(bundle.kind).toBe('flowmind-learning-bundle');
-    expect(bundle.resourceBindings.bindings[0].connection).toEqual(expect.objectContaining({
-      endpoint: 'https://yapi.example.com',
-      project: 'retail-project'
-    }));
+    expect(bundle.resourceBindings.bindings[0].connection).toEqual(
+      expect.objectContaining({
+        endpoint: 'https://yapi.example.com',
+        project: 'retail-project'
+      })
+    );
     expect(bundle.resourceBindings.bindings[0].connection.token).toBeUndefined();
     expect(bundle.resourceBindings.bindings[0].connection.headers).toBeUndefined();
     expect(bundle.resourceBindings.bindings[0].metadata.token).toBeUndefined();
     expect(bundle.resourceBindings.bindings[0].metadata.credentials).toBeUndefined();
-    expect(bundle.records['log-audit']).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'learn-1' })
-    ]));
-    expect(bundle.scenes.mappings).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'scene-bundle-1' })
-    ]));
-    expect(bundle.preferences['log-audit']).toEqual(expect.objectContaining({
-      outputFormat: 'table'
-    }));
+    expect(bundle.records['log-audit']).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'learn-1' })]));
+    expect(bundle.scenes.mappings).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'scene-bundle-1' })]));
+    expect(bundle.preferences['log-audit']).toEqual(
+      expect.objectContaining({
+        outputFormat: 'table'
+      })
+    );
     expect(await fs.pathExists(outputPath)).toBe(true);
 
     await fs.remove(tempHome);
@@ -134,15 +137,18 @@ describe('learning bundle export and install', () => {
     const sourceLearning = new LearningEngine(sourceConfig);
     await sourceLearning.init();
 
-    await sourceLearning.saveResourceBinding({
-      id: 'bind-retail-yapi',
-      business: '零售',
-      aliases: ['retail', '零售项目'],
-      keywords: ['retail', 'api'],
-      componentType: 'apiDoc',
-      provider: 'yapi',
-      mcpServer: 'yapi-mcp'
-    }, { currentSkill: 'resource-bind' });
+    await sourceLearning.saveResourceBinding(
+      {
+        id: 'bind-retail-yapi',
+        business: '零售',
+        aliases: ['retail', '零售项目'],
+        keywords: ['retail', 'api'],
+        componentType: 'apiDoc',
+        provider: 'yapi',
+        mcpServer: 'yapi-mcp'
+      },
+      { currentSkill: 'resource-bind' }
+    );
 
     await sourceLearning.saveLearningRecord({
       id: 'learn-2',
@@ -193,35 +199,82 @@ describe('learning bundle export and install', () => {
     await targetLearning.init();
     const importResult = await targetLearning.import(bundle);
 
-    expect(importResult).toEqual(expect.objectContaining({
-      success: true,
-      bundle: true
-    }));
+    expect(importResult).toEqual(
+      expect.objectContaining({
+        success: true,
+        bundle: true
+      })
+    );
 
     const reloaded = new LearningEngine(targetConfig);
     await reloaded.init();
 
-    expect(reloaded.records['log-audit']).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'learn-2' })
-    ]));
+    expect(reloaded.records['log-audit']).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'learn-2' })]));
 
     const prefs = await reloaded.getPreferences('log-audit');
-    expect(prefs).toEqual(expect.objectContaining({
-      detailLevel: 'compact'
-    }));
+    expect(prefs).toEqual(
+      expect.objectContaining({
+        detailLevel: 'compact'
+      })
+    );
 
     const matchedBinding = await reloaded.matchResourceBinding('同步 retail 接口', 'yapi-sync-interface');
-    expect(matchedBinding).toEqual(expect.objectContaining({
-      business: '零售',
-      componentType: 'apiDoc',
-      provider: 'yapi'
-    }));
+    expect(matchedBinding).toEqual(
+      expect.objectContaining({
+        business: '零售',
+        componentType: 'apiDoc',
+        provider: 'yapi'
+      })
+    );
 
-    expect(reloaded.scenes.mappings).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'scene-bundle-2' })
-    ]));
+    expect(reloaded.scenes.mappings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'scene-bundle-2' })])
+    );
 
     await fs.remove(sourceHome);
     await fs.remove(targetHome);
+  });
+
+  test('returns a sanitized learning-assets view with feedback and source package metadata', async () => {
+    const tempHome = path.join(os.tmpdir(), `flowmind-assets-${Date.now()}`);
+    process.env.FLOWMIND_HOME = tempHome;
+    await fs.ensureDir(path.join(tempHome, '.flowmind', 'source', 'packages'));
+    await fs.writeFile(path.join(tempHome, '.flowmind', 'source', 'packages', 'team.lakebook'), 'metadata-only');
+
+    const config = new ConfigManager();
+    await config.load();
+    const learning = new LearningEngine(config);
+    await learning.init();
+    const record = {
+      id: 'learn-assets-1',
+      timestamp: '2026-07-21T08:00:00.000Z',
+      skill: 'log-audit',
+      type: 'correction',
+      input: '日志输出应使用表格',
+      application: { action: 'Use table output' }
+    };
+    await learning.saveLearningRecord(record);
+    await learning.updateSkillBindings(record);
+    await learning.saveResourceBinding({
+      id: 'binding-assets-1',
+      business: '日志',
+      componentType: 'logService',
+      provider: 'aliyun-sls',
+      connection: { endpoint: 'https://logs.example.com', token: 'must-not-leak' }
+    });
+
+    const assets = await learning.getLearningAssets({ skill: 'log-audit', limit: 10 });
+
+    expect(assets.summary).toEqual(
+      expect.objectContaining({ returnedFeedback: 1, learnedSkills: 1, resourceBindings: 1, sourceFiles: 1 })
+    );
+    expect(assets.feedback[0]).toEqual(expect.objectContaining({ id: 'learn-assets-1', skill: 'log-audit' }));
+    expect(assets.skills[0]).toEqual(expect.objectContaining({ name: 'log-audit', feedbackCount: 1 }));
+    expect(assets.resourceBindings[0].connection).toEqual({ endpoint: 'https://logs.example.com' });
+    expect(assets.packages.sourceFiles[0]).toEqual(
+      expect.objectContaining({ path: 'packages/team.lakebook', extension: '.lakebook' })
+    );
+
+    await fs.remove(tempHome);
   });
 });

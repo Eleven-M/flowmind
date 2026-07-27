@@ -1,6 +1,7 @@
 const fs = require('fs-extra');
 const os = require('os');
 const path = require('path');
+const { writePrivateJson } = require('./secure-files');
 
 function getFlowMindHomeDir() {
   return process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || os.homedir();
@@ -33,15 +34,10 @@ class TaskStore {
       .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
       .slice(0, this.maxTasks);
 
-    await fs.ensureDir(path.dirname(this.filePath));
-    await fs.writeJson(
-      this.filePath,
-      {
-        updatedAt: new Date().toISOString(),
-        tasks: serializable
-      },
-      { spaces: 2 }
-    );
+    await writePrivateJson(this.filePath, {
+      updatedAt: new Date().toISOString(),
+      tasks: serializable
+    });
   }
 }
 

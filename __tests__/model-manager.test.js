@@ -68,4 +68,33 @@ describe('model manager', () => {
 
     warnSpy.mockRestore();
   });
+
+  test('discovers and normalizes live models for a provider', async () => {
+    const manager = new ModelManager({
+      defaultProvider: 'demo',
+      providers: {
+        demo: {}
+      }
+    });
+
+    manager._registerBuiltinProviders = () => {};
+    manager.providerFactories = {
+      demo: () => ({
+        async listModels() {
+          return [
+            { id: 'model-a', label: 'Model A' },
+            { name: 'model-b' },
+            { id: 'model-a', label: 'Duplicate Model A' }
+          ];
+        }
+      })
+    };
+
+    const models = await manager.discoverModels('demo');
+
+    expect(models).toEqual([
+      { id: 'model-a', label: 'Model A', raw: { id: 'model-a', label: 'Model A' } },
+      { id: 'model-b', label: 'model-b', raw: { name: 'model-b' } }
+    ]);
+  });
 });

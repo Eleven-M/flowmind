@@ -6,6 +6,7 @@
 const fs = require('fs-extra');
 const path = require('path');
 const os = require('os');
+const { writePrivateJson } = require('./secure-files');
 
 class ConfigManager {
   constructor(configPath = null) {
@@ -365,8 +366,7 @@ class ConfigManager {
   async save() {
     const configPath = path.join(this.getHomeDir(), '.flowmind', 'config.json');
 
-    await fs.ensureDir(path.dirname(configPath));
-    await fs.writeJson(configPath, this.config, { spaces: 2 });
+    await writePrivateJson(configPath, this.config);
 
     return configPath;
   }

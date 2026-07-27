@@ -29,6 +29,10 @@ class BaseModel {
     throw new Error('isAvailable() must be implemented by subclass');
   }
 
+  async listModels() {
+    return [];
+  }
+
   getInfo() {
     return {
       name: this.name,
@@ -39,6 +43,30 @@ class BaseModel {
 
   validateConfig() {
     return true;
+  }
+
+  async listOpenAICompatibleModels(headers = {}) {
+    const response = await this.fetchWithRetry(`${this.baseUrl}/models`, {
+      method: 'GET',
+      headers,
+      retries: 1,
+      timeout: 10000
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Model discovery failed: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+    const models = Array.isArray(data?.data) ? data.data : [];
+    return models
+      .map((item) => ({
+        id: item?.id,
+        label: item?.id,
+        raw: item
+      }))
+      .filter((item) => typeof item.id === 'string' && item.id.trim());
   }
 
   /**

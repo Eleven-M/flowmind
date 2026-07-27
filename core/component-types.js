@@ -11,7 +11,8 @@ const ComponentType = Object.freeze({
   API_DOC: 'apiDoc',
   KNOWLEDGE_BASE: 'knowledgeBase',
   WORKFLOW: 'workflow',
-  REPORT: 'report'
+  REPORT: 'report',
+  SERVICE_GOVERNANCE: 'serviceGovernance'
 });
 
 /**
@@ -57,6 +58,11 @@ const ComponentTypeMeta = Object.freeze({
     name: 'Report',
     description: 'Automated test and coverage reporting',
     requiredCapabilities: ['listBuilds', 'getBuildInfo']
+  },
+  [ComponentType.SERVICE_GOVERNANCE]: {
+    name: 'Service Governance',
+    description: 'Multi-cloud microservice discovery, health, topology, and policy governance',
+    requiredCapabilities: ['listServices', 'listInstances', 'listPolicies', 'getHealth']
   }
 });
 

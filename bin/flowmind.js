@@ -15,13 +15,16 @@ const path = require('path');
 const { execSync } = require('child_process');
 const FlowMind = require('../core');
 const HonorEngine = require('../core/honor-engine');
+const ModelManager = require('../core/ai/model-manager');
 const { main: runUpdateCheck } = require('../scripts/check-update');
 const { launchInkApp } = require('../core/cli-ink');
 const { syncSddAgentToFlowMind } = require('../core/sdd-agent-sync');
 const { getUpgradeStatus } = require('../core/upgrade-status');
 const { runReleaseCheck } = require('../core/release-check');
 const { previewWorkflow } = require('../core/dry-run');
-const { executeWorkflow } = require('../core/workflow-executor');
+const { executeWorkflow, resumeWorkflow } = require('../core/workflow-executor');
+const { WorkflowHistoryStore } = require('../core/workflow-history');
+const { ensurePrivateDir, writePrivateJson } = require('../core/secure-files');
 const { formatResultText } = require('../tui/format-result');
 const {
   buildAiConfig,
@@ -46,7 +49,9 @@ function restoreTerminal() {
     if (process.stdin.isTTY && typeof process.stdin.setRawMode === 'function') {
       process.stdin.setRawMode(false);
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    /* ignore */
+  }
   if (process.stdout.isTTY) {
     // Show cursor, reset colors, clear scroll region
     process.stdout.write('\x1b[?25h\x1b[0m\x1b[r');
@@ -61,6 +66,149 @@ function getFlowMindConfigDir() {
   return path.join(getFlowMindHomeDir(), '.flowmind');
 }
 
+function createWorkflowHistoryStore() {
+  return new WorkflowHistoryStore();
+}
+
+function buildDemoResult(scenario = 'log-audit') {
+  const normalized = String(scenario || 'log-audit').trim().toLowerCase();
+  if (['log-audit', 'logs'].includes(normalized)) {
+    return {
+      ok: true,
+      scenario: 'log-audit',
+      command: 'flowmind process --skill log-audit "query traceId demo-trace-001"',
+      result: {
+        type: 'success',
+        skill: 'log-audit',
+        summary: 'Found one warning and one downstream timeout in the demo trace.',
+        traceId: 'demo-trace-001',
+        timeline: [
+          {
+            time: '2026-07-27T10:00:01.120+08:00',
+            service: 'gateway',
+            level: 'INFO',
+            message: 'Accepted request GET /api/orders/demo'
+          },
+          {
+            time: '2026-07-27T10:00:01.284+08:00',
+            service: 'order-service',
+            level: 'WARN',
+            message: 'Inventory check latency exceeded 300ms'
+          },
+          {
+            time: '2026-07-27T10:00:02.019+08:00',
+            service: 'inventory-service',
+            level: 'ERROR',
+            message: 'Timeout while calling stock-provider after 700ms'
+          }
+        ],
+        nextActions: [
+          'Check inventory-service stock-provider timeout rate for the same minute.',
+          'Compare gateway retry count with order-service warning count.',
+          'If this repeats, save a learning preference for timeout table output.'
+        ]
+      }
+    };
+  }
+
+  if (['code-review', 'review'].includes(normalized)) {
+    return {
+      ok: true,
+      scenario: 'code-review',
+      command: 'flowmind process --skill code-review "review the staged changes"',
+      result: {
+        type: 'success',
+        skill: 'code-review',
+        summary: 'Demo review found one medium maintainability issue and one missing test.',
+        findings: [
+          {
+            severity: 'MEDIUM',
+            file: 'src/orders/retry-policy.js',
+            line: 42,
+            message: 'Retry delay is duplicated across two branches; extract a named helper before adding another policy.'
+          },
+          {
+            severity: 'LOW',
+            file: '__tests__/orders.test.js',
+            line: 88,
+            message: 'Add a regression case for retry exhaustion returning a user-visible error.'
+          }
+        ],
+        nextActions: [
+          'Extract retry delay calculation into one helper.',
+          'Add a focused test for retry exhaustion.',
+          'Run the review again after the patch.'
+        ]
+      }
+    };
+  }
+
+  if (['workflow', 'guarded-workflow'].includes(normalized)) {
+    return {
+      ok: true,
+      scenario: 'workflow',
+      command: 'flowmind workflow --chain demo-follow-up-chain.json',
+      result: {
+        type: 'success',
+        skill: 'workflow',
+        summary: 'Demo guarded workflow is ready for dry-run review before execution.',
+        mode: 'dry-run',
+        approvalRequired: true,
+        steps: [
+          {
+            id: 'collect-evidence',
+            action: 'query logs and summarize error window',
+            risk: 'readonly'
+          },
+          {
+            id: 'prepare-change',
+            action: 'build a rollback-aware configuration proposal',
+            risk: 'review-required'
+          },
+          {
+            id: 'execute-change',
+            action: 'apply only after approval-token confirmation',
+            risk: 'guarded-execute'
+          }
+        ],
+        nextActions: [
+          'Review the dry-run plan and generated approval token.',
+          'Execute only with the matching approval token.',
+          'Use workflow-history to resume failed guarded runs.'
+        ]
+      }
+    };
+  }
+
+  {
+    const error = new Error(`Unknown demo scenario: ${scenario}`);
+    error.availableScenarios = ['log-audit', 'code-review', 'workflow'];
+    throw error;
+  }
+}
+
+function displayDemoResult(demo) {
+  console.log(chalk.cyan(`\nFlowMind demo: ${demo.scenario}`));
+  console.log(chalk.gray(`Command shape: ${demo.command}\n`));
+  console.log(chalk.white(demo.result.summary));
+  console.log('');
+  for (const item of demo.result.timeline || []) {
+    const levelColor = item.level === 'ERROR' ? chalk.red : item.level === 'WARN' ? chalk.yellow : chalk.green;
+    console.log(`${chalk.gray(item.time)} ${levelColor(item.level.padEnd(5))} ${chalk.cyan(item.service)} ${item.message}`);
+  }
+  for (const finding of demo.result.findings || []) {
+    const severityColor = finding.severity === 'HIGH' ? chalk.red : finding.severity === 'MEDIUM' ? chalk.yellow : chalk.green;
+    console.log(`${severityColor(finding.severity.padEnd(6))} ${chalk.cyan(`${finding.file}:${finding.line}`)} ${finding.message}`);
+  }
+  for (const step of demo.result.steps || []) {
+    console.log(`${chalk.cyan(step.id)} [${step.risk}] ${step.action}`);
+  }
+  console.log(chalk.cyan('\nNext actions'));
+  for (const action of demo.result.nextActions) {
+    console.log(`- ${action}`);
+  }
+}
+
 const INIT_MODULE_CHOICES = [
   { name: 'AI model', value: 'ai' },
   { name: 'MCP config', value: 'mcp' },
@@ -71,12 +219,8 @@ const INIT_MODULE_CHOICES = [
 async function promptInitModuleChoice(state = {}) {
   const choiceLabels = [
     state.aiProvider ? `AI model (${state.aiProvider})` : 'AI model',
-    state.selectedResources?.length > 0
-      ? `MCP config (${state.selectedResources.length} selected)`
-      : 'MCP config',
-    state.selectedMcpSkills?.length > 0
-      ? `Skills (${state.selectedMcpSkills.length} selected)`
-      : 'Skills',
+    state.selectedResources?.length > 0 ? `MCP config (${state.selectedResources.length} selected)` : 'MCP config',
+    state.selectedMcpSkills?.length > 0 ? `Skills (${state.selectedMcpSkills.length} selected)` : 'Skills',
     'Save and exit'
   ];
 
@@ -116,16 +260,7 @@ async function promptAiProvider(defaultProvider = null, allowBack = false) {
 
 async function promptAiDetails(provider, defaults = {}) {
   const meta = AI_PROVIDER_META[provider] || {};
-  const modelChoices = getAiModelChoices(provider);
-  const prompts = [
-    {
-      type: 'list',
-      name: 'model',
-      message: `Choose the model for ${meta.label || provider} (${defaults.model || defaultModelForProvider(provider)} is recommended):`,
-      choices: modelChoices,
-      default: defaults.model || modelChoices[0]?.value || '__custom__'
-    }
-  ];
+  const prompts = [];
 
   if (provider !== 'ollama') {
     prompts.push({
@@ -155,6 +290,23 @@ async function promptAiDetails(provider, defaults = {}) {
   });
 
   const answers = await inquirer.prompt(prompts);
+  const discovery = await discoverAiModels(provider, {
+    apiKey: answers.apiKey || defaults.apiKey,
+    secretKey: answers.secretKey || defaults.secretKey,
+    baseUrl: answers.baseUrl || defaults.baseUrl,
+    model: defaults.model || defaultModelForProvider(provider)
+  });
+  const modelPrompt = buildModelPrompt(provider, defaults, discovery);
+
+  if (discovery.warning) {
+    console.log(chalk.yellow(`Live model query unavailable for ${meta.label || provider}: ${discovery.warning}`));
+  } else if (discovery.source === 'live') {
+    console.log(chalk.cyan(`Fetched ${discovery.choices.length - 1} live model version(s) for ${meta.label || provider}.`));
+  }
+
+  const modelAnswer = await inquirer.prompt([modelPrompt]);
+  answers.model = modelAnswer.model;
+
   if (answers.model === '__custom__') {
     const custom = await inquirer.prompt([
       {
@@ -167,6 +319,98 @@ async function promptAiDetails(provider, defaults = {}) {
     answers.model = custom.model;
   }
   return answers;
+}
+
+async function discoverAiModels(provider, config = {}) {
+  const fallbackChoices = getAiModelChoices(provider);
+  try {
+    const manager = new ModelManager({ silenceWarnings: true });
+    const models = await manager.discoverModels(provider, config);
+
+    if (!Array.isArray(models) || models.length === 0) {
+      return {
+        source: 'fallback',
+        choices: fallbackChoices,
+        warning: 'provider returned no live models'
+      };
+    }
+
+    return {
+      source: 'live',
+      choices: buildLiveModelChoices(models)
+    };
+  } catch (error) {
+    return {
+      source: 'fallback',
+      choices: fallbackChoices,
+      warning: error.message
+    };
+  }
+}
+
+function buildLiveModelChoices(models = []) {
+  return models
+    .map((item, index) => {
+      const modelId = item?.id || item?.value;
+      if (!modelId) {
+        return null;
+      }
+
+      const suffix = index === 0 ? ' (live)' : '';
+      return {
+        name: `${item.label || modelId}${suffix}`,
+        value: modelId
+      };
+    })
+    .filter(Boolean)
+    .concat({ name: 'Custom model...', value: '__custom__' });
+}
+
+function buildModelPrompt(provider, defaults = {}, discovery = {}) {
+  const meta = AI_PROVIDER_META[provider] || {};
+  const choices = Array.isArray(discovery.choices) && discovery.choices.length > 0
+    ? discovery.choices
+    : getAiModelChoices(provider);
+  const preferredModel = defaults.model || defaultModelForProvider(provider);
+  const hasPreferredModel = choices.some((choice) => choice.value === preferredModel);
+  const defaultChoice = hasPreferredModel ? preferredModel : choices[0]?.value || '__custom__';
+  const sourceLabel = discovery.source === 'live' ? 'live models' : 'recommended models';
+
+  return {
+    type: 'list',
+    name: 'model',
+    message: `Choose the model for ${meta.label || provider} from ${sourceLabel} (${preferredModel} is recommended):`,
+    choices,
+    default: defaultChoice
+  };
+}
+
+async function getAiModelDiscoveryResult(fm, providerOption) {
+  const aiConfig = fm.config.get('ai', {});
+  const providerName =
+    (typeof providerOption === 'string' && providerOption.trim()) ||
+    aiConfig.defaultProvider ||
+    fm.ai?.defaultProvider ||
+    'openai';
+  const providerConfig = aiConfig.providers?.[providerName] || {};
+  const preferredModel = providerConfig.model || aiConfig.defaultModel || defaultModelForProvider(providerName);
+  const discovery = await discoverAiModels(providerName, {
+    ...providerConfig,
+    model: preferredModel
+  });
+
+  return {
+    provider: providerName,
+    preferredModel,
+    source: discovery.source,
+    warning: discovery.warning || null,
+    models: (discovery.choices || [])
+      .filter((choice) => choice.value !== '__custom__')
+      .map((choice) => ({
+        id: choice.value,
+        label: choice.name
+      }))
+  };
 }
 
 async function promptResourceDetails(resourceKey) {
@@ -359,6 +603,43 @@ async function promptResourceDetails(resourceKey) {
         message: 'Report MCP server name:',
         default: 'friday-auto-report'
       }
+    ],
+    governance: [
+      {
+        type: 'list',
+        name: 'provider',
+        message: 'Service governance provider:',
+        choices: [
+          { name: 'Alibaba Cloud MSE', value: 'aliyun-mse' },
+          { name: 'Huawei Cloud CSE', value: 'huawei-cse' },
+          { name: 'Baidu Cloud MSE/CSM', value: 'baidu-mse' }
+        ],
+        default: 'aliyun-mse'
+      },
+      {
+        type: 'input',
+        name: 'mcpServer',
+        message: 'Service governance MCP server name:',
+        default: 'aliyun-mse-mcp'
+      },
+      {
+        type: 'input',
+        name: 'region',
+        message: 'Default region (optional):',
+        default: ''
+      },
+      {
+        type: 'input',
+        name: 'project',
+        message: 'Default project or namespace (optional):',
+        default: ''
+      },
+      {
+        type: 'input',
+        name: 'engine',
+        message: 'Default registry or engine ID (optional):',
+        default: ''
+      }
     ]
   };
 
@@ -395,6 +676,16 @@ async function promptResourceDetails(resourceKey) {
     return {
       ...answers,
       config: buildYuqueConfig(answers)
+    };
+  }
+  if (resourceKey === 'governance') {
+    return {
+      ...answers,
+      config: {
+        region: answers.region || '',
+        project: answers.project || '',
+        engine: answers.engine || ''
+      }
     };
   }
   return answers;
@@ -438,14 +729,14 @@ async function promptSkillDetails(skillName) {
         name: 'databaseMaxRows',
         message: 'Max database rows to inspect:',
         default: 100,
-        validate: (value) => Number.isInteger(Number(value)) && Number(value) > 0 ? true : 'Enter a positive integer'
+        validate: (value) => (Number.isInteger(Number(value)) && Number(value) > 0 ? true : 'Enter a positive integer')
       },
       {
         type: 'number',
         name: 'redisScanCount',
         message: 'Redis scan count:',
         default: 100,
-        validate: (value) => Number.isInteger(Number(value)) && Number(value) > 0 ? true : 'Enter a positive integer'
+        validate: (value) => (Number.isInteger(Number(value)) && Number(value) > 0 ? true : 'Enter a positive integer')
       },
       {
         type: 'confirm',
@@ -574,14 +865,14 @@ async function promptSkillDetails(skillName) {
         name: 'coverageThreshold',
         message: 'Coverage threshold:',
         default: 80,
-        validate: (value) => Number.isInteger(Number(value)) && Number(value) > 0 ? true : 'Enter a positive integer'
+        validate: (value) => (Number.isInteger(Number(value)) && Number(value) > 0 ? true : 'Enter a positive integer')
       },
       {
         type: 'number',
         name: 'complexityThreshold',
         message: 'Complexity threshold:',
         default: 10,
-        validate: (value) => Number.isInteger(Number(value)) && Number(value) > 0 ? true : 'Enter a positive integer'
+        validate: (value) => (Number.isInteger(Number(value)) && Number(value) > 0 ? true : 'Enter a positive integer')
       }
     ],
     'archive-change': [
@@ -640,14 +931,14 @@ async function promptSkillDetails(skillName) {
         name: 'maxConcurrent',
         message: 'Max concurrent workflow steps:',
         default: 5,
-        validate: (value) => Number.isInteger(Number(value)) && Number(value) > 0 ? true : 'Enter a positive integer'
+        validate: (value) => (Number.isInteger(Number(value)) && Number(value) > 0 ? true : 'Enter a positive integer')
       },
       {
         type: 'number',
         name: 'timeout',
         message: 'Workflow timeout in seconds:',
         default: 3600,
-        validate: (value) => Number.isInteger(Number(value)) && Number(value) > 0 ? true : 'Enter a positive integer'
+        validate: (value) => (Number.isInteger(Number(value)) && Number(value) > 0 ? true : 'Enter a positive integer')
       }
     ],
     'api-sync': [
@@ -736,9 +1027,10 @@ async function promptSkillDetails(skillName) {
     return {
       security: {
         enabled: true,
-        severity: Array.isArray(answers.securitySeverity) && answers.securitySeverity.length > 0
-          ? answers.securitySeverity
-          : ['HIGH', 'MEDIUM', 'LOW']
+        severity:
+          Array.isArray(answers.securitySeverity) && answers.securitySeverity.length > 0
+            ? answers.securitySeverity
+            : ['HIGH', 'MEDIUM', 'LOW']
       },
       quality: {
         enabled: Boolean(answers.qualityEnabled)
@@ -907,7 +1199,7 @@ async function promptSkillsForCategory(category, skills, defaults = []) {
         value: skill.skill,
         checked: defaultSet.size > 0 ? defaultSet.has(skill.skill) : false
       })),
-      validate: (value) => value.length > 0 ? true : 'Select at least one skill'
+      validate: (value) => (value.length > 0 ? true : 'Select at least one skill')
     }
   ]);
 
@@ -954,22 +1246,15 @@ async function promptResourcesForCategory(category, resources, defaults = []) {
         value: resource.value,
         checked: defaultSet.size > 0 ? defaultSet.has(resource.value) : false
       })),
-      validate: (value) => value.length > 0 ? true : 'Select at least one resource'
+      validate: (value) => (value.length > 0 ? true : 'Select at least one resource')
     }
   ]);
 
   return answer.resources;
 }
 
-async function runAiInitModule({
-  configDir,
-  interactive,
-  requestedAiProvider,
-  requestedDefaults
-}) {
-  const provider = interactive
-    ? await promptAiProvider(requestedAiProvider || 'openai', true)
-    : requestedAiProvider;
+async function runAiInitModule({ configDir, interactive, requestedAiProvider, requestedDefaults }) {
+  const provider = interactive ? await promptAiProvider(requestedAiProvider || 'openai', true) : requestedAiProvider;
 
   if (!provider) {
     if (interactive) {
@@ -1007,7 +1292,7 @@ async function runAiInitModule({
   }
 
   const aiConfigPath = path.join(configDir, 'ai-config.json');
-  await fs.writeJson(aiConfigPath, buildAiConfig(provider, details), { spaces: 2 });
+  await writePrivateJson(aiConfigPath, buildAiConfig(provider, details));
   console.log(chalk.green(`✓ AI model configured: ${provider} / ${details.model}`));
 
   return {
@@ -1026,12 +1311,15 @@ async function runMcpInitModule({ configDir, interactive }) {
   }
 
   const resourceChoices = getResourceChoices();
-  const categoryMap = new Map([
-    ['Monitoring', resourceChoices.filter((item) => ['sls'].includes(item.value))],
-    ['Data', resourceChoices.filter((item) => ['database', 'redis'].includes(item.value))],
-    ['Docs', resourceChoices.filter((item) => ['yapi', 'yuque'].includes(item.value))],
-    ['Automation', resourceChoices.filter((item) => ['workflow', 'report'].includes(item.value))]
-  ].filter(([, items]) => items.length > 0));
+  const categoryMap = new Map(
+    [
+      ['Monitoring', resourceChoices.filter((item) => ['sls'].includes(item.value))],
+      ['Data', resourceChoices.filter((item) => ['database', 'redis'].includes(item.value))],
+      ['Docs', resourceChoices.filter((item) => ['yapi', 'yuque'].includes(item.value))],
+      ['Automation', resourceChoices.filter((item) => ['workflow', 'report'].includes(item.value))],
+      ['Operations', resourceChoices.filter((item) => ['governance'].includes(item.value))]
+    ].filter(([, items]) => items.length > 0)
+  );
   const categoryNames = Array.from(categoryMap.keys());
   const selectedResourceDetails = {};
 
@@ -1091,17 +1379,17 @@ async function runMcpInitModule({ configDir, interactive }) {
     }
   }
 
-  await fs.writeJson(
+  await writePrivateJson(
     path.join(configDir, 'resource-config.json'),
-    buildResourceConfig(selectedResources, selectedResourceDetails),
-    { spaces: 2 }
+    buildResourceConfig(selectedResources, selectedResourceDetails)
   );
-  await fs.writeJson(
+  await writePrivateJson(
     path.join(configDir, 'component-config.json'),
-    buildComponentConfig(selectedResources, selectedResourceDetails),
-    { spaces: 2 }
+    buildComponentConfig(selectedResources, selectedResourceDetails)
   );
-  console.log(chalk.green(`✓ MCP config saved: ${selectedResources.length > 0 ? selectedResources.join(', ') : 'none'}`));
+  console.log(
+    chalk.green(`✓ MCP config saved: ${selectedResources.length > 0 ? selectedResources.join(', ') : 'none'}`)
+  );
 
   return {
     status: 'saved',
@@ -1153,9 +1441,7 @@ async function runSkillInitModule({ configDir, interactive }) {
       selectedByCategory.set(categoryChoice, selectedCategorySkills);
     }
 
-    selectedMcpSkills = Array.from(
-      new Set(Array.from(selectedByCategory.values()).flat())
-    );
+    selectedMcpSkills = Array.from(new Set(Array.from(selectedByCategory.values()).flat()));
   }
 
   for (const skillName of selectedMcpSkills) {
@@ -1181,10 +1467,9 @@ async function runSkillInitModule({ configDir, interactive }) {
     }
   }
 
-  await fs.writeJson(
+  await writePrivateJson(
     path.join(configDir, 'skill-config.json'),
-    buildSkillConfig(selectedMcpSkills, selectedSkillDetails),
-    { spaces: 2 }
+    buildSkillConfig(selectedMcpSkills, selectedSkillDetails)
   );
   console.log(chalk.green(`✓ Skills saved: ${selectedMcpSkills.length > 0 ? selectedMcpSkills.join(', ') : 'none'}`));
 
@@ -1336,7 +1621,9 @@ function summarizeSkillSelection(selectedMcpSkills, selectedSkillDetails) {
 
     if (skillName === 'log-audit' || skillName === 'sls-log-audit') {
       summary.push(details.defaultFormat ? `format=${details.defaultFormat}` : null);
-      summary.push(typeof details.excludeInfrastructure === 'boolean' ? `excludeInfra=${details.excludeInfrastructure}` : null);
+      summary.push(
+        typeof details.excludeInfrastructure === 'boolean' ? `excludeInfra=${details.excludeInfrastructure}` : null
+      );
     } else if (skillName === 'data-logic-validation') {
       summary.push(details.database?.maxRows ? `dbRows=${details.database.maxRows}` : null);
       summary.push(details.redis?.scanCount ? `redisScan=${details.redis.scanCount}` : null);
@@ -1347,10 +1634,19 @@ function summarizeSkillSelection(selectedMcpSkills, selectedSkillDetails) {
       summary.push(details.defaultRepo ? `repo=${details.defaultRepo}` : null);
       summary.push(details.syncFormat ? `format=${details.syncFormat}` : null);
     } else if (skillName === 'code-review') {
-      summary.push(Array.isArray(details.security?.severity) ? `severity=${details.security.severity.join('|')}` : null);
+      summary.push(
+        Array.isArray(details.security?.severity) ? `severity=${details.security.severity.join('|')}` : null
+      );
       summary.push(typeof details.quality?.enabled === 'boolean' ? `quality=${details.quality.enabled}` : null);
     } else if (skillName === 'project-review') {
-      summary.push(details.checks ? `checks=${Object.entries(details.checks).filter(([, value]) => value).map(([key]) => key).join('|')}` : null);
+      summary.push(
+        details.checks
+          ? `checks=${Object.entries(details.checks)
+              .filter(([, value]) => value)
+              .map(([key]) => key)
+              .join('|')}`
+          : null
+      );
     } else if (skillName === 'archive-change') {
       summary.push(details.location ? `location=${details.location}` : null);
     } else if (skillName === 'auto-flow') {
@@ -1391,10 +1687,20 @@ function buildResourceReviewLines(configDir, selectedResources, selectedResource
   return lines;
 }
 
-function _buildFinalReviewLines(configDir, selectedMcpSkills, selectedSkillDetails, selectedResources, selectedResourceDetails, aiProvider, aiDetails) {
+function _buildFinalReviewLines(
+  configDir,
+  selectedMcpSkills,
+  selectedSkillDetails,
+  selectedResources,
+  selectedResourceDetails,
+  aiProvider,
+  aiDetails
+) {
   const lines = [`config: ${path.join(configDir, 'config.json')}`];
   lines.push(...summarizeAiSelection(aiProvider, aiDetails));
-  lines.push(...summarizeResourceSelection(selectedResources, selectedResourceDetails).map((line) => `resource: ${line}`));
+  lines.push(
+    ...summarizeResourceSelection(selectedResources, selectedResourceDetails).map((line) => `resource: ${line}`)
+  );
   lines.push(...summarizeSkillSelection(selectedMcpSkills, selectedSkillDetails).map((line) => `skill: ${line}`));
   lines.push(`ai-config: ${path.join(configDir, 'ai-config.json')}`);
   lines.push(`resource-config: ${path.join(configDir, 'resource-config.json')}`);
@@ -1421,7 +1727,14 @@ async function _confirmInitPage(title, lines, prompt = 'Continue to next step?')
   return Boolean(answer.confirm);
 }
 
-function printInitSummary(configDir, selectedMcpSkills, selectedResources, selectedResourceDetails, aiProvider, aiDetails) {
+function printInitSummary(
+  configDir,
+  selectedMcpSkills,
+  selectedResources,
+  selectedResourceDetails,
+  aiProvider,
+  aiDetails
+) {
   console.log(chalk.cyan('\nInit summary:'));
   console.log(`  config: ${path.join(configDir, 'config.json')}`);
 
@@ -1488,25 +1801,29 @@ async function initFlowMind(options = {}) {
  */
 function showBanner(asciiMode = false) {
   if (asciiMode) {
-    console.log(chalk.cyan(`
+    console.log(
+      chalk.cyan(`
   +--------------------------------------------------+
   |                                                  |
   |   FlowMind                                       |
   |   The AI Agent That Learns How You Work          |
   |                                                  |
   +--------------------------------------------------+
-  `));
+  `)
+    );
     return;
   }
 
-  console.log(chalk.cyan(`
+  console.log(
+    chalk.cyan(`
   ╔══════════════════════════════════════════════════╗
   ║                                                ║
   ║   🧠 FlowMind                                  ║
   ║   The AI Agent That Learns How You Work        ║
   ║                                                ║
   ╚══════════════════════════════════════════════════╝
-  `));
+  `)
+  );
 }
 
 /**
@@ -1686,7 +2003,7 @@ function renderDragonTotem(honorData, asciiMode = false) {
   const art = getDragonArt(info.level, asciiMode);
 
   // Calculate max art line width for proper padding
-  const maxArtWidth = Math.max(...art.map(l => l.length));
+  const maxArtWidth = Math.max(...art.map((l) => l.length));
   const boxWidth = Math.max(maxArtWidth + 8, 55);
 
   const border = '─'.repeat(boxWidth - 2);
@@ -1746,12 +2063,12 @@ function renderDragonTotem(honorData, asciiMode = false) {
  */
 function getLevelInfo(points) {
   const levels = [
-    { level: 0, minPoints: 0,   name: 'Egg',       state: 'dormant' },
-    { level: 1, minPoints: 1,   name: 'Hatchling',  state: 'awakening' },
-    { level: 2, minPoints: 10,  name: 'Juvenile',   state: 'growing' },
-    { level: 3, minPoints: 30,  name: 'Adult',       state: 'soaring' },
-    { level: 4, minPoints: 60,  name: 'Elder',       state: 'wise' },
-    { level: 5, minPoints: 100, name: 'Ascended',   state: 'transcendent' }
+    { level: 0, minPoints: 0, name: 'Egg', state: 'dormant' },
+    { level: 1, minPoints: 1, name: 'Hatchling', state: 'awakening' },
+    { level: 2, minPoints: 10, name: 'Juvenile', state: 'growing' },
+    { level: 3, minPoints: 30, name: 'Adult', state: 'soaring' },
+    { level: 4, minPoints: 60, name: 'Elder', state: 'wise' },
+    { level: 5, minPoints: 100, name: 'Ascended', state: 'transcendent' }
   ];
 
   let current = levels[0];
@@ -1792,7 +2109,7 @@ async function publishHonor(options) {
   const configDir = getFlowMindConfigDir();
   const honorPath = path.join(configDir, 'honor.json');
 
-  if (!await fs.pathExists(honorPath)) {
+  if (!(await fs.pathExists(honorPath))) {
     console.error(chalk.red('No honor data found. Run flowmind init first.'));
     return;
   }
@@ -1843,10 +2160,7 @@ async function publishHonor(options) {
 }
 
 // CLI Commands
-program
-  .name('flowmind')
-  .description('The AI Agent That Learns How You Work')
-  .version(packageJson.version);
+program.name('flowmind').description('The AI Agent That Learns How You Work').version(packageJson.version);
 
 // Init command
 program
@@ -1865,14 +2179,14 @@ program
     try {
       // Create config directory
       const configDir = getFlowMindConfigDir();
-      await fs.ensureDir(configDir);
-      await fs.ensureDir(path.join(configDir, 'learning'));
-      await fs.ensureDir(path.join(configDir, 'learning', 'records'));
+      await ensurePrivateDir(configDir);
+      await ensurePrivateDir(path.join(configDir, 'learning'));
+      await ensurePrivateDir(path.join(configDir, 'learning', 'records'));
 
       // Create default config
       const configPath = path.join(configDir, 'config.json');
-      if (!await fs.pathExists(configPath)) {
-        await fs.writeJson(configPath, buildBaseConfig(configDir), { spaces: 2 });
+      if (!(await fs.pathExists(configPath))) {
+        await writePrivateJson(configPath, buildBaseConfig(configDir));
       }
 
       spinner.stop();
@@ -1990,7 +2304,11 @@ program
         initState.aiProvider,
         initState.aiDetails
       );
-      console.log(chalk.cyan(`\nConfigured ${initState.selectedMcpSkills.length} MCP skill(s) and ${initState.selectedResources.length} binding group(s).`));
+      console.log(
+        chalk.cyan(
+          `\nConfigured ${initState.selectedMcpSkills.length} MCP skill(s) and ${initState.selectedResources.length} binding group(s).`
+        )
+      );
 
       if (!initState.aiProvider) {
         console.log(chalk.yellow('No AI model configured. You can still use FlowMind with rule-based behavior.'));
@@ -2004,7 +2322,12 @@ program
 
       if (!initState.aiProvider) {
         console.log(chalk.cyan('To enable AI features:'));
-        console.log('  Run', chalk.yellow('flowmind init --ai openai'), 'or', chalk.yellow('flowmind init --ai anthropic'));
+        console.log(
+          '  Run',
+          chalk.yellow('flowmind init --ai openai'),
+          'or',
+          chalk.yellow('flowmind init --ai anthropic')
+        );
         console.log('  Or configure manually:', chalk.yellow('~/.flowmind/ai-config.json'));
       }
 
@@ -2020,7 +2343,6 @@ program
           // Non-blocking
         }
       });
-
     } catch (error) {
       spinner.fail('Failed to initialize FlowMind');
       console.error(chalk.red(error.message));
@@ -2067,10 +2389,16 @@ program
       }
     } catch (error) {
       if (options.json) {
-        console.log(JSON.stringify({
-          type: 'error',
-          message: error.message
-        }, null, 2));
+        console.log(
+          JSON.stringify(
+            {
+              type: 'error',
+              message: error.message
+            },
+            null,
+            2
+          )
+        );
         process.exitCode = 1;
       } else {
         console.error(chalk.red('Error:'), error.message);
@@ -2085,8 +2413,11 @@ program
   .command('learn')
   .description('Manage learning records')
   .option('-l, --list', 'List learning records')
+  .option('-a, --assets', 'Show learned skill feedback and local material packages')
   .option('-s, --skill <skill>', 'Filter by skill')
   .option('-t, --type <type>', 'Filter by type')
+  .option('--limit <number>', 'Maximum feedback records to return', '50')
+  .option('-j, --json', 'Output as JSON (for tool integration)')
   .option('-e, --export [file]', 'Export learnings')
   .option('-i, --import <file>', 'Import learnings')
   .option('-b, --bundle', 'Export as an installable portable bundle')
@@ -2097,7 +2428,14 @@ program
     try {
       const fm = await initFlowMind();
 
-      if (options.list) {
+      if (options.assets) {
+        const assets = await fm.getLearningAssets({ skill: options.skill, limit: Number(options.limit) });
+        if (options.json) {
+          console.log(JSON.stringify(assets, null, 2));
+        } else {
+          displayLearningAssets(assets);
+        }
+      } else if (options.list) {
         const stats = await fm.getStats();
         displayStats(stats);
       } else if (options.install) {
@@ -2113,11 +2451,18 @@ program
           output: exportPath,
           bundle: !!options.bundle
         });
-        console.log(chalk.green(options.bundle ? '✓ Learning bundle exported to:' : '✓ Learnings exported to:'), exportPath);
+        console.log(
+          chalk.green(options.bundle ? '✓ Learning bundle exported to:' : '✓ Learnings exported to:'),
+          exportPath
+        );
       } else if (options.import) {
         const data = await fs.readJson(options.import);
         const result = await fm.importLearnings(data);
-        console.log(chalk.green(result && result.bundle ? '✓ Learning bundle installed successfully' : '✓ Learnings imported successfully'));
+        console.log(
+          chalk.green(
+            result && result.bundle ? '✓ Learning bundle installed successfully' : '✓ Learnings imported successfully'
+          )
+        );
       } else if (options.reset) {
         const count = await fm.learning.resetSkill(options.reset);
         console.log(chalk.green(`✓ Reset ${count} learning(s) for skill: ${options.reset}`));
@@ -2186,9 +2531,7 @@ program
       const skills = fm.skills.list();
 
       // Filter by category if specified
-      const filtered = options.category
-        ? skills.filter(s => s.category === options.category)
-        : skills;
+      const filtered = options.category ? skills.filter((s) => s.category === options.category) : skills;
 
       if (options.json) {
         // JSON output for codex/claude integration
@@ -2219,7 +2562,7 @@ program
       if (!skill) {
         console.error(chalk.red(`Skill not found: ${name}`));
         console.log(chalk.cyan('\nAvailable skills:'));
-        fm.skills.list().forEach(s => console.log(`  - ${s.name}`));
+        fm.skills.list().forEach((s) => console.log(`  - ${s.name}`));
         return;
       }
 
@@ -2306,9 +2649,8 @@ program
         await openInEditor(filePath);
       } else if (options.list !== undefined) {
         // List directory (default)
-        const targetDir = options.list && typeof options.list === 'string'
-          ? resolveResourcePath(options.list, configDir)
-          : configDir;
+        const targetDir =
+          options.list && typeof options.list === 'string' ? resolveResourcePath(options.list, configDir) : configDir;
 
         if (await fs.pathExists(targetDir)) {
           const files = await listResourceFiles(targetDir, configDir);
@@ -2321,12 +2663,18 @@ program
           console.error(chalk.red(`Directory not found: ${targetDir}`));
         }
       } else if (options.json) {
-        console.log(JSON.stringify({
-          resources: resourceConfig,
-          componentStatus,
-          bindings,
-          examples: getResourceSetupExamples()
-        }, null, 2));
+        console.log(
+          JSON.stringify(
+            {
+              resources: resourceConfig,
+              componentStatus,
+              bindings,
+              examples: getResourceSetupExamples()
+            },
+            null,
+            2
+          )
+        );
       } else {
         displayResourceOverview({
           resourceConfig,
@@ -2422,6 +2770,7 @@ program
   .description('Manage AI model configuration')
   .option('-s, --status', 'Show AI model status')
   .option('-l, --list', 'List available providers')
+  .option('-m, --models [provider]', 'List live or recommended models for a provider')
   .option('-c, --config', 'Show AI configuration')
   .option('-t, --test [provider]', 'Test AI provider connection')
   .option('-j, --json', 'Output as JSON')
@@ -2450,8 +2799,29 @@ program
             const providerStatus = provider.initialized ? chalk.green('✓') : chalk.red('✗');
             console.log(`  ${providerStatus} ${provider.name}`);
             if (provider.info?.model) {
-              const modelSuffix = status.defaultModel && provider.info.model === status.defaultModel ? ' (global)' : ' (override)';
+              const modelSuffix =
+                status.defaultModel && provider.info.model === status.defaultModel ? ' (global)' : ' (override)';
               console.log(`    Model: ${provider.info.model}${modelSuffix}`);
+            }
+          }
+        }
+      } else if (options.models !== undefined) {
+        const result = await getAiModelDiscoveryResult(fm, options.models);
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(chalk.cyan(`\nAI Models for ${result.provider}`));
+          console.log(chalk.gray('─'.repeat(60)));
+          console.log(chalk.white(`Source: ${result.source}`));
+          console.log(chalk.white(`Preferred: ${result.preferredModel || 'none'}`));
+          if (result.warning) {
+            console.log(chalk.yellow(`Warning: ${result.warning}`));
+          }
+          if (result.models.length === 0) {
+            console.log(chalk.gray('  (none)'));
+          } else {
+            for (const model of result.models) {
+              console.log(`  - ${model.id}`);
             }
           }
         }
@@ -2571,31 +2941,31 @@ async function addSceneInteractive(fm) {
     {
       type: 'input',
       name: 'name',
-      message: 'Scene name:',
+      message: 'Scene name:'
     },
     {
       type: 'input',
       name: 'keywords',
-      message: 'Keywords (comma separated):',
+      message: 'Keywords (comma separated):'
     },
     {
       type: 'input',
       name: 'patterns',
-      message: 'Trigger patterns (comma separated):',
+      message: 'Trigger patterns (comma separated):'
     },
     {
       type: 'input',
       name: 'skills',
-      message: 'Skills to execute (comma separated):',
+      message: 'Skills to execute (comma separated):'
     }
   ]);
 
   const scene = {
     name: answers.name,
-    keywords: answers.keywords.split(',').map(k => k.trim()),
-    patterns: answers.patterns.split(',').map(p => p.trim()),
+    keywords: answers.keywords.split(',').map((k) => k.trim()),
+    patterns: answers.patterns.split(',').map((p) => p.trim()),
     workflow: {
-      skills: answers.skills.split(',').map(s => ({
+      skills: answers.skills.split(',').map((s) => ({
         skill: s.trim(),
         params: {}
       }))
@@ -2697,27 +3067,30 @@ async function maybeHandleBindingFlow(fm, input, result) {
       return false;
     }
 
-    const saved = await fm.learning.saveResourceBinding({
-      business: answers.business || inferMcpBindingBusiness(bindingHint, input, resolution),
-      componentType: 'mcp',
-      provider: bindingHint.serverName || 'mcp',
-      mcpServer: bindingHint.serverName || null,
-      source: 'dialog-mcp-bind',
-      aliases: buildMcpBindingAliases(input, answers, resolution, bindingHint),
-      keywords: buildMcpBindingKeywords(input, answers, resolution, bindingHint),
-      connection: {
-        endpoint: answers.endpoint || null,
-        headers
+    const saved = await fm.learning.saveResourceBinding(
+      {
+        business: answers.business || inferMcpBindingBusiness(bindingHint, input, resolution),
+        componentType: 'mcp',
+        provider: bindingHint.serverName || 'mcp',
+        mcpServer: bindingHint.serverName || null,
+        source: 'dialog-mcp-bind',
+        aliases: buildMcpBindingAliases(input, answers, resolution, bindingHint),
+        keywords: buildMcpBindingKeywords(input, answers, resolution, bindingHint),
+        connection: {
+          endpoint: answers.endpoint || null,
+          headers
+        },
+        metadata: {
+          input,
+          source: 'interactive-binding',
+          tool: bindingHint.tool || null,
+          suggestedCommand: bindingHint.suggestedCommand || null
+        }
       },
-      metadata: {
-        input,
-        source: 'interactive-binding',
-        tool: bindingHint.tool || null,
-        suggestedCommand: bindingHint.suggestedCommand || null
+      {
+        currentSkill: 'mcp-binding'
       }
-    }, {
-      currentSkill: 'mcp-binding'
-    });
+    );
 
     console.log(chalk.green(`Bound MCP service as: ${saved.business}`));
     return true;
@@ -2763,28 +3136,31 @@ async function maybeHandleBindingFlow(fm, input, result) {
     }
   ]);
 
-  const saved = await fm.learning.saveResourceBinding({
-    business: answers.business || businessDefault,
-    componentType: 'logService',
-    provider: 'aliyun-sls',
-    mcpServer: 'friday-sls-logs',
-    source: 'dialog-log-bind',
-    aliases: buildLogBindingAliases(input, answers, resolution),
-    keywords: buildLogBindingKeywords(input, answers, resolution),
-    connection: {
-      env: answers.env,
-      endpoint: answers.endpoint,
-      project: answers.project,
-      logstore: answers.logstore
+  const saved = await fm.learning.saveResourceBinding(
+    {
+      business: answers.business || businessDefault,
+      componentType: 'logService',
+      provider: 'aliyun-sls',
+      mcpServer: 'friday-sls-logs',
+      source: 'dialog-log-bind',
+      aliases: buildLogBindingAliases(input, answers, resolution),
+      keywords: buildLogBindingKeywords(input, answers, resolution),
+      connection: {
+        env: answers.env,
+        endpoint: answers.endpoint,
+        project: answers.project,
+        logstore: answers.logstore
+      },
+      metadata: {
+        input,
+        source: 'interactive-binding',
+        suggestedCommand: bindingHint.suggestedCommand || null
+      }
     },
-    metadata: {
-      input,
-      source: 'interactive-binding',
-      suggestedCommand: bindingHint.suggestedCommand || null
+    {
+      currentSkill: 'log-audit'
     }
-  }, {
-    currentSkill: 'log-audit'
-  });
+  );
 
   console.log(chalk.green(`Bound log service as: ${saved.business}`));
   return true;
@@ -2830,11 +3206,7 @@ function inferLogEnvironmentFromInput(input) {
 }
 
 function inferLogBindingBusiness(input, resolution = {}) {
-  const parts = [
-    resolution.env,
-    resolution.project,
-    resolution.logstore
-  ].filter(Boolean);
+  const parts = [resolution.env, resolution.project, resolution.logstore].filter(Boolean);
   if (parts.length > 0) {
     return `log-${parts.join('-')}`;
   }
@@ -2926,13 +3298,9 @@ function parseHeadersJson(value) {
 }
 
 function buildMcpBindingAliases(input, answers, resolution = {}, bindingHint = {}) {
-  return [
-    answers.business,
-    bindingHint.serverName,
-    bindingHint.tool,
-    answers.endpoint,
-    resolution.endpoint
-  ].filter(Boolean);
+  return [answers.business, bindingHint.serverName, bindingHint.tool, answers.endpoint, resolution.endpoint].filter(
+    Boolean
+  );
 }
 
 function buildMcpBindingKeywords(input, answers, resolution = {}, bindingHint = {}) {
@@ -2943,7 +3311,9 @@ function buildMcpBindingKeywords(input, answers, resolution = {}, bindingHint = 
     answers.endpoint,
     resolution.endpoint,
     Object.keys(parseHeadersJson(answers.headers) || {})
-  ].flat().filter(Boolean);
+  ]
+    .flat()
+    .filter(Boolean);
 }
 
 function displayStats(stats) {
@@ -2970,6 +3340,36 @@ function displayStats(stats) {
   }
 
   console.log(chalk.cyan('└─────────────────────────────────────────────────────┘'));
+}
+
+function displayLearningAssets(assets) {
+  console.log(chalk.cyan('\n🧠 Learning Assets'));
+  console.log(chalk.gray('─'.repeat(56)));
+  console.log(`Feedback: ${assets.summary.returnedFeedback}/${assets.summary.totalFeedback}`);
+  console.log(`Learned skills: ${assets.summary.learnedSkills}`);
+  console.log(`Scenes: ${assets.summary.scenes}`);
+  console.log(`Resource bindings: ${assets.summary.resourceBindings}`);
+  console.log(`Source files: ${assets.summary.sourceFiles}`);
+
+  if (assets.skills.length > 0) {
+    console.log(chalk.cyan('\nSkills'));
+    for (const skill of assets.skills) {
+      console.log(`  ${skill.name}: ${skill.feedbackCount} feedback, ${skill.ruleCount} rules`);
+    }
+  }
+
+  if (assets.feedback.length > 0) {
+    console.log(chalk.cyan('\nRecent feedback'));
+    for (const record of assets.feedback) {
+      const summary = record.application?.action || record.input || record.type || record.id;
+      console.log(`  [${record.skill}] ${summary}`);
+    }
+  }
+
+  if (assets.packages.sourceFiles.length > 0) {
+    console.log(chalk.cyan('\nMaterial packages'));
+    for (const file of assets.packages.sourceFiles) console.log(`  ${file.path} (${formatFileSize(file.size)})`);
+  }
 }
 
 function displayScenes(scenes) {
@@ -3110,7 +3510,7 @@ async function showSkillConfig(skill, fm, asJson = false) {
       }
     } else {
       const configJson = JSON.stringify(config, null, 2);
-      configJson.split('\n').forEach(line => {
+      configJson.split('\n').forEach((line) => {
         console.log(chalk.cyan(`│ ${line}`));
       });
     }
@@ -3289,7 +3689,9 @@ function displayResourceOverview({ resourceConfig, componentStatus, bindings, co
   console.log(chalk.gray('─'.repeat(60)));
   console.log(chalk.white(`Config dir: ${configDir}`));
   console.log(chalk.white(`Configured resources: ${configuredResources.length}`));
-  console.log(chalk.white(`Active components: ${activeComponents.length}/${Object.keys(componentStatus || {}).length}`));
+  console.log(
+    chalk.white(`Active components: ${activeComponents.length}/${Object.keys(componentStatus || {}).length}`)
+  );
   console.log(chalk.white(`Learned bindings: ${bindings.length}`));
 
   console.log(chalk.cyan('\nActive Components'));
@@ -3306,8 +3708,12 @@ function displayResourceOverview({ resourceConfig, componentStatus, bindings, co
   if (bindings.length === 0) {
     console.log(chalk.gray('  (none)'));
     console.log(chalk.gray('  Save one with natural language, for example:'));
-    console.log(chalk.white('  flowmind "绑定零售业务 mcp=yapi-mcp 地址=https://yapi.example.com token=xxx project=retail"'));
-    console.log(chalk.gray('  Import existing SDD-Agent resources only when you explicitly want them in this workspace:'));
+    console.log(
+      chalk.white('  flowmind "绑定零售业务 mcp=yapi-mcp 地址=https://yapi.example.com token=xxx project=retail"')
+    );
+    console.log(
+      chalk.gray('  Import existing SDD-Agent resources only when you explicitly want them in this workspace:')
+    );
     console.log(chalk.white('  flowmind resource --sync-sdd-agent'));
   } else {
     for (const binding of bindings.slice(0, 8)) {
@@ -3329,7 +3735,11 @@ function displayResourceOverview({ resourceConfig, componentStatus, bindings, co
   }
 
   console.log(chalk.cyan('\nNext Step'));
-  console.log(chalk.white('  Keep workspace state isolated by default. Import SDD-Agent resources only when needed, then bind `friday-auto-flow` before running deploy requests in natural language.'));
+  console.log(
+    chalk.white(
+      '  Keep workspace state isolated by default. Import SDD-Agent resources only when needed, then bind `friday-auto-flow` before running deploy requests in natural language.'
+    )
+  );
 }
 
 function displayResourceSyncSummary(summary) {
@@ -3353,12 +3763,15 @@ function displayAIStatus(status) {
   console.log(chalk.cyan('├─────────────────────────────────────────────────────┤'));
 
   const initialized = status.initialized ? chalk.green('✓') : chalk.red('✗');
-  const healthLabel = status.health || (Object.values(status.providers || {}).some((info) => info?.health === 'ready') ? 'ready' : 'not ready');
-  const health = healthLabel === 'ready'
-    ? chalk.green(healthLabel)
-    : healthLabel === 'error'
-      ? chalk.red(healthLabel)
-      : chalk.yellow(healthLabel);
+  const healthLabel =
+    status.health ||
+    (Object.values(status.providers || {}).some((info) => info?.health === 'ready') ? 'ready' : 'not ready');
+  const health =
+    healthLabel === 'ready'
+      ? chalk.green(healthLabel)
+      : healthLabel === 'error'
+        ? chalk.red(healthLabel)
+        : chalk.yellow(healthLabel);
   console.log(chalk.cyan(`│ Initialized: ${initialized}`));
   console.log(chalk.cyan(`│ Health: ${health}`));
   console.log(chalk.cyan(`│ Default Provider: ${status.defaultProvider || 'None'}`));
@@ -3378,11 +3791,8 @@ function displayAIStatus(status) {
 
   const providers = status.providers || {};
   for (const [name, info] of Object.entries(providers)) {
-    const statusIcon = info.health === 'ready'
-      ? chalk.green('✓')
-      : info.health === 'error'
-        ? chalk.red('✗')
-        : chalk.yellow('•');
+    const statusIcon =
+      info.health === 'ready' ? chalk.green('✓') : info.health === 'error' ? chalk.red('✗') : chalk.yellow('•');
     console.log(chalk.cyan(`│   ${statusIcon} ${name}`));
     if (info.info?.model) {
       const modelSuffix = status.defaultModel && info.info.model === status.defaultModel ? ' (global)' : ' (override)';
@@ -3405,7 +3815,11 @@ function displayUpgradeStatus(status) {
   console.log(chalk.cyan('\nFlowMind Upgrade Status'));
   console.log(chalk.gray('─'.repeat(60)));
   console.log(chalk.white(`Version: ${status.version}`));
-  console.log(chalk.white(`Overall: ${status.summary.status} (${status.summary.passed}/${status.summary.total}, ${status.summary.percent}%)`));
+  console.log(
+    chalk.white(
+      `Overall: ${status.summary.status} (${status.summary.passed}/${status.summary.total}, ${status.summary.percent}%)`
+    )
+  );
   if (status.phases) {
     for (const [phaseName, phase] of Object.entries(status.phases)) {
       console.log(chalk.white(`  ${phaseName}: ${phase.status} (${phase.passed}/${phase.total}, ${phase.percent}%)`));
@@ -3413,11 +3827,12 @@ function displayUpgradeStatus(status) {
   }
 
   for (const direction of status.directions) {
-    const marker = direction.status === 'complete'
-      ? chalk.green('✓')
-      : direction.status === 'partial'
-        ? chalk.yellow('•')
-        : chalk.red('✗');
+    const marker =
+      direction.status === 'complete'
+        ? chalk.green('✓')
+        : direction.status === 'partial'
+          ? chalk.yellow('•')
+          : chalk.red('✗');
     console.log(chalk.cyan(`\n${marker} ${direction.id}. ${direction.title}`));
     console.log(chalk.gray(`  Status: ${direction.status} (${direction.passed}/${direction.total})`));
     for (const check of direction.checks) {
@@ -3572,9 +3987,8 @@ program
       console.log('─'.repeat(60));
 
       for (const check of result.checks) {
-        const icon = check.status === 'ok' ? chalk.green('✓')
-          : check.status === 'warning' ? chalk.yellow('⚠')
-          : chalk.red('✗');
+        const icon =
+          check.status === 'ok' ? chalk.green('✓') : check.status === 'warning' ? chalk.yellow('⚠') : chalk.red('✗');
         console.log(`  ${icon} ${check.name.padEnd(20)} ${check.message}`);
       }
 
@@ -3584,7 +3998,9 @@ program
         chalk.green(`${ok} ok`),
         warnings > 0 ? chalk.yellow(`${warnings} warning(s)`) : null,
         errors > 0 ? chalk.red(`${errors} error(s)`) : null
-      ].filter(Boolean).join(', ');
+      ]
+        .filter(Boolean)
+        .join(', ');
       console.log(`\n  Result: ${summaryLine}`);
 
       if (errors > 0) {
@@ -3596,6 +4012,33 @@ program
       }
     } catch (error) {
       console.error(chalk.red('Doctor Error:'), error.message);
+    }
+  });
+
+program
+  .command('demo [scenario]')
+  .description('Run a self-contained mock demo without external MCP or provider credentials')
+  .option('-j, --json', 'Output as JSON')
+  .action((scenario = 'log-audit', options) => {
+    try {
+      const demo = buildDemoResult(scenario);
+      if (options.json) {
+        console.log(JSON.stringify(demo, null, 2));
+      } else {
+        displayDemoResult(demo);
+      }
+    } catch (error) {
+      if (options.json) {
+        console.log(JSON.stringify({
+          ok: false,
+          error: error.message,
+          availableScenarios: error.availableScenarios || ['log-audit']
+        }, null, 2));
+      } else {
+        console.error(chalk.red('Demo Error:'), error.message);
+        console.log(chalk.yellow(`Available scenarios: ${(error.availableScenarios || ['log-audit']).join(', ')}`));
+      }
+      process.exitCode = 1;
     }
   });
 
@@ -3636,12 +4079,63 @@ program
         flowmind: fm,
         approvalToken: options.approvalToken,
         continueOnError: options.continueOnError === true,
-        dryRun: false
+        dryRun: false,
+        historyStore: createWorkflowHistoryStore()
       });
       console.log(JSON.stringify(result, null, 2));
       if (result.status !== 'succeeded') process.exitCode = 1;
     } catch (error) {
       console.error(chalk.red('Workflow Error:'), error.message);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('workflow-history')
+  .description('List recent recorded guarded workflow executions')
+  .option('--limit <number>', 'Maximum number of workflow records to return', '20')
+  .option('--status <status>', 'Filter workflow records by status')
+  .option('--resumable', 'Only show workflow records that can be resumed')
+  .action(async (options) => {
+    try {
+      const historyStore = createWorkflowHistoryStore();
+      const workflows = await historyStore.list({
+        limit: Number(options.limit),
+        status: options.status,
+        resumable: options.resumable === true
+      });
+      console.log(JSON.stringify({ workflows }, null, 2));
+    } catch (error) {
+      console.error(chalk.red('Workflow History Error:'), error.message);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('workflow-resume')
+  .description('Resume a recorded guarded workflow from the first unfinished step')
+  .requiredOption('--execution-id <id>', 'Workflow execution id returned by flowmind workflow --execute')
+  .requiredOption('--approval-token <token>', 'Approval token returned by the original dry-run')
+  .option('--continue-on-error', 'Continue after a failed step')
+  .action(async (options) => {
+    try {
+      const historyStore = createWorkflowHistoryStore();
+      const record = await historyStore.get(options.executionId);
+      if (!record) {
+        throw new Error(`Workflow execution not found: ${options.executionId}`);
+      }
+      const fm = await initFlowMind();
+      const result = await resumeWorkflow(record, {
+        flowmind: fm,
+        approvalToken: options.approvalToken,
+        continueOnError: options.continueOnError === true,
+        dryRun: false,
+        historyStore
+      });
+      console.log(JSON.stringify(result, null, 2));
+      if (result.status !== 'succeeded') process.exitCode = 1;
+    } catch (error) {
+      console.error(chalk.red('Workflow Resume Error:'), error.message);
       process.exitCode = 1;
     }
   });
@@ -3692,7 +4186,10 @@ program
       const parse = (v) => v.split('.').map(Number);
       const curr = parse(currentVersion);
       const latest = parse(latestVersion);
-      const isNewer = latest[0] > curr[0] || (latest[0] === curr[0] && latest[1] > curr[1]) || (latest[0] === curr[0] && latest[1] === curr[1] && latest[2] > curr[2]);
+      const isNewer =
+        latest[0] > curr[0] ||
+        (latest[0] === curr[0] && latest[1] > curr[1]) ||
+        (latest[0] === curr[0] && latest[1] === curr[1] && latest[2] > curr[2]);
 
       if (!isNewer) {
         console.log(chalk.green('\n✓ You are on a newer version than npm latest.'));
@@ -3712,7 +4209,9 @@ program
           const globalRoot = execSync('npm root -g', { encoding: 'utf-8' }).trim();
           const localPath = require.resolve('../package.json');
           return localPath.startsWith(globalRoot);
-        } catch { return false; }
+        } catch {
+          return false;
+        }
       })();
 
       const installCmd = isGlobal
@@ -3734,7 +4233,6 @@ program
         console.log(chalk.yellow('\nTry manually:'));
         console.log(chalk.white(`  ${installCmd}`));
       }
-
     } catch (error) {
       console.error(chalk.red('Failed to check for updates:'), error.message);
       console.log(chalk.yellow('\nYou can manually update with:'));
@@ -3751,9 +4249,31 @@ program
 
 // Parse arguments
 const knownCommands = new Set([
-  'init', 'process', 'p', 'learn', 'scenes', 'skills', 'skill', 'resource', 'res',
-  'stats', 'honor', 'config', 'ai', 'tui', 'dashboard', 'doctor', 'upgrade-status', 'workflow',
-  'release-check', 'update', 'check-update', 'help'
+  'init',
+  'process',
+  'p',
+  'learn',
+  'scenes',
+  'skills',
+  'skill',
+  'resource',
+  'res',
+  'stats',
+  'honor',
+  'config',
+  'ai',
+  'tui',
+  'dashboard',
+  'doctor',
+  'demo',
+  'upgrade-status',
+  'workflow',
+  'workflow-history',
+  'workflow-resume',
+  'release-check',
+  'update',
+  'check-update',
+  'help'
 ]);
 const cliArgs = process.argv.slice(2);
 

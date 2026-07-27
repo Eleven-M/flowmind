@@ -16,7 +16,7 @@ const AI_PROVIDER_META = Object.freeze({
     apiKeyLabel: 'Anthropic API key',
     modelLabel: 'Anthropic model',
     baseUrlLabel: 'Anthropic base URL',
-    defaultModel: 'claude-3-5-sonnet-latest',
+    defaultModel: 'claude-sonnet-4-20250514',
     defaultBaseUrl: 'https://api.anthropic.com'
   },
   glm: {
@@ -48,8 +48,8 @@ const AI_PROVIDER_META = Object.freeze({
     apiKeyLabel: 'Baidu API key',
     modelLabel: 'ERNIE model',
     baseUrlLabel: 'Baidu API base URL',
-    defaultModel: 'ernie-4.0',
-    defaultBaseUrl: 'https://aip.baidubce.com'
+    defaultModel: 'ernie-4.0-turbo-8k',
+    defaultBaseUrl: 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop'
   },
   deepseek: {
     label: 'DeepSeek',
@@ -57,7 +57,7 @@ const AI_PROVIDER_META = Object.freeze({
     modelLabel: 'DeepSeek model',
     baseUrlLabel: 'DeepSeek base URL',
     defaultModel: 'deepseek-chat',
-    defaultBaseUrl: 'https://api.deepseek.com'
+    defaultBaseUrl: 'https://api.deepseek.com/v1'
   },
   ollama: {
     label: 'Ollama',
@@ -118,6 +118,13 @@ const RESOURCE_META = Object.freeze({
     componentKey: 'report',
     provider: 'friday-report',
     mcpServer: 'friday-auto-report'
+  },
+  governance: {
+    label: 'Service Governance',
+    resourceKey: 'governance',
+    componentKey: 'serviceGovernance',
+    provider: 'aliyun-mse',
+    mcpServer: 'aliyun-mse-mcp'
   }
 });
 
@@ -128,7 +135,8 @@ const RESOURCE_CHOICES = Object.freeze([
   { name: 'API Docs / YApi', value: 'yapi', checked: true },
   { name: 'Knowledge Base / Yuque', value: 'yuque', checked: false },
   { name: 'Workflow / Auto Flow', value: 'workflow', checked: false },
-  { name: 'Report / Auto Report', value: 'report', checked: false }
+  { name: 'Report / Auto Report', value: 'report', checked: false },
+  { name: 'Service Governance', value: 'governance', checked: false }
 ]);
 
 const RESOURCE_KEY_BY_COMPONENT = Object.freeze(
@@ -144,12 +152,23 @@ const SKILL_CATEGORY_LABELS = Object.freeze({
   workflow: 'Workflow',
   automation: 'Automation',
   monitoring: 'Monitoring',
+  operations: 'Operations',
   analysis: 'Analysis',
   infrastructure: 'Infrastructure',
   core: 'Core'
 });
 
-const SKILL_CATEGORY_ORDER = ['quality', 'documentation', 'workflow', 'automation', 'monitoring', 'analysis', 'infrastructure', 'core'];
+const SKILL_CATEGORY_ORDER = [
+  'quality',
+  'documentation',
+  'workflow',
+  'automation',
+  'monitoring',
+  'operations',
+  'analysis',
+  'infrastructure',
+  'core'
+];
 
 const AI_MODEL_CHOICES = Object.freeze({
   openai: [
@@ -304,10 +323,12 @@ function getAiProviderChoices() {
 }
 
 function getAiModelChoices(provider) {
-  const choices = AI_MODEL_CHOICES[provider] ? AI_MODEL_CHOICES[provider].slice() : [
-    { name: 'Default model', value: defaultModelForProvider(provider) || '__custom__' },
-    { name: 'Custom model...', value: '__custom__' }
-  ];
+  const choices = AI_MODEL_CHOICES[provider]
+    ? AI_MODEL_CHOICES[provider].slice()
+    : [
+        { name: 'Default model', value: defaultModelForProvider(provider) || '__custom__' },
+        { name: 'Custom model...', value: '__custom__' }
+      ];
 
   return choices.map((choice, index) => {
     if (choice.value === '__custom__') {
@@ -409,8 +430,15 @@ function getMcpSkillCatalog() {
 
     const content = fs.readFileSync(skillMdPath, 'utf-8');
     const definition = parseSkillFrontmatter(content);
-    const dependencies = Array.isArray(definition.componentDependencies) ? definition.componentDependencies : [];
-    const category = definition.metadata?.category || extractCategoryFromFrontmatter(content) || 'other';
+    const indexPath = path.join(skillDir, 'index.js');
+    const implementation = fs.pathExistsSync(indexPath) ? require(indexPath) : {};
+    const dependencies = Array.isArray(definition.componentDependencies)
+      ? definition.componentDependencies
+      : Array.isArray(implementation.componentDependencies)
+        ? implementation.componentDependencies
+        : [];
+    const category =
+      definition.metadata?.category || implementation.category || extractCategoryFromFrontmatter(content) || 'other';
 
     if (dependencies.length === 0) {
       continue;
@@ -429,7 +457,9 @@ function getMcpSkillCatalog() {
     const orderA = SKILL_CATEGORY_ORDER.indexOf(a.category);
     const orderB = SKILL_CATEGORY_ORDER.indexOf(b.category);
     if (orderA !== orderB) {
-      return (orderA === -1 ? SKILL_CATEGORY_ORDER.length : orderA) - (orderB === -1 ? SKILL_CATEGORY_ORDER.length : orderB);
+      return (
+        (orderA === -1 ? SKILL_CATEGORY_ORDER.length : orderA) - (orderB === -1 ? SKILL_CATEGORY_ORDER.length : orderB)
+      );
     }
     if (a.category !== b.category) {
       return a.category.localeCompare(b.category);
@@ -505,7 +535,7 @@ function getMcpResourcesForSkills(selectedSkills = []) {
 }
 
 function extractCategoryFromFrontmatter(content) {
-  const categoryMatch = content.match(/^\s*category:\s*([A-Za-z0-9_-]+)/mi);
+  const categoryMatch = content.match(/^\s*category:\s*([A-Za-z0-9_-]+)/im);
   return categoryMatch ? categoryMatch[1].toLowerCase() : null;
 }
 
@@ -670,6 +700,16 @@ function buildResourceConfig(selectedResources = [], details = {}) {
     };
   }
 
+  if (selected.has('governance')) {
+    const governance = details.governance || {};
+    resources.governance = {
+      enabled: true,
+      provider: governance.provider || RESOURCE_META.governance.provider,
+      mcpServer: governance.mcpServer || RESOURCE_META.governance.mcpServer,
+      config: governance.config || {}
+    };
+  }
+
   return {
     version: '1.0.0',
     lastUpdated: new Date().toISOString(),
@@ -824,6 +864,22 @@ function buildComponentConfig(selectedResources = [], details = {}) {
     };
   }
 
+  if (selected.has('governance')) {
+    const governance = details.governance || {};
+    const provider = governance.provider || RESOURCE_META.governance.provider;
+    components.serviceGovernance = {
+      default: provider,
+      providers: {
+        [provider]: {
+          enabled: true,
+          mcpServer: governance.mcpServer || RESOURCE_META.governance.mcpServer,
+          tools: governance.tools || {},
+          config: governance.config || {}
+        }
+      }
+    };
+  }
+
   return {
     version: '1.0.0',
     components
@@ -882,6 +938,12 @@ function _buildResourceMcpServers(selectedResources = [], details = {}) {
     mcpServers[details.report?.mcpServer || RESOURCE_META.report.mcpServer] = {
       type: 'http',
       description: 'FlowMind report integration'
+    };
+  }
+  if (selected.has('governance')) {
+    mcpServers[details.governance?.mcpServer || RESOURCE_META.governance.mcpServer] = {
+      type: 'http',
+      description: 'FlowMind multi-cloud service governance integration'
     };
   }
 

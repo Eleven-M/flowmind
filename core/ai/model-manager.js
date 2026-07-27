@@ -108,6 +108,55 @@ class ModelManager {
     return this.providers.get(name || this.defaultProvider);
   }
 
+  createProvider(name, config = {}) {
+    if (!this.providerFactories) {
+      this._registerBuiltinProviders();
+    }
+
+    const factory = this.providerFactories[name];
+    if (!factory) {
+      throw new Error(`Unknown provider: ${name}`);
+    }
+
+    const resolvedConfig = { ...config };
+    if (!resolvedConfig.model && this.defaultModel) {
+      resolvedConfig.model = this.defaultModel;
+    }
+
+    return factory(resolvedConfig);
+  }
+
+  async discoverModels(name, config = {}) {
+    const provider = this.createProvider(name, config);
+    const models = await provider.listModels();
+    const seen = new Set();
+
+    return (Array.isArray(models) ? models : [])
+      .map((item) => {
+        if (typeof item === 'string') {
+          return { id: item, label: item };
+        }
+
+        const id = item?.id || item?.name || item?.model;
+        if (!id || seen.has(id)) {
+          return null;
+        }
+
+        return {
+          id,
+          label: item?.label || id,
+          raw: item?.raw || item
+        };
+      })
+      .filter((item) => {
+        if (!item?.id || seen.has(item.id)) {
+          return false;
+        }
+        seen.add(item.id);
+        return true;
+      });
+  }
+
   /**
    * 获取默认 Provider
    */
