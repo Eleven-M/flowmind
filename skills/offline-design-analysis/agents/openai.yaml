@@ -1,0 +1,4 @@
+interface:
+  display_name: "Offline Design Analysis"
+  short_description: "Analyze local code and documents without an AI model"
+  default_prompt: "Use $offline-design-analysis to summarize local code and documents into an evidence-backed design flow."

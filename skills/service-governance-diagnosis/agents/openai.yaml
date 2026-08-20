@@ -1,0 +1,4 @@
+interface:
+  display_name: "Service Governance Diagnosis"
+  short_description: "Diagnose multi-cloud microservice governance issues"
+  default_prompt: "Use $service-governance-diagnosis to diagnose a microservice incident from governance and observability evidence."

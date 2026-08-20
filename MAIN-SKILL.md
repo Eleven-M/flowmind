@@ -1,0 +1,349 @@
+---
+name: flowmind
+description: FlowMind - The AI Agent That Learns How You Work. Use for any development workflow task. FlowMind learns your preferences and applies them automatically.
+metadata:
+  version: "1.0.0"
+  author: flowmind
+  type: main
+  license: MIT
+---
+
+# FlowMind - Main Skill Entry
+
+**The AI Agent That Learns How You Work**
+
+*Learn once, flow forever.*
+
+## Overview
+
+FlowMind is an intelligent development workflow automation framework that:
+- 📚 **Learns from your corrections** - Remembers how you prefer tasks done
+- 🔄 **Automates repetitive workflows** - No need to repeat instructions
+- 🎯 **Adapts to your style** - Gets better with every interaction
+- 🔌 **Extensible skill system** - Add custom skills for your needs
+
+## Quick Start
+
+```bash
+# Initialize FlowMind
+flowmind init
+
+# Start using
+flowmind "你的请求"
+
+# Or interactive mode
+flowmind
+```
+
+## Core Skills
+
+### 🔍 Analysis Skills
+
+| Skill | Description | Triggers |
+|-------|-------------|----------|
+| `log-audit` | Log analysis & trace visualization | "日志", "traceId", "排查" |
+| `code-review` | Code quality & security review | "代码审查", "review", "PR" |
+| `project-review` | Project health analysis | "项目审查", "依赖检查" |
+| `git-review` | Git history & commit review | "git审查", "提交历史" |
+
+### 🔌 Integration Skills
+
+| Skill | Description | Triggers |
+|-------|-------------|----------|
+| `resource-bind` | Database, Redis, API connections | "数据库", "redis", "API" |
+| `api-sync` | API documentation sync | "API文档", "接口同步" |
+| `data-validation` | Data & logic verification | "数据验证", "逻辑检查" |
+
+### 🔄 Automation Skills
+
+| Skill | Description | Triggers |
+|-------|-------------|----------|
+| `auto-flow` | Workflow automation | "自动化", "工作流", "流程" |
+| `archive-change` | Archive completed changes | "归档", "完成", "交付" |
+| `learning-engine` | Learn from feedback | "记住", "下次", "应该" |
+
+## Learning System
+
+### How It Works
+
+```
+You: "查询日志用顺序列表格式"
+FlowMind: [Records preference]
+
+You: [Next time] "查询日志..."
+FlowMind: [Uses sequential list automatically] ✓
+```
+
+### Learning Types
+
+| Type | Example | Result |
+|------|---------|--------|
+| **Correction** | "不对，用表格格式" | Records format preference |
+| **Scene Mapping** | "排查问题先查错误再查链路" | Records workflow |
+| **Preference** | "用中文回复" | Records language |
+
+### Automatic Application
+
+Before each task, FlowMind:
+1. Checks scene mappings for matching workflows
+2. Checks skill learning for corrections
+3. Applies all learned preferences
+
+## Usage Patterns
+
+### Single Command
+
+```bash
+flowmind "查询 traceId abc123 的日志"
+```
+
+### Interactive Mode
+
+```bash
+flowmind
+
+You: 查询 traceId abc123 的日志
+FlowMind: [Results...]
+
+You: 用顺序列表格式
+FlowMind: ✓ Learning recorded
+
+You: 查询 traceId def456 的日志
+FlowMind: [Uses sequential list automatically]
+```
+
+### Workflow Execution
+
+```bash
+flowmind process --skill auto-flow "执行部署流程"
+```
+
+## OpenSpec 变更生命周期（强制）
+
+使用 OpenSpec 做设计后，必须走完完整生命周期，禁止悬挂。适用于所有项目（不限于
+flowmind 自身）：凡经 flowmind 产出的设计，代码交付与归档同样强制。
+
+```
+PROPOSAL → DESIGN/SPECS → TASKS（开发）→ 代码合入 → 双归档
+                                           ├─ 设计归档: openspec/changes/archive/YYYY-MM-DD-<name>/
+                                           └─ 代码归档: 归档目录内 CODE-DELIVERY.md（仓库/分支/提交/MR/合入状态）
+```
+
+硬性规则：
+
+1. **一旦用 OpenSpec 产出设计（PROPOSAL/DESIGN/SPECS），同一工作流必须完成 TASKS 全部开发项**，不得只留设计。
+2. **TASKS 全部 `[x]` 不等于完成**：开发的代码必须先闭环（合入目标分支或有明确去向），**未合入/无去向的代码不得标记完成**。
+3. **归档是双归档**，由 `archive-change` 技能执行（触发词："归档"）：
+   - 设计归档：变更目录移入 `openspec/changes/archive/YYYY-MM-DD-<name>/`（日期取变更创建日），`.openspec.yaml` 写 `status: completed` + `archivedAt`；
+   - 代码归档：归档目录内必须有 `CODE-DELIVERY.md`，记录仓库、分支、提交（short_id + 标题）、MR/PR 号、合入状态/部署环境。纯文档类变更须显式写「无代码变更」。
+4. `openspec/changes/` 根目录只允许存在「进行中」的变更（TASKS 有未完成项）。每次会话收尾时运行 `node scripts/check-openspec-lifecycle.js [项目changes目录]` 检查（缺省查 flowmind 自身）：有 TASKS 全完成的变更 → 双归档后再结束；长期停留未开发的纯设计 → 推进开发或注明阻塞原因。
+5. 未双归档的已完成变更视为流程未闭环，不得开启新的 OpenSpec 变更。
+
+## Configuration
+
+### Resource Configuration
+
+```json
+// ~/.flowmind/resource-config.json
+{
+  "resources": {
+    "database": { "enabled": true, "host": "..." },
+    "redis": { "enabled": true, "host": "..." },
+    "logs": { "enabled": true, "endpoint": "..." }
+  }
+}
+```
+
+### Learning Configuration
+
+```json
+// ~/.flowmind/learning-config.json
+{
+  "learning": {
+    "enabled": true,
+    "autoApply": true,
+    "confidenceThreshold": 0.7
+  }
+}
+```
+
+## Skill Details
+
+### Log Audit
+
+Analyze logs and trace requests.
+
+```bash
+# Query trace
+flowmind "查询 traceId abc123 的完整链路"
+
+# Error analysis
+flowmind "查看最近1小时的错误日志"
+
+# Performance
+flowmind "分析接口耗时"
+```
+
+### Code Review
+
+Review code quality and security.
+
+```bash
+# Security check
+flowmind "检查安全漏洞"
+
+# Quality review
+flowmind "审查代码质量"
+
+# PR review
+flowmind "审查这个 PR"
+```
+
+### Resource Bind
+
+Manage external connections.
+
+```bash
+# Database
+flowmind "连接数据库查询用户表"
+
+# Redis
+flowmind "查看 Redis 缓存状态"
+
+# API
+flowmind "测试 API 接口"
+```
+
+### Data Validation
+
+Verify data and logic.
+
+```bash
+# Data check
+flowmind "验证订单数据"
+
+# Logic verification
+flowmind "检查业务逻辑"
+
+# Calculation
+flowmind "验证金额计算"
+```
+
+### API Sync
+
+Sync API documentation.
+
+```bash
+# Generate docs
+flowmind "生成 API 文档"
+
+# Sync to platform
+flowmind "同步接口到 YApi"
+```
+
+### Auto Flow
+
+Automate workflows.
+
+```bash
+# Run workflow
+flowmind "执行部署流程"
+
+# Create workflow
+flowmind "创建代码提交流程"
+```
+
+### Archive Change
+
+Archive completed work.
+
+```bash
+# Archive single
+flowmind "归档用户登录功能"
+
+# Bulk archive
+flowmind "归档所有已完成变更"
+```
+
+### Git Review
+
+Review git history.
+
+```bash
+# Branch review
+flowmind "审查 feature/login 分支"
+
+# Commit history
+flowmind "查看最近提交"
+```
+
+### Project Review
+
+Analyze project health.
+
+```bash
+# Full review
+flowmind "审查项目整体状况"
+
+# Security audit
+flowmind "进行安全审计"
+```
+
+## Learning Commands
+
+```bash
+# View learnings
+flowmind learn list
+
+# View scenes
+flowmind scenes list
+
+# Export learnings
+flowmind learn export
+
+# Export a portable bundle
+flowmind learn export --bundle team-learning.json
+
+# Import learnings
+flowmind learn import <file>
+
+# Install a portable bundle
+flowmind learn --install team-learning.json
+```
+
+## Management Commands
+
+```bash
+# List skills
+flowmind skills
+
+# View stats
+flowmind stats
+
+# Configuration
+flowmind config --list
+```
+
+## Best Practices
+
+1. **Be Specific**: More specific instructions = better learning
+2. **Correct Early**: Correct FlowMind when wrong
+3. **Use Scenes**: Define workflows for repeated tasks
+4. **Review Learnings**: Periodically review saved learnings
+5. **Share Knowledge**: Export and share with team
+
+## Privacy & Security
+
+- **Local Only**: All data stored locally
+- **No Cloud**: Nothing sent to external servers
+- **User Control**: Full control over all data
+- **Encryption**: Optional encryption for sensitive data
+
+## Support
+
+- **GitHub**: [github.com/Eleven-M/flowmind](https://github.com/Eleven-M/flowmind)
+- **Email**: 13060993305@163.com
+
+## License
+
+MIT License - see [LICENSE](LICENSE)

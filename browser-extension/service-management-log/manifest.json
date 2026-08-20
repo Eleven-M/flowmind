@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "FlowMind Service Management Log Bridge",
+  "version": "1.0.1",
+  "description": "Read-only browser executor for FlowMind service management log analysis.",
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "https://admin.example.com/*",
+    "https://manager-gateway.example.com/*"
+  ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html"
+}

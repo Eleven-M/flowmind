@@ -1,0 +1,219 @@
+/**
+ * Skill scaffolding helpers.
+ * Generate SKILL.md + index.js templates for a new skill.
+ */
+
+const fs = require('fs-extra');
+const path = require('path');
+
+const NAME_REGEX = /^[a-z][a-z0-9-]*$/;
+
+const VALID_CATEGORIES = [
+  'quality',
+  'reporting',
+  'knowledge',
+  'deployment',
+  'data',
+  'governance',
+  'general'
+];
+
+const COMPONENT_CHOICES = [
+  'databaseQuery',
+  'apiDoc',
+  'knowledgeBase',
+  'workflow',
+  'report',
+  'logService',
+  'serviceGovernance',
+  'databaseManager',
+  'redisMonitor'
+];
+
+/**
+ * Validate a skill name (lowercase kebab-case).
+ * Returns { valid: true } or { valid: false, reason }.
+ */
+function validateSkillName(name) {
+  const value = String(name || '').trim();
+  if (!value) {
+    return { valid: false, reason: 'Skill name is required.' };
+  }
+  if (!NAME_REGEX.test(value)) {
+    return { valid: false, reason: 'Skill name must be lowercase kebab-case (letters, digits, hyphens), starting with a letter.' };
+  }
+  if (value.length > 64) {
+    return { valid: false, reason: 'Skill name must be 64 characters or fewer.' };
+  }
+  return { valid: true };
+}
+
+function titleCase(value) {
+  return String(value || '')
+    .split('-')
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+}
+
+function escapeYamlString(value) {
+  return String(value || '').replace(/"/g, '\\"');
+}
+
+function buildTriggerRegexSource(patterns) {
+  const escaped = (Array.isArray(patterns) ? patterns : [])
+    .map((pattern) => String(pattern || '').trim())
+    .filter(Boolean);
+  if (escaped.length === 0) {
+    return null;
+  }
+  return escaped.join('|');
+}
+
+function generateSkillMd(config = {}) {
+  const name = config.name || 'new-skill';
+  const description = config.description || `${titleCase(name)} skill for FlowMind.`;
+  const category = VALID_CATEGORIES.includes(config.category) ? config.category : 'general';
+  const triggerPatterns = Array.isArray(config.triggerPatterns)
+    ? config.triggerPatterns.filter(Boolean)
+    : [];
+  const components = Array.isArray(config.components)
+    ? config.components.filter((choice) => COMPONENT_CHOICES.includes(choice))
+    : [];
+
+  const triggerBlock = triggerPatterns.length > 0
+    ? `\n\n## Trigger Patterns\n\n\`\`\`\n${triggerPatterns.map((p) => `"${p}"`).join(', ')}\n\`\`\`\n`
+    : '';
+
+  const componentLines = components.length > 0
+    ? `\ncomponentDependencies:\n${components.map((c) => `  - ${c}`).join('\n')}\n`
+    : '';
+
+  return `---
+name: ${name}
+description: "${escapeYamlString(description)}"
+metadata:
+  version: "1.0.0"
+  author: flowmind
+  category: ${category}${componentLines}---
+
+# ${titleCase(name)} Skill
+
+${description}${triggerBlock}
+`;
+}
+
+function generateSkillIndex(config = {}) {
+  const name = config.name || 'new-skill';
+  const triggerPatterns = Array.isArray(config.triggerPatterns)
+    ? config.triggerPatterns.filter(Boolean)
+    : [];
+  const components = Array.isArray(config.components)
+    ? config.components.filter((choice) => COMPONENT_CHOICES.includes(choice))
+    : [];
+
+  const triggerSource = buildTriggerRegexSource(triggerPatterns);
+  const hasTrigger = Boolean(triggerSource);
+
+  const adapterLines = components.length > 0
+    ? components.map((component) => `      const ${component} = context.componentRegistry?.getAdapter('${component}');`).join('\n')
+    : '      // const databaseQuery = context.componentRegistry?.getAdapter(\'databaseQuery\');';
+
+  let body;
+  if (components.length > 0) {
+    const primary = components[0];
+    const componentsSummary = components.map((c) => `${c}: !!${c}`).join(', ');
+    body = [
+      `${adapterLines}`,
+      ``,
+      `      if (!${primary}) {`,
+      `        return createSkillError('${name}', '${titleCase(name)} service not configured. Add the ${primary} component first.', {`,
+      `          input,`,
+      `          kind: 'missing-component',`,
+      `          retryable: true,`,
+      `          retryHints: [`,
+      `            'Configure the ${primary} component before using this skill.',`,
+      `            'Or bind a matching resource before retrying.'`,
+      `          ]`,
+      `        });`,
+      `      }`,
+      ``,
+      `      return createSkillResult('${name}', '${titleCase(name)} executed', {`,
+      `        input,`,
+      `        data: {`,
+      `          // TODO: implement the core logic using ${components.join(', ')}`,
+      `          components: { ${componentsSummary} }`,
+      `        }`,
+      `      });`
+    ].join('\n');
+  } else {
+    body = [
+      `      // TODO: resolve required adapters from context.componentRegistry and implement logic.`,
+      `      return createSkillResult('${name}', '${titleCase(name)} executed', {`,
+      `        input,`,
+      `        data: {}`,
+      `      });`
+    ].join('\n');
+  }
+
+  return `/**
+ * ${titleCase(name)} Skill
+ * Generated by flowmind skill create
+ */
+
+const { createSkillError, createSkillResult } = require('../../core/result-contract');
+const { wrapSkillCall } = require('../../core/skill-error-wrapper');
+
+module.exports = {
+  canHandle(input) {
+    if (!input) return false;${hasTrigger ? `
+    return /${triggerSource}/i.test(input);` : `
+    // TODO: add trigger detection, e.g. return /${name.replace(/-/g, ' ')}/i.test(input);
+    return false;`}
+  },
+
+  async execute(input, context = {}) {
+    return wrapSkillCall('${name}', input, async () => {
+${body}
+    }, { action: '${titleCase(name)}' });
+  }
+};
+`;
+}
+
+/**
+ * Create a new skill scaffold on disk.
+ * Returns the absolute directory path.
+ */
+async function createSkill(name, config = {}, skillsPath = null) {
+  const validation = validateSkillName(name);
+  if (!validation.valid) {
+    throw new Error(validation.reason);
+  }
+
+  const baseDir = skillsPath || path.join(__dirname, '..', 'skills');
+  const skillDir = path.join(baseDir, name);
+
+  if (await fs.pathExists(skillDir)) {
+    throw new Error(`Skill already exists: ${name} (at ${skillDir})`);
+  }
+
+  const fullConfig = { ...config, name };
+  const skillMd = generateSkillMd(fullConfig);
+  const skillIndex = generateSkillIndex(fullConfig);
+
+  await fs.ensureDir(skillDir);
+  await fs.writeFile(path.join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
+  await fs.writeFile(path.join(skillDir, 'index.js'), skillIndex, 'utf-8');
+
+  return skillDir;
+}
+
+module.exports = {
+  createSkill,
+  generateSkillMd,
+  generateSkillIndex,
+  validateSkillName,
+  VALID_CATEGORIES,
+  COMPONENT_CHOICES
+};

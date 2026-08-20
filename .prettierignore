@@ -1,0 +1,7 @@
+node_modules
+coverage
+flowmind-*.tgz
+package-lock.json
+.flowmind-codex
+.flowmind-codex-test
+.flowmind-demo

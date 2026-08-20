@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>FlowMind Service Management Log Bridge</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 24px; max-width: 720px; }
+      label { display: block; margin: 14px 0 6px; font-weight: 600; }
+      input[type="text"], input[type="password"] { box-sizing: border-box; width: 100%; padding: 8px; }
+      button { margin-top: 16px; padding: 8px 14px; }
+      .hint { color: #555; font-size: 13px; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>FlowMind Bridge</h1>
+    <label><input id="enabled" type="checkbox"> Enable bridge polling</label>
+    <label for="bridgeUrl">Bridge URL</label>
+    <input id="bridgeUrl" type="text" placeholder="http://127.0.0.1:47631">
+    <label for="token">Bridge Token</label>
+    <input id="token" type="password" placeholder="Paste token printed by flowmind browser-bridge">
+    <label for="targetOrigins">Allowed Service Management Origins</label>
+    <input id="targetOrigins" type="text" placeholder="https://service.example.com/*">
+    <button id="save">Save</button>
+    <div id="status" class="hint"></div>
+    <p class="hint">Grant only the service management backend origin used by this project. The extension executes read-only log queries sent by your local FlowMind bridge.</p>
+    <script src="options.js"></script>
+  </body>
+</html>

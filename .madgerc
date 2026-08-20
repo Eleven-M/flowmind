@@ -1,0 +1,11 @@
+{
+  "excludeRegExp": [
+    "node_modules",
+    "coverage",
+    "__tests__"
+  ],
+  "fileExtensions": [
+    "js",
+    "jsx"
+  ]
+}

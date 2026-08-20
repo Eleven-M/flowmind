@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: FlowMind Demo
+    url: https://github.com/Eleven-M/flowmind/blob/master/demo/DEMO.md
+    about: Start here if you want to understand current product scope before filing an issue.
+  - name: FlowMind Integration Guide
+    url: https://github.com/Eleven-M/flowmind/blob/master/docs/integration-guide.md
+    about: Use this guide for Claude Code, Codex, Cursor, and MCP setup questions.

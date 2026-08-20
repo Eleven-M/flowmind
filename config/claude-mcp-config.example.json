@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "flowmind": {
+      "command": "node",
+      "args": ["/path/to/flowmind/mcp/server.js"],
+      "env": {
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
+      }
+    }
+  }
+}

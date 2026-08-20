@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "flowmind": {
+      "command": "flowmind-mcp",
+      "args": [],
+      "env": {
+        "FLOWMIND_HOME": "/absolute/path/to/.flowmind"
+      }
+    }
+  }
+}
