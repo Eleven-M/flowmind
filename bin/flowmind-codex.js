@@ -5,6 +5,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const FlowMind = require('../core');
 const { ensurePrivateDir, writePrivateJson } = require('../core/secure-files');
+const { getFlowMindHome } = require('../core/runtime-home');
 const { version } = require('../package.json');
 
 function printJson(data) {
@@ -23,8 +24,14 @@ function fail(message, extra = {}) {
 }
 
 async function createFlowMind() {
-  const codexHome = process.env.FLOWMIND_CODEX_HOME || path.join(process.cwd(), '.flowmind-codex');
-  process.env.FLOWMIND_HOME = process.env.FLOWMIND_HOME || codexHome;
+  // FLOWMIND_CODEX_HOME remains an explicit isolated-store override. Without
+  // it, Codex shares the same user store as MCP and the regular CLI.
+  const legacyCodexHome = process.env.FLOWMIND_CODEX_HOME;
+  const sharedRoot = getFlowMindHome();
+  const codexHome = legacyCodexHome || path.join(sharedRoot, '.flowmind');
+  if (legacyCodexHome) {
+    process.env.FLOWMIND_HOME = process.env.FLOWMIND_HOME || legacyCodexHome;
+  }
 
   const configPath = path.join(codexHome, 'config.json');
   await ensurePrivateDir(codexHome);
@@ -33,7 +40,7 @@ async function createFlowMind() {
     await writePrivateJson(configPath, {
       version: '1.0.0',
       name: 'FlowMind Codex Workspace',
-      storagePath: codexHome,
+      storagePath: path.join(codexHome, 'learning'),
       learning: {
         storagePath: path.join(codexHome, 'learning')
       }

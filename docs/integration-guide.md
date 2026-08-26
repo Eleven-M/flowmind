@@ -41,8 +41,9 @@ flowmind-codex --skill log-audit "query traceId abc123"
 flowmind-codex doctor
 ```
 
-By default, `flowmind-codex` stores workspace-local state in `.flowmind-codex/`.
-Set `FLOWMIND_CODEX_HOME=/path/to/state` to use a different location.
+By default, `flowmind-codex` shares learning and resource state with MCP and the regular CLI
+under `~/.flowmind/`. Set `FLOWMIND_SHARED_HOME=/path/to/home` to select the shared parent
+directory. Set `FLOWMIND_CODEX_HOME=/path/to/state` only to intentionally isolate Codex state.
 
 ## MCP Server
 

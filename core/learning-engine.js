@@ -9,6 +9,7 @@ const { randomUUID } = require('crypto');
 const eventBus = require('./event-bus');
 const { expandPath } = require('./utils');
 const { writeJsonAtomic } = require('./atomic-file');
+const { getFlowMindHome } = require('./runtime-home');
 
 function shortId() {
   return randomUUID().slice(0, 8);
@@ -142,7 +143,7 @@ class LearningEngine {
   async init() {
     this.learningPath = this.config.get(
       'learning.storagePath',
-      path.join(process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || '', '.flowmind', 'learning')
+      path.join(getFlowMindHome(), '.flowmind', 'learning')
     );
 
     // Ensure directories exist

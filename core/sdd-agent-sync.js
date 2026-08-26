@@ -1,6 +1,7 @@
 const fs = require('fs-extra');
 const os = require('os');
 const path = require('path');
+const { getFlowMindHome } = require('./runtime-home');
 
 const SDD_SOURCE_SYNC_FILES = Object.freeze([
   'RESOURCE_INDEX.md',
@@ -22,7 +23,7 @@ const RESOURCE_BINDING_SPECS = Object.freeze({
 });
 
 function getHomeDir() {
-  return process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || os.homedir();
+  return getFlowMindHome();
 }
 
 function normalizeMcpServer(name) {

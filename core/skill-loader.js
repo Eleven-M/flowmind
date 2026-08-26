@@ -5,6 +5,7 @@
 
 const fs = require('fs-extra');
 const path = require('path');
+const { getFlowMindHome } = require('./runtime-home');
 
 class SkillLoader {
   constructor(config, learning, componentRegistry = null, honorEngine = null) {
@@ -21,7 +22,7 @@ class SkillLoader {
     const configuredLocalPath = config.get(
       'skills.localPath',
       path.join(
-        process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || '',
+        getFlowMindHome(),
         '.flowmind',
         'skills'
       )

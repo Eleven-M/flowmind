@@ -5,7 +5,7 @@
 
 const fs = require('fs-extra');
 const path = require('path');
-const os = require('os');
+const { getFlowMindHome } = require('./runtime-home');
 
 const NAME_REGEX = /^[a-z][a-z0-9-]*$/;
 
@@ -192,7 +192,7 @@ ${body}
  * scaffolding a built-in skill for the open-source distribution.
  */
 function getLocalSkillsDir() {
-  const home = process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || os.homedir();
+  const home = getFlowMindHome();
   return path.join(home, '.flowmind', 'skills');
 }
 

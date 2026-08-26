@@ -5,8 +5,8 @@
 
 const fs = require('fs-extra');
 const path = require('path');
-const os = require('os');
 const { writePrivateJson } = require('./secure-files');
+const { getFlowMindHome } = require('./runtime-home');
 
 class ConfigManager {
   constructor(configPath = null) {
@@ -379,7 +379,7 @@ class ConfigManager {
    * Get home directory
    */
   getHomeDir() {
-    return process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || os.homedir();
+    return getFlowMindHome();
   }
 
   /**

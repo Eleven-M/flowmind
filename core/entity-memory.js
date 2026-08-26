@@ -11,6 +11,7 @@ const path = require('path');
 const { expandPath } = require('./utils');
 const { bigramDice, PersistThrottler } = require('./learning-engine');
 const { writeJsonAtomic } = require('./atomic-file');
+const { getFlowMindHome } = require('./runtime-home');
 
 const ENTITY_TYPES = new Set(['service', 'trace', 'business']);
 const DEFAULT_MAX_ENTITIES = 500;
@@ -68,7 +69,7 @@ class EntityMemory {
     const learningPath = this.config.get(
       'learning.storagePath',
       path.join(
-        process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || '',
+        getFlowMindHome(),
         '.flowmind',
         'learning'
       )

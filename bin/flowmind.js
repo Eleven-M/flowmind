@@ -10,7 +10,6 @@ const chalk = require('chalk');
 const ora = require('ora');
 const inquirer = require('inquirer');
 const fs = require('fs-extra');
-const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
 const FlowMind = require('../core');
@@ -53,6 +52,7 @@ const {
 } = require('../core/init-scaffold');
 const { detectManagedCliHost, shouldUseAsciiUi, getNestedTuiGuardMessage } = require('../core/utils');
 const { isExitCommand } = require('../tui/ui');
+const { getFlowMindHome } = require('../core/runtime-home');
 
 /**
  * Restore terminal to sane state (cancel raw mode, show cursor, reset colors)
@@ -72,7 +72,7 @@ function restoreTerminal() {
 }
 
 function getFlowMindHomeDir() {
-  return process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || os.homedir();
+  return getFlowMindHome();
 }
 
 function getFlowMindConfigDir() {

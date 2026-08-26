@@ -66,7 +66,9 @@ flowmind-codex --skill log-audit "查询 traceId abc123"
 flowmind-codex doctor
 ```
 
-默认状态目录是当前工作区的 `.flowmind-codex/`。
+默认情况下，Codex 与 MCP、普通 CLI 共享 `~/.flowmind/` 下的学习和资源状态。
+可以通过 `FLOWMIND_SHARED_HOME=/path/to/home` 指定共享目录；只有需要隔离 Codex 数据时才设置
+`FLOWMIND_CODEX_HOME=/path/to/state`。
 
 ### Claude
 

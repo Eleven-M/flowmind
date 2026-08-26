@@ -1,6 +1,6 @@
 const fs = require('fs-extra');
-const os = require('os');
 const path = require('path');
+const { getFlowMindHome: resolveFlowMindHome } = require('./runtime-home');
 
 const ENV_PATTERNS = Object.freeze([
   { env: 'prod', pattern: /\bprod\b|生产/iu },
@@ -16,7 +16,7 @@ let cachedSignature = null;
 let cachedContext = null;
 
 function getFlowMindHome() {
-  return process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || os.homedir();
+  return resolveFlowMindHome();
 }
 
 function getSourceDir(options = {}) {

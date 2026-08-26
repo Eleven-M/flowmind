@@ -1,10 +1,10 @@
 const fs = require('fs-extra');
-const os = require('os');
 const path = require('path');
 const { writePrivateJson } = require('./secure-files');
+const { getFlowMindHome } = require('./runtime-home');
 
 function getFlowMindHomeDir() {
-  return process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || os.homedir();
+  return getFlowMindHome();
 }
 
 function redactWorkflowSecrets(value) {
