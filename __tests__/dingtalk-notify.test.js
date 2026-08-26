@@ -38,7 +38,7 @@ describe('dingtalk-notify', () => {
       expect(skill.extractDemandId('需求号 ABC_1')).toBe('ABC_1');
       expect(skill.extractDemandId('demand id DEM-42')).toBe('DEM-42');
       expect(skill.extractDemandId('需求 REQ-9 已完成')).toBe('REQ-9');
-      expect(skill.extractDemandId('需求编号 3564 评估报告')).toBe('3564');
+      expect(skill.extractDemandId('需求编号 1234 评估报告')).toBe('1234');
       expect(skill.extractDemandId('随便一句话')).toBe(null);
     });
 
@@ -101,7 +101,7 @@ describe('dingtalk-notify', () => {
     });
 
     test('uses the demand number as the evaluation title', () => {
-      expect(skill.buildTitle('3564')).toBe('需求 3564 评估报告');
+      expect(skill.buildTitle('1234')).toBe('需求 1234 评估报告');
       expect(skill.buildTitle(null)).toBe('评估报告');
     });
 
@@ -126,7 +126,7 @@ describe('dingtalk-notify', () => {
         conclusion: '可灰度上线，暂缓全量',
         status: '关注',
         metadata: {
-          demandId: '3564',
+          demandId: '1234',
           time: '2026-08-19 10:00:00',
           timeRange: '10:00-10:30',
           sampleSize: '11 组'
@@ -145,19 +145,47 @@ describe('dingtalk-notify', () => {
       });
 
       expect(report.startsWith('**结论**: 可灰度上线，暂缓全量。**状态**: 关注')).toBe(true);
-      expect(report).toContain('**需求编号**: 3564');
-      expect(report).toContain('**采集时间**: 10:00-10:30');
-      expect(report).toContain('**样本量**: 11 组');
+      expect(report).toContain('- **样本**: 11 组 ｜ **采集窗口**: 10:00-10:30');
       expect(report.indexOf('### 1. 需求完整度')).toBeLessThan(report.indexOf('### 2. 采集质量'));
       expect(report.indexOf('### 2. 采集质量')).toBeLessThan(report.indexOf('### 3. 性能结论'));
       expect(report.indexOf('### 3. 性能结论')).toBeLessThan(report.indexOf('### 4. 异常点'));
       expect(report.indexOf('### 4. 异常点')).toBeLessThan(report.indexOf('### 5. 建议/下一步'));
-      expect(report).toContain('**字段**: 关键词 ｜ B耗时(ms) ｜ A耗时(ms) ｜ 差值(ms)');
-      expect(report).toContain('蛋糕 ｜ B 2726 ms（先查·冷） ｜ A 1878 ms ｜ **↓ -848 ms**');
-      expect(report).toContain('奶茶 ｜ B 1280 ms ｜ A 1700 ms ｜ **↑ +420 ms**');
+      expect(report).toContain('蛋糕: B 2726 ms（先查·冷） → A 1878 ms，**↓ -848 ms**');
+      expect(report).toContain('奶茶: B 1280 ms → A 1700 ms，**↑ +420 ms**');
       expect(report).toContain('**A/B汇总**: 共 6 条，↑ 3，↓ 2，持平 1，未知 0');
       expect(report).toContain('其余 1 条已折叠为汇总');
-      expect(report).not.toContain('炸鸡 ｜ B 1500 ms');
+      expect(report).not.toContain('炸鸡: B 1500 ms');
+    });
+
+    test('skips latency A/B for non-performance changes', () => {
+      const report = skill.buildLayeredEvaluationReport({
+        requirement: '展示文案与字段格式优化，范围仅 demo-order-restful-api。',
+        dataLog: '灰度 SLS your-logstore，corrId 关联请求与响应。',
+        functionalVerification: 'store_search/get_home_list：4/4 页面输出「目标文案」，通过',
+        anomalies: '无范围内阻断项。',
+        nextSteps: '可全量上线，观察展示反馈。',
+        conclusion: '可全量上线',
+        status: '通过',
+        performanceApplicable: false,
+        sampleSize: '4 门店',
+        timeRange: '08-20 20:30 ~ 08-21 11:30'
+      });
+      expect(report).not.toContain('本次变更不含性能代码');
+      expect(report).not.toContain('未做耗时对比');
+      expect(report).toContain('store_search/get_home_list：4/4 页面输出「目标文案」，通过');
+      expect(report).not.toContain('**A/B汇总**');
+      expect(report).toContain('### 3. 性能结论');
+    });
+
+    test('strips transport instructions from the first line', () => {
+      const parsed = skill.parseInput(
+        `需求1234 模板验证报告，推送到钉钉 https://oapi.dingtalk.com/robot/send?access_token=abc123_DEF 关键词:报告\n**结论**: 通过。**状态**: 通过`
+      );
+      expect(parsed.demandId).toBe('1234');
+      expect(parsed.content.startsWith('**结论**')).toBe(true);
+      expect(parsed.content).not.toContain('推送');
+      expect(parsed.content).not.toContain('关键词');
+      expect(parsed.content).not.toContain('模板验证报告');
     });
 
     test('escapes markdown table cells', () => {
@@ -219,7 +247,7 @@ describe('dingtalk-notify', () => {
       });
 
       const result = await skill.execute(
-        `推送钉钉 ${WEBHOOK} 需求编号 3564 测试报告: 全量通过`,
+        `推送钉钉 ${WEBHOOK} 需求编号 1234 测试报告: 全量通过`,
         {}
       );
 
@@ -230,13 +258,13 @@ describe('dingtalk-notify', () => {
 
       const payload = JSON.parse(calls[0].options.body);
       expect(payload.msgtype).toBe('markdown');
-      expect(payload.markdown.title).toBe('需求 3564 评估报告');
-      expect(payload.markdown.text).toContain('3564');
+      expect(payload.markdown.title).toBe('需求 1234 评估报告');
+      expect(payload.markdown.text).toContain('1234');
       expect(payload).not.toHaveProperty('text');
       expect(payload.markdown.text).toContain('测试报告');
 
       expect(result.data.webhook).not.toContain('abc123def456');
-      expect(result.data.demandId).toBe('3564');
+      expect(result.data.demandId).toBe('1234');
       expect(result.data.response.errcode).toBe(0);
     });
 

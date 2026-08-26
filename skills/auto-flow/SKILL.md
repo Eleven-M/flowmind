@@ -1,6 +1,6 @@
 ---
 name: auto-flow
-description: Automated workflow orchestration skill for FlowMind. Define, execute, and manage complex multi-step workflows.
+description: Service deployment and workflow orchestration skill for FlowMind. Deploy/release services (部署/发布/上线) via Feiliu pipeline MCP, query pipeline status and runs (流水线/飞流), and orchestrate multi-step workflows.
 metadata:
   version: "1.0.0"
   author: flowmind
@@ -9,7 +9,7 @@ metadata:
 
 # Auto Flow Skill
 
-Define, execute, and manage complex multi-step workflows.
+Deploy services via Feiliu (飞流) CI/CD pipelines over MCP, query pipeline status, and orchestrate multi-step workflows.
 
 ## Features
 
@@ -39,6 +39,9 @@ Define, execute, and manage complex multi-step workflows.
 "批量", "batch"
 "定时", "scheduled"
 "工作流", "work flow"
+"部署", "deploy", "deployment"
+"发布", "上线"
+"流水线", "飞流"
 ```
 
 ## Workflow Definition

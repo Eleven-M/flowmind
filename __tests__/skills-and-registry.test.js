@@ -703,6 +703,42 @@ describe('skills and registry integration', () => {
     }));
   });
 
+  test('log-audit parses pts structured env and logstore without treating them as service names', async () => {
+    const buildQueryParams = jest.fn().mockImplementation((params) => params);
+    const queryLogs = jest.fn().mockResolvedValue({
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          status: 'ok',
+          total: 1,
+          logs: [{ message: 'hit' }]
+        })
+      }]
+    });
+
+    await logAudit.execute(
+      'env=pts logstore=pts-log 查询当前最近5分钟 aomi-takeout-restful-api 的请求耗时分布、慢请求Top、错误率80%左右原因；统计ERROR日志、HTTP状态码/业务错误码分布，判断是业务错误还是超时/降级/fallback/熔断',
+      {
+        componentRegistry: {
+          getAdapter: () => ({
+            providerName: 'aliyun-sls',
+            buildQueryParams,
+            queryLogs
+          })
+        }
+      }
+    );
+
+    expect(buildQueryParams).toHaveBeenCalledWith(expect.objectContaining({
+      env: 'pts',
+      logstore: 'pts-log',
+      service: undefined,
+      level: 'ERROR',
+      keyword: 'aomi-takeout-restful-api',
+      query: 'level: ERROR and "aomi-takeout-restful-api"'
+    }));
+  });
+
   test('log-audit unwraps nested SLS data.data arrays as real records', async () => {
     const buildQueryParams = jest.fn().mockImplementation((params) => params);
     const queryLogs = jest.fn().mockResolvedValue({

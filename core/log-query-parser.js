@@ -1,12 +1,13 @@
 function parseLogQueryParams(input, options = {}) {
   const params = {};
   const text = String(input || '');
+  const naturalText = stripStructuredParams(text);
 
   const traceMatch = text.match(/(?:trace[_-]?id|调用链)\s*[:=]?\s*(\S+)/i);
   if (traceMatch) params.traceId = traceMatch[1];
 
   const naturalProjectService = options.allowNaturalService !== false || options.allowNaturalProject !== false
-    ? extractNaturalProjectServicePair(text)
+    ? extractNaturalProjectServicePair(naturalText)
     : null;
   if (naturalProjectService) {
     if (naturalProjectService.project && !params.project) {
@@ -17,11 +18,13 @@ function parseLogQueryParams(input, options = {}) {
     }
   }
 
-  const serviceMatch = text.match(/(?:服务|service)\s*[:=]?\s*(\S+)/i);
+  const serviceMatch = text.match(
+    /(?:^|[^A-Za-z0-9._-])(?:服务|service)(?![A-Za-z0-9._-])\s*[:=]\s*([A-Za-z][A-Za-z0-9._-]{2,})\b/i
+  );
   if (serviceMatch) {
     params.service = serviceMatch[1];
   } else if (!params.service && options.allowNaturalService !== false) {
-    const naturalService = extractNaturalService(text);
+    const naturalService = extractNaturalService(naturalText);
     if (naturalService) {
       params.service = naturalService;
     }
@@ -31,23 +34,27 @@ function parseLogQueryParams(input, options = {}) {
   if (levelMatch) {
     params.level = levelMatch[1].toUpperCase();
   } else if (options.allowNaturalLevel !== false) {
-    const naturalLevel = extractNaturalLevel(text);
+    const naturalLevel = extractNaturalLevel(naturalText);
     if (naturalLevel) {
       params.level = naturalLevel;
     }
   }
 
-  const projectMatch = text.match(/(?:项目|project)\s*[:=]?\s*([A-Za-z][A-Za-z0-9._-]{2,})\b/i);
+  const projectMatch = text.match(
+    /(?:^|[^A-Za-z0-9._-])(?:项目|project)(?![A-Za-z0-9._-])\s*[:=]\s*([A-Za-z][A-Za-z0-9._-]{2,})\b/i
+  );
   if (projectMatch) {
     params.project = projectMatch[1];
   } else if (!params.project && options.allowNaturalProject !== false) {
-    const naturalProject = extractNaturalProject(text);
+    const naturalProject = extractNaturalProject(naturalText);
     if (naturalProject) {
       params.project = naturalProject;
     }
   }
 
-  const logstoreMatch = text.match(/(?:logstore|日志库)\s*[:=]?\s*(\S+)/i);
+  const logstoreMatch = text.match(
+    /(?:^|[^A-Za-z0-9._-])(?:logstore|日志库)(?![A-Za-z0-9._-])\s*[:=]\s*([A-Za-z][A-Za-z0-9._-]{2,})\b/i
+  );
   if (logstoreMatch) params.logstore = logstoreMatch[1];
 
   const env = extractLogEnvironment(text);
@@ -82,16 +89,23 @@ function parseLogQueryParams(input, options = {}) {
   if (keywordMatch) {
     params.keyword = keywordMatch[1].trim();
   } else if (options.allowQuotedKeyword !== false) {
-    const quotedKeyword = extractQuotedText(text);
+    const quotedKeyword = extractQuotedText(naturalText);
     if (quotedKeyword) {
       params.keyword = quotedKeyword;
     }
   }
 
   if (!params.keyword && options.allowNaturalKeyword !== false && !traceIdFromSuffix) {
-    const naturalKeyword = extractNaturalKeyword(text);
-    if (naturalKeyword) {
-      params.keyword = naturalKeyword;
+    const serviceKeyword = params.env || params.logstore || params.project
+      ? extractServiceLikeKeyword(naturalText)
+      : null;
+    if (serviceKeyword) {
+      params.keyword = serviceKeyword;
+    } else {
+      const naturalKeyword = extractNaturalKeyword(naturalText);
+      if (naturalKeyword) {
+        params.keyword = naturalKeyword;
+      }
     }
   }
 
@@ -108,6 +122,13 @@ function parseLogQueryParams(input, options = {}) {
   }
 
   return params;
+}
+
+function stripStructuredParams(input) {
+  return String(input || '').replace(
+    /(?:^|\s)(?:env|environment|logstore|project|service|level|keyword|query|from|to|limit)\s*[:=]\s*[^\s，,。；;]+/gi,
+    ' '
+  );
 }
 
 function extractExplicitSlsQuery(input) {
@@ -188,9 +209,9 @@ function extractLogEnvironment(input) {
   if (!text) return null;
 
   const explicitPatterns = [
-    /(?:环境|env)\s*[:=]?\s*(test|uat|gray|prod)\b/i,
-    /(?:在|到|切到|切换到|切换|进入|使用|查询)?\s*(test|uat|gray|prod)\s*(?:环境|env|日志库|容器|日志|链路|trace|调用链)/i,
-    /(?:在|到|切到|切换到|切换|进入|使用|查询)?\s*(test|uat|gray|prod)(?=(?:环境|env|日志库|容器|日志|链路|trace|调用链|中|的|里|内|上|下|$))/i,
+    /(?:^|[^A-Za-z0-9._-])(?:环境|env)(?![A-Za-z0-9._-])\s*[:=]?\s*(test|uat|gray|prod|pts)\b/i,
+    /(?:在|到|切到|切换到|切换|进入|使用|查询)?\s*(test|uat|gray|prod|pts)\s*(?:环境|env|日志库|容器|日志|链路|trace|调用链)/i,
+    /(?:在|到|切到|切换到|切换|进入|使用|查询)?\s*(test|uat|gray|prod|pts)(?=(?:环境|env|日志库|容器|日志|链路|trace|调用链|中|的|里|内|上|下|$))/i,
     /(?:测试|预发|灰度|生产|线上|正式)\s*(?:环境|env|日志库|容器|日志|链路|trace|调用链)?/i
   ];
 
@@ -231,6 +252,18 @@ function extractNaturalKeyword(input) {
     }
   }
 
+  return null;
+}
+
+function extractServiceLikeKeyword(input) {
+  const text = String(input || '');
+  const matches = [...text.matchAll(/\b([A-Za-z][A-Za-z0-9._-]*(?:-[A-Za-z0-9._-]+){2,})\b/g)];
+  for (const match of matches) {
+    const candidate = normalizeEntityCandidate(match[1]);
+    if (candidate && !isEnvironmentToken(candidate) && !isKnownConfigToken(candidate)) {
+      return candidate;
+    }
+  }
   return null;
 }
 
@@ -302,16 +335,26 @@ function normalizeNaturalKeyword(value) {
 }
 
 function normalizeEntityCandidate(value) {
-  const candidate = String(value || '').trim();
+  const candidate = String(value || '')
+    .trim()
+    .replace(/[，,。；;：:、]+$/, '');
   if (!candidate) return null;
   if (/^(日志|log|logs|错误|异常|报错|失败|问题|警告|告警|error|warn|info|debug)$/i.test(candidate)) {
+    return null;
+  }
+  if (isEnvironmentToken(candidate) || isKnownConfigToken(candidate)) {
     return null;
   }
   return candidate;
 }
 
 function isEnvironmentToken(value) {
-  return /^(test|uat|gray|prod|测试|预发|灰度|生产)$/i.test(String(value || '').trim());
+  const candidate = String(value || '').trim().replace(/-+$/, '');
+  return /^(test|uat|gray|prod|pts|测试|预发|灰度|生产)$/i.test(candidate);
+}
+
+function isKnownConfigToken(value) {
+  return /^(env|logstore|project|service|level|keyword|query|from|to|limit)$/i.test(String(value || '').trim());
 }
 
 function extractImplicitTraceId(text, env) {
@@ -369,7 +412,7 @@ function escapeRegExp(value) {
 }
 
 function buildEnvPattern() {
-  return '(?:test|uat|gray|prod|测试|预发|灰度|生产)';
+  return '(?:test|uat|gray|prod|pts|测试|预发|灰度|生产)';
 }
 
 function extractNaturalProjectServicePair(input) {

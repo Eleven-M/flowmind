@@ -204,14 +204,16 @@ function isPlainObject(value) {
 function buildLogQueryInput(params, context = {}, skillSettings = {}) {
   const resourceBinding = context.resourceBinding || null;
   const bindingConnection = resolveCompatibleBindingConnection(params, resourceBinding);
+  const relatedService = pickServiceEntity(context.relatedEntities, params.service, params.env);
+  const relatedAttributes = relatedService?.attributes || {};
   const timeWindow = resolveTimeWindow(params);
   const excludeInfrastructure = skillSettings.excludeInfrastructure !== false;
 
   return {
-    project: params.project || bindingConnection.project || undefined,
-    logstore: params.logstore || bindingConnection.logstore || undefined,
-    env: params.env || bindingConnection.env || undefined,
-    endpoint: params.endpoint || bindingConnection.endpoint || undefined,
+    project: params.project || bindingConnection.project || relatedAttributes.project || undefined,
+    logstore: params.logstore || bindingConnection.logstore || relatedAttributes.logstore || undefined,
+    env: params.env || bindingConnection.env || relatedService?.env || undefined,
+    endpoint: params.endpoint || bindingConnection.endpoint || relatedAttributes.endpoint || undefined,
     traceId: params.traceId || undefined,
     service: params.service || undefined,
     level: params.level || undefined,
@@ -224,6 +226,36 @@ function buildLogQueryInput(params, context = {}, skillSettings = {}) {
     line: params.limit || 100,
     excludeInfrastructure
   };
+}
+
+/**
+ * Pick the best service entity from cross-skill entity memory. Requires an
+ * exact service-name match, or an env-consistent candidate otherwise.
+ */
+function pickServiceEntity(relatedEntities, serviceName, env) {
+  if (!Array.isArray(relatedEntities)) return null;
+  const candidates = relatedEntities.filter(
+    (entity) => entity?.type === 'service' && entity?.name
+  );
+  if (candidates.length === 0) return null;
+
+  if (serviceName) {
+    const normalizedService = String(serviceName).toLowerCase();
+    const exact = candidates.find(
+      (entity) => String(entity.name).toLowerCase() === normalizedService
+    );
+    if (exact) return exact;
+  }
+
+  if (env) {
+    const normalizedEnv = String(env).toLowerCase();
+    const envMatch = candidates.find(
+      (entity) => String(entity.env || '').toLowerCase() === normalizedEnv
+    );
+    return envMatch || null;
+  }
+
+  return candidates[0];
 }
 
 function buildSuccessMessage(params = {}) {

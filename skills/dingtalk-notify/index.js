@@ -59,13 +59,21 @@ function extractSecret(text) {
 
 function extractDemandId(text) {
   const value = String(text || '');
+  const candidates = [];
   for (const pattern of DEMAND_ID_PATTERNS) {
     const match = value.match(pattern);
     if (match && match[1]) {
-      return match[1];
+      // Trim trailing separators so "需求1234-示例-..." yields "1234", not "1234-".
+      const id = match[1].replace(/[-_]+$/, '');
+      if (id && !candidates.includes(id)) {
+        candidates.push(id);
+      }
     }
   }
-  return null;
+  // Prefer pure-digit business demand numbers (1234) over internal record ids
+  // (YZLjZrLeRz) when both appear, so the message title stays user-facing.
+  const numeric = candidates.find((id) => /^\d+$/.test(id));
+  return numeric || candidates[0] || null;
 }
 
 /**
@@ -257,10 +265,9 @@ function buildAbExamples(logTable, maxExamples = MAX_AB_EXAMPLES) {
   }
   const visibleRows = rows.slice(0, Math.max(3, Math.min(maxExamples, MAX_AB_EXAMPLES)));
   const lines = [
-    '- **字段**: 关键词 ｜ B耗时(ms) ｜ A耗时(ms) ｜ 差值(ms)',
     ...visibleRows.map((row) => {
-      const note = row.note ? ` ｜ ${row.note}` : '';
-      return `- ${escapeMarkdownCell(row.keyword)} ｜ B ${escapeMarkdownCell(row.bValue)} ｜ A ${escapeMarkdownCell(row.aValue)} ｜ **${escapeMarkdownCell(row.delta)}**${note}`;
+      const note = row.note ? `（${row.note}）` : '';
+      return `- ${escapeMarkdownCell(row.keyword)}: B ${escapeMarkdownCell(row.bValue)} → A ${escapeMarkdownCell(row.aValue)}，**${escapeMarkdownCell(row.delta)}**${note}`;
     }),
     summarizeAbRows(rows)
   ];
@@ -280,6 +287,8 @@ function buildLayeredEvaluationReport({
   dataLog,
   functionalRisk,
   performance,
+  performanceApplicable,
+  functionalVerification,
   anomalies,
   conclusion,
   status,
@@ -289,19 +298,31 @@ function buildLayeredEvaluationReport({
   timeRange,
   logTable
 } = {}) {
+  // Concise header: demand id/time live in the message envelope (buildMarkdownMessage),
+  // so the body keeps a single meta line for iterate/sample/window only.
   const meta = [];
   const normalizedMetadata = metadata && typeof metadata === 'object' ? metadata : {};
-  if (normalizedMetadata.demandId) meta.push(`- **需求编号**: ${normalizedMetadata.demandId}`);
-  if (normalizedMetadata.time) meta.push(`- **时间**: ${normalizedMetadata.time}`);
-  if (timeRange || normalizedMetadata.timeRange) meta.push(`- **采集时间**: ${timeRange || normalizedMetadata.timeRange}`);
-  if (sampleSize || normalizedMetadata.sampleSize) meta.push(`- **样本量**: ${sampleSize || normalizedMetadata.sampleSize}`);
+  const metaParts = [];
+  if (normalizedMetadata.iterate) metaParts.push(`**迭代**: ${normalizedMetadata.iterate}`);
+  if (sampleSize || normalizedMetadata.sampleSize) metaParts.push(`**样本**: ${sampleSize || normalizedMetadata.sampleSize}`);
+  if (timeRange || normalizedMetadata.timeRange) metaParts.push(`**采集窗口**: ${timeRange || normalizedMetadata.timeRange}`);
+  if (metaParts.length) meta.push(`- ${metaParts.join(' ｜ ')}`);
 
   const abExamples = buildAbExamples(logTable);
   const collectionLines = compactParagraphLines(dataLog);
-  const performanceLines = [
-    compactParagraphLines(performance || conclusion, '暂无性能结论'),
-    ...abExamples
-  ].filter(Boolean);
+  const hasPerfInput = Boolean(performance) || abExamples.length > 0;
+  const perfApplicable = performanceApplicable === false ? false : performanceApplicable === true || hasPerfInput;
+  const performanceLines = perfApplicable
+    ? [
+        compactParagraphLines(performance || conclusion, '暂无性能结论'),
+        ...abExamples
+      ].filter(Boolean)
+    : compactParagraphLines(functionalVerification)
+        .split('\n')
+        .filter((l) => l && l !== '暂无补充信息');
+  if (performanceLines.length === 0) {
+    performanceLines.push('- 不适用');
+  }
   const statusText = normalizeInlineText(status || conclusion || '待确认');
   const conclusionText = normalizeInlineText(conclusion || statusText);
 
@@ -374,6 +395,18 @@ function cleanupContent(text, demandId) {
     content = content.replace(new RegExp(`需求\\s*[:：#]?\\s*${demandId}`, 'g'), '');
   }
   content = content.replace(LEADING_PUSH_PHRASE, '');
+  // Contract: transport instructions ("需求1234 模板验证报告，推送到钉钉 关键词:报告")
+  // live on the first line only; the report body starts at the second line. If the
+  // first line carries any transport keyword, drop the whole line so no instruction
+  // wording ever leaks into the pushed body.
+  const firstBreak = content.indexOf('\n');
+  if (firstBreak > 0) {
+    const head = content.slice(0, firstBreak);
+    const isReportHead = /^\s*(\*\*结论\*\*|#{1,4}\s|- )/.test(head);
+    if (!isReportHead && /推送|发送|通知|同步|关键词|机器人|钉钉|dingtalk/i.test(head)) {
+      content = content.slice(firstBreak + 1);
+    }
+  }
   return content
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/[ \t]+\n/g, '\n')

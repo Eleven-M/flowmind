@@ -20,17 +20,14 @@ class AliyunSlsAdapter extends LogServiceAdapter {
   }
 
   /**
-   * Get SLS endpoints from config.
-   * Falls back to default endpoints if not configured.
+   * Get SLS endpoints from config. Environment-to-region mapping is a
+   * company deployment fact, so no endpoint is guessed when unconfigured.
    */
   getEndpoints() {
     if (this.config.config && this.config.config.endpoints) {
       return this.config.config.endpoints;
     }
-    return {
-      test: 'cn-shenzhen.log.aliyuncs.com',
-      prod: 'cn-hongkong.log.aliyuncs.com'
-    };
+    return {};
   }
 
   /**
@@ -149,6 +146,7 @@ function normalizeEnvironment(env) {
   if (value === '预发') return 'uat';
   if (value === '灰度') return 'gray';
   if (value === '生产' || value === '线上' || value === '正式') return 'prod';
+  if (value === '压测') return 'pts';
   return value;
 }
 

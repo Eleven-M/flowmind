@@ -68,7 +68,7 @@ module.exports = {
     if (/绑定|bind|保存|记住/i.test(input) && /(mcp|token|地址|host|endpoint|url)/i.test(input)) {
       return false;
     }
-    return /自动化|自动部署|auto.*flow|工作流|workflow|pipeline|部署|发布|上线|执行流程|运行流程/i.test(input);
+    return /自动化|自动部署|auto.*flow|工作流|workflow|pipeline|部署|发布|上线|执行流程|运行流程|流水线|飞流/i.test(input);
   },
 
   async execute(input, context) {
@@ -187,7 +187,10 @@ function createWorkflowClient(context) {
     return { client: null, provider: null, binding: null, transportBacked: false };
   }
 
-  const transport = buildWorkflowTransport(binding);
+  const transport = buildWorkflowTransport(
+    binding,
+    resolveMcpServerTransport(context, binding.mcpServer)
+  );
   if (!transport.url) {
     return { client: null, provider: binding.provider || null, binding, transportBacked: false };
   }
@@ -227,9 +230,41 @@ function createWorkflowClient(context) {
   };
 }
 
-function buildWorkflowTransport(binding) {
+function resolveMcpServerTransport(context, mcpServerName) {
+  if (!mcpServerName) return null;
+  const mcpServers = context?.flowmind?.config?.get?.('mcpServers', {}) || {};
+  const serverConfig = mcpServers[mcpServerName];
+  if (!serverConfig) return null;
+  return {
+    url: serverConfig.url || serverConfig.address || serverConfig.endpoint || null,
+    headers: serverConfig.headers || {},
+    timeoutMs: serverConfig.timeoutMs || null
+  };
+}
+
+function buildWorkflowTransport(binding, mcpServerTransport = null) {
   const connection = binding?.connection || {};
-  const headers = {};
+  const nestedTransport = connection.transport || {};
+
+  const url =
+    connection.url ||
+    connection.address ||
+    connection.endpoint ||
+    nestedTransport.url ||
+    nestedTransport.address ||
+    nestedTransport.endpoint ||
+    mcpServerTransport?.url ||
+    null;
+
+  if (!url) {
+    return { url: null, headers: {}, timeoutMs: connection.timeoutMs || nestedTransport.timeoutMs || mcpServerTransport?.timeoutMs || 60000 };
+  }
+
+  const headers = {
+    ...(mcpServerTransport?.headers || {}),
+    ...(nestedTransport.headers || {}),
+    ...(connection.headers || {})
+  };
 
   if (connection.token) {
     headers.Authorization = `Bearer ${connection.token}`;
@@ -239,9 +274,9 @@ function buildWorkflowTransport(binding) {
   }
 
   return {
-    url: connection.url || connection.address || connection.endpoint || null,
+    url,
     headers,
-    timeoutMs: connection.timeoutMs || 60000
+    timeoutMs: connection.timeoutMs || nestedTransport.timeoutMs || mcpServerTransport?.timeoutMs || 60000
   };
 }
 
@@ -892,11 +927,54 @@ async function resolvePipelineForService(workflow, { serviceName, environment, c
     return localResolution;
   }
 
+  const entityResolution = resolveEntityMemoryPipeline(serviceName, environment, context);
+  if (entityResolution) {
+    return entityResolution;
+  }
+
   if (!workflow.transportBacked || typeof workflow.client?.getCurrentIterate !== 'function') {
     return null;
   }
 
   return resolveRemotePipelineForService(workflow.client, serviceName, environment);
+}
+
+/**
+ * Resolve a pipeline through cross-skill entity memory (entities learned by
+ * earlier auto-flow/log-audit executions). Validates the pipeline name with
+ * the same env-prefix rules as the local map.
+ */
+function resolveEntityMemoryPipeline(serviceName, environment, context) {
+  const entities = Array.isArray(context?.relatedEntities) ? context.relatedEntities : [];
+  const normalizedService = String(serviceName || '').toLowerCase();
+
+  for (const entity of entities) {
+    if (entity?.type !== 'service' || !entity.name) continue;
+    if (String(entity.name).toLowerCase() !== normalizedService) continue;
+
+    const attributes = entity.attributes || {};
+    const pipelineIds = (Array.isArray(attributes.pipelineIds) ? attributes.pipelineIds : [])
+      .filter(Boolean)
+      .map(String);
+    if (pipelineIds.length === 0) continue;
+
+    const pipelineName = attributes.pipelineName || null;
+    const entityEnv = normalizeEnvironment(entity.env || '')
+      || inferEnvironmentFromPipelineName(pipelineName);
+
+    if (environment && entityEnv && normalizeEnvironment(environment) !== entityEnv) continue;
+    if (pipelineName && !matchesPipelineName(pipelineName, environment || entityEnv, serviceName)) continue;
+
+    return {
+      source: 'entity-memory',
+      serviceName,
+      environment: environment || entityEnv || null,
+      pipelineId: pipelineIds[0],
+      pipelineName
+    };
+  }
+
+  return null;
 }
 
 function resolveLocalPipelineForService(serviceName, environment, context) {

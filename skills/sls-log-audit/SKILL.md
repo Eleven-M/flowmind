@@ -106,18 +106,37 @@ This skill uses the **logService** component. The actual log service provider is
 
 Configuration is managed in `flowmind.config.json` under `components.logService`.
 
-**Default endpoints** (aliyun-sls provider):
-
-| Environment | Endpoint | Region |
-|-------------|----------|--------|
-| test/uat | cn-shenzhen.log.aliyuncs.com | 深圳 |
-| gray/prod | cn-hongkong.log.aliyuncs.com | 香港 |
+**Endpoints** (aliyun-sls provider): environment-to-region mapping is a
+company deployment fact — configure it locally in
+`components.logService.providers.aliyun-sls.config.endpoints`
+(e.g. `"<region-id>.log.aliyuncs.com"` per environment); the skill never
+guesses a region.
 
 **Environment-aware logstore selection**:
 
 - `test环境` / `在test环境` / `测试环境` will resolve to the test logstore automatically
 - `uat` / `预发` will resolve to the UAT logstore automatically
 - Explicit `logstore` still wins if the user provides one
+
+## Query Caveats (业务逻辑注意事项)
+
+采集/巡检类日志查询必须遵守，避免把工具问题或业务语义误判为结论：
+
+1. **参数书写**：`logstore=xxx`、`project=xxx` 等参数后必须跟空格或行尾，禁止紧跟中文逗号/
+   括号再接其他描述（`(\S+)` 会把「your-logstore，时间范围…」整段吞进参数值，SLS 报
+   `invalid request method`）。关键词写在输入末尾，避免被前置冒号污染（如 `"：关键词"`）。
+2. **字段优先于文案**：业务字段名（如 `deliveryFee`）与展示文案（如「费用 $x 起」）
+   可能不一致；先从设计规格/接口文档确定字段名与预期格式，
+   再按字段名+文案双路搜索。搜不到预期字段 ≠ 改造未做（见 release-inspection 比对原则 2）。
+3. **端点确认用 corrId**：同一服务有网关转发（`:8080/服务名/路由`）与直连两种请求，
+   同一响应体可能被多个端点复用（如 `search/get_search_list` 与
+   `store/get_home_list` 结构相似）。下结论前必须用 corrId 关联
+   Incoming Request 的 URL 确认端点，禁止按响应内容猜测归属。
+4. **null/缺失的业务语义**：字段为 null 可能因超配送范围、门店打烊、活动态、透传上游为空，
+   也可能是范围外链路本就未接入；需结合请求上下文（定位/门店状态）与需求范围判断，
+   不得直接记为异常或「未完成」。
+5. **样本与窗口**：`reverse:true` 只取最新 N 条，结论需标注样本量与时间窗；同一 corrId 的
+   请求/响应需成对核验，避免把请求日志当响应证据。
 
 ## Learning Integration
 
@@ -217,15 +236,15 @@ Component provider configuration (in `flowmind.config.json`):
           "mcpServer": "sls-logs",
           "config": {
             "endpoints": {
-              "test": "cn-shenzhen.log.aliyuncs.com",
-              "uat": "cn-shenzhen.log.aliyuncs.com",
-              "gray": "cn-hongkong.log.aliyuncs.com",
-              "prod": "cn-hongkong.log.aliyuncs.com"
+              "test": "<region-id>.log.aliyuncs.com",
+              "uat": "<region-id>.log.aliyuncs.com",
+              "gray": "<region-id>.log.aliyuncs.com",
+              "prod": "<region-id>.log.aliyuncs.com"
             },
             "envConfig": {
               "test": {
                 "project": "test-project",
-                "logstore": "test_reg_log"
+                "logstore": "test-app-log"
               },
               "uat": {
                 "project": "uat-project",
