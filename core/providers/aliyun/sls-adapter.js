@@ -157,10 +157,6 @@ function resolveCompatibleBindingConnection(env, resourceBinding) {
   }
 
   const requestedEnv = normalizeEnvironment(env);
-  if (requestedEnv) {
-    return {};
-  }
-
   const bindingEnv = normalizeEnvironment(bindingConnection.env);
   if (requestedEnv && bindingEnv && requestedEnv !== bindingEnv) {
     return {};

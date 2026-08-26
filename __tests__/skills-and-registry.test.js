@@ -739,6 +739,39 @@ describe('skills and registry integration', () => {
     }));
   });
 
+  test('log-audit reuses a matching pts resource binding when env is explicit', async () => {
+    const buildQueryParams = jest.fn().mockImplementation((params) => params);
+    const queryLogs = jest.fn().mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ status: 'ok', logs: [] }) }]
+    });
+
+    await logAudit.execute('查询 pts 环境最近5分钟压测错误日志', {
+      resourceBinding: {
+        id: 'bind-pts',
+        connection: {
+          env: 'pts',
+          endpoint: 'pts-region.log.aliyuncs.com',
+          project: 'pts-project',
+          logstore: 'pts-logstore'
+        }
+      },
+      componentRegistry: {
+        getAdapter: () => ({
+          providerName: 'aliyun-sls',
+          buildQueryParams,
+          queryLogs
+        })
+      }
+    });
+
+    expect(buildQueryParams).toHaveBeenCalledWith(expect.objectContaining({
+      env: 'pts',
+      project: 'pts-project',
+      logstore: 'pts-logstore',
+      endpoint: 'pts-region.log.aliyuncs.com'
+    }));
+  });
+
   test('log-audit unwraps nested SLS data.data arrays as real records', async () => {
     const buildQueryParams = jest.fn().mockImplementation((params) => params);
     const queryLogs = jest.fn().mockResolvedValue({

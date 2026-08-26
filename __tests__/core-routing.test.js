@@ -280,6 +280,34 @@ describe('FlowMind routing and learning', () => {
     });
   });
 
+  test('explicit log skill skips nested planner and summary model calls', async () => {
+    const flowmind = new FlowMind();
+    flowmind.initialized = true;
+    flowmind.ai = {
+      understandIntent: jest.fn(),
+      extractParameters: jest.fn(),
+      summarizeResult: jest.fn()
+    };
+    flowmind.skills = {
+      get: jest.fn().mockReturnValue({
+        name: 'log-audit',
+        execute: jest.fn().mockResolvedValue({ ok: true })
+      })
+    };
+    flowmind.learning = {
+      getSkillLearnings: jest.fn().mockResolvedValue([]),
+      getPreferences: jest.fn().mockResolvedValue({}),
+      matchResourceBinding: jest.fn().mockResolvedValue(null)
+    };
+    flowmind.matcher = { match: jest.fn().mockResolvedValue(null) };
+
+    await flowmind.process('查询 pts 环境压测错误日志', { skill: 'log-audit' });
+
+    expect(flowmind.ai.understandIntent).not.toHaveBeenCalled();
+    expect(flowmind.ai.extractParameters).not.toHaveBeenCalled();
+    expect(flowmind.ai.summarizeResult).not.toHaveBeenCalled();
+  });
+
   test('selectSkill returns null for an unknown explicit skill', async () => {
     const flowmind = new FlowMind();
     flowmind.skills = {

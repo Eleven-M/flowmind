@@ -35,6 +35,10 @@ function isExplicitOfflineAnalysis(input) {
   return /离线分析|无模型|没有\s*AI|不用\s*AI|本地离线|offline analysis|without AI|no AI model/i.test(String(input || ''));
 }
 
+function isDirectSkillExecution(skillName) {
+  return new Set(['log-audit', 'sls-log-audit', 'offline-design-analysis']).has(String(skillName || ''));
+}
+
 class FlowMind {
   constructor(options = {}) {
     this.config = new ConfigManager(options.configPath);
@@ -151,8 +155,16 @@ class FlowMind {
         enhancedContext.userSpecifiedSkill = true;
       }
 
+      // Explicit deterministic skills do not need a second model planner.
+      // This matters for MCP clients where the host model already selected
+      // the skill tool.
+      const explicitSkillName = skillDirective?.skill || context.skill || null;
+      const directSkillExecution = isDirectSkillExecution(explicitSkillName);
+
       // 1. AI Intent Understanding (if available)
-      const intent = await this.safeUnderstandIntent(input, enhancedContext);
+      const intent = explicitSkillName
+        ? { intent: 'explicit-skill', action: explicitSkillName, confidence: 1, source: 'explicit' }
+        : await this.safeUnderstandIntent(input, enhancedContext);
 
       if (this.isAIStatusQuery(input)) {
         const statusResult = await this.formatAIStatusResponse(input, enhancedContext, intent, Date.now() - startTime);
@@ -210,7 +222,9 @@ class FlowMind {
       }
 
       // 5. Extract parameters using AI (if available)
-      const extractedParams = await this.safeExtractParameters(input, skill.name);
+      const extractedParams = directSkillExecution
+        ? {}
+        : await this.safeExtractParameters(input, skill.name);
 
       // 6. Execute with learning applied
       const learnings = await this.learning.getSkillLearnings(skill.name);
@@ -225,11 +239,13 @@ class FlowMind {
       const result = await this.executeWithLearning(skill, input, executeContext);
 
       // 7. Generate AI summary (if available)
-      const summary = await this.safeSummarizeResult(result, {
-        skill: skill.name,
-        intent: intent,
-        learnings
-      });
+      const summary = directSkillExecution
+        ? null
+        : await this.safeSummarizeResult(result, {
+            skill: skill.name,
+            intent: intent,
+            learnings
+          });
 
       const aiStatus = typeof this.ai?.getStatus === 'function' ? this.ai.getStatus() : {};
 

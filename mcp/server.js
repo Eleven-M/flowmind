@@ -299,10 +299,14 @@ class FlowMindMCPServer {
     for (const skill of skills) {
       const fullSkill = this.flowmind.skills.get(skill.name) || skill;
       const capabilityTags = this.getCapabilityTagsForSkill(skill.name);
+      const directExecutionHint = ['log-audit', 'sls-log-audit'].includes(skill.name)
+        ? 'Direct execution tool: use this for log queries instead of flowmind_process to avoid duplicate planning.'
+        : null;
       tools.push(attachOutputSchema({
         name: `flowmind_skill_${skill.name}`,
         description: [
           skill.description || `Execute ${skill.name} skill`,
+          directExecutionHint,
           capabilityTags.length > 0 ? `Capabilities: ${capabilityTags.join(', ')}` : null
         ]
           .filter(Boolean)
