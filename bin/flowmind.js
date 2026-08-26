@@ -21,9 +21,7 @@ const { launchInkApp } = require('../core/cli-ink');
 const { syncSddAgentToFlowMind } = require('../core/sdd-agent-sync');
 const { getUpgradeStatus } = require('../core/upgrade-status');
 const { runReleaseCheck } = require('../core/release-check');
-const { previewWorkflow } = require('../core/dry-run');
-const { executeWorkflow, resumeWorkflow } = require('../core/workflow-executor');
-const { WorkflowHistoryStore } = require('../core/workflow-history');
+const { WorkflowService } = require('../core/workflow-service');
 const { ensurePrivateDir, writePrivateJson } = require('../core/secure-files');
 const { formatResultText } = require('../tui/format-result');
 const { buildConfigPackageArtifacts, loadConfigPackage } = require('../core/config-package');
@@ -81,8 +79,8 @@ function getFlowMindConfigDir() {
   return path.join(getFlowMindHomeDir(), '.flowmind');
 }
 
-function createWorkflowHistoryStore() {
-  return new WorkflowHistoryStore();
+function createWorkflowService(flowmind = null) {
+  return new WorkflowService({ flowmind });
 }
 
 function buildDemoResult(scenario = 'log-audit') {
@@ -4343,17 +4341,16 @@ program
   .action(async (options) => {
     try {
       const chain = await fs.readJson(path.resolve(options.chain));
+      const workflowService = createWorkflowService();
       if (!options.execute) {
-        console.log(JSON.stringify(previewWorkflow(chain), null, 2));
+        console.log(JSON.stringify(workflowService.preview(chain), null, 2));
         return;
       }
       const fm = await initFlowMind();
-      const result = await executeWorkflow(chain, {
-        flowmind: fm,
+      workflowService.setFlowMind(fm);
+      const result = await workflowService.execute(chain, {
         approvalToken: options.approvalToken,
-        continueOnError: options.continueOnError === true,
-        dryRun: false,
-        historyStore: createWorkflowHistoryStore()
+        continueOnError: options.continueOnError === true
       });
       console.log(JSON.stringify(result, null, 2));
       if (result.status !== 'succeeded') process.exitCode = 1;
@@ -4371,8 +4368,8 @@ program
   .option('--resumable', 'Only show workflow records that can be resumed')
   .action(async (options) => {
     try {
-      const historyStore = createWorkflowHistoryStore();
-      const workflows = await historyStore.list({
+      const workflowService = createWorkflowService();
+      const workflows = await workflowService.history({
         limit: Number(options.limit),
         status: options.status,
         resumable: options.resumable === true
@@ -4392,18 +4389,11 @@ program
   .option('--continue-on-error', 'Continue after a failed step')
   .action(async (options) => {
     try {
-      const historyStore = createWorkflowHistoryStore();
-      const record = await historyStore.get(options.executionId);
-      if (!record) {
-        throw new Error(`Workflow execution not found: ${options.executionId}`);
-      }
       const fm = await initFlowMind();
-      const result = await resumeWorkflow(record, {
-        flowmind: fm,
+      const workflowService = createWorkflowService(fm);
+      const result = await workflowService.resume(options.executionId, {
         approvalToken: options.approvalToken,
-        continueOnError: options.continueOnError === true,
-        dryRun: false,
-        historyStore
+        continueOnError: options.continueOnError === true
       });
       console.log(JSON.stringify(result, null, 2));
       if (result.status !== 'succeeded') process.exitCode = 1;

@@ -9,11 +9,8 @@ const FlowMind = require('../core');
 const eventBus = require('../core/event-bus');
 const { isErrorResultPayload } = require('../core/result-contract');
 const { TaskStore } = require('../core/task-store');
-const { WorkflowHistoryStore } = require('../core/workflow-history');
+const { WorkflowService } = require('../core/workflow-service');
 const { attachKnowledgeDepositionCandidates } = require('../core/knowledge-deposition');
-const { buildFollowUpChain } = require('../core/automation-chain');
-const { previewWorkflow } = require('../core/dry-run');
-const { executeWorkflow, resumeWorkflow } = require('../core/workflow-executor');
 const { version } = require('../package.json');
 
 const CAPABILITY_GROUPS = Object.freeze({
@@ -49,7 +46,11 @@ class FlowMindMCPServer {
     this.tasks = new Map();
     this.taskCounter = 0;
     this.taskStore = options.taskStore || new TaskStore(options.taskStoreOptions || {});
-    this.workflowHistory = options.workflowHistory || new WorkflowHistoryStore(options.workflowHistoryOptions || {});
+    this.workflowService = options.workflowService || new WorkflowService({
+      workflowHistoryOptions: options.workflowHistoryOptions,
+      historyStore: options.workflowHistory
+    });
+    this.workflowHistory = this.workflowService.historyStore;
   }
 
   async init() {
@@ -57,6 +58,7 @@ class FlowMindMCPServer {
 
     this.flowmind = new FlowMind();
     await this.flowmind.init();
+    this.workflowService.setFlowMind(this.flowmind);
     await this.loadPersistedTasks();
     this.initialized = true;
   }
@@ -874,51 +876,43 @@ class FlowMindMCPServer {
         ]
       };
     } else if (name === 'flowmind_preview_workflow') {
-      const chain = args.chain || buildFollowUpChain(args.result);
       result = {
-        content: [{ type: 'text', text: JSON.stringify(previewWorkflow(chain || {}), null, 2) }]
+        content: [{ type: 'text', text: JSON.stringify(this.workflowService.preview(args.chain || args.result || {}), null, 2) }]
       };
     } else if (name === 'flowmind_execute_workflow') {
-      const execution = await executeWorkflow(args.chain, {
-        flowmind: this.flowmind,
+      const execution = await this.workflowService.execute(args.chain, {
         approvalToken: args.approvalToken,
         continueOnError: args.continueOnError === true,
-        context: args.context || {},
-        dryRun: false,
-        historyStore: this.workflowHistory
+        context: args.context || {}
       });
       result = {
         content: [{ type: 'text', text: JSON.stringify(execution, null, 2) }],
         isError: execution.status === 'failed'
       };
     } else if (name === 'flowmind_resume_workflow') {
-      const record = await this.workflowHistory.get(args.executionId);
-      if (!record) {
+      const execution = await this.workflowService.resume(args.executionId, {
+        approvalToken: args.approvalToken,
+        continueOnError: args.continueOnError === true,
+        context: args.context || {}
+      });
+      if (execution.status === 'not_found') {
         result = {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({ error: `Workflow execution not found: ${args.executionId}` })
+              text: JSON.stringify({ error: execution.error })
             }
           ],
           isError: true
         };
       } else {
-        const execution = await resumeWorkflow(record, {
-          flowmind: this.flowmind,
-          approvalToken: args.approvalToken,
-          continueOnError: args.continueOnError === true,
-          context: args.context || {},
-          dryRun: false,
-          historyStore: this.workflowHistory
-        });
         result = {
           content: [{ type: 'text', text: JSON.stringify(execution, null, 2) }],
           isError: execution.status === 'failed'
         };
       }
     } else if (name === 'flowmind_workflow_history') {
-      const workflows = await this.workflowHistory.list({
+      const workflows = await this.workflowService.history({
         limit: args.limit,
         status: args.status,
         resumable: args.resumable === true
