@@ -117,11 +117,50 @@ dist/
 .flowmind-codex-test/
 .vhs/
 .npm-cache/
-flowmind-learnings.json
-flowmind-scenes.json
+flowmind-learnings*.json
+flowmind-scenes*.json
+flowmind-learning-bundle*.json
+
+# AI model artifacts: provider/model caches and local weights are user-local.
+models/
+model/
+model-cache/
+checkpoints/
+checkpoint/
+weights/
+.ollama/
+.huggingface/
+.cache/huggingface/
+.cache/torch/
+.cache/modelscope/
+.cache/lm-studio/
+.lmstudio/
+.localai/
+*.gguf
+*.ggml
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.onnx
 
 # 本地 Claude Code 配置（含内部 MCP 引用）
 .claude/settings.local.json
 .flowmind-cache
 .flowmindrc
-learning/records/
+
+# FlowMind 本地数据隔离：learning/RAG 学习数据、资源绑定、实体记忆、
+# 内部资源索引与沉淀文档一律禁止入库（含从 sdd-agent 同步来的材料）
+learning/
+entities.json
+resource-bindings.json
+scene-mappings.json
+sdd-agent-sync-state.json
+source/
+sdd-records/
+RESOURCE_INDEX.md
+project-git-map.json
+project-db-configs.json
+feign-link-map.json
+auto-flow-apis.md
+auto-flow-pipeline-map.json

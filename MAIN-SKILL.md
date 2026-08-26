@@ -124,20 +124,22 @@ flowmind process --skill auto-flow "执行部署流程"
 flowmind 自身）：凡经 flowmind 产出的设计，代码交付与归档同样强制。
 
 ```
-PROPOSAL → DESIGN/SPECS → TASKS（开发）→ 代码合入 → 双归档
-                                           ├─ 设计归档: openspec/changes/archive/YYYY-MM-DD-<name>/
-                                           └─ 代码归档: 归档目录内 CODE-DELIVERY.md（仓库/分支/提交/MR/合入状态）
+proposal → design/specs → tasks（开发）→ 代码合入 → 双归档
+                                           ├─ 设计归档: openspec/changes/archive/YYYY-MM-DD-<需求编号>-<name>/
+                                           └─ 代码归档: 归档目录内 code-delivery.md（仓库/分支/提交/MR/合入状态）
 ```
 
 硬性规则：
 
-1. **一旦用 OpenSpec 产出设计（PROPOSAL/DESIGN/SPECS），同一工作流必须完成 TASKS 全部开发项**，不得只留设计。
-2. **TASKS 全部 `[x]` 不等于完成**：开发的代码必须先闭环（合入目标分支或有明确去向），**未合入/无去向的代码不得标记完成**。
-3. **归档是双归档**，由 `archive-change` 技能执行（触发词："归档"）：
-   - 设计归档：变更目录移入 `openspec/changes/archive/YYYY-MM-DD-<name>/`（日期取变更创建日），`.openspec.yaml` 写 `status: completed` + `archivedAt`；
-   - 代码归档：归档目录内必须有 `CODE-DELIVERY.md`，记录仓库、分支、提交（short_id + 标题）、MR/PR 号、合入状态/部署环境。纯文档类变更须显式写「无代码变更」。
-4. `openspec/changes/` 根目录只允许存在「进行中」的变更（TASKS 有未完成项）。每次会话收尾时运行 `node scripts/check-openspec-lifecycle.js [项目changes目录]` 检查（缺省查 flowmind 自身）：有 TASKS 全完成的变更 → 双归档后再结束；长期停留未开发的纯设计 → 推进开发或注明阻塞原因。
-5. 未双归档的已完成变更视为流程未闭环，不得开启新的 OpenSpec 变更。
+1. **OpenSpec 文件名必须全小写**：标准文件为 `proposal.md`、`specs.md`、`design.md`、`tasks.md`、`.openspec.yaml`、`code-delivery.md`；不得再新建 `PROPOSAL.md`、`TASKS.md` 等大写文件。
+2. **OpenSpec 变更目录必须为 `YYYY-MM-DD-<需求编号>-<小写短横线名称>`**，例如 `2026-08-26-3418-store-restriction`。归档目录沿用同名目录，放入 `openspec/changes/archive/`。
+3. **一旦用 OpenSpec 产出设计（`proposal.md`/`design.md`/`specs.md`），同一工作流必须完成 `tasks.md` 全部开发项**，不得只留设计。
+4. **`tasks.md` 全部 `[x]` 不等于完成**：开发的代码必须先闭环（合入目标分支或有明确去向），**未合入/无去向的代码不得标记完成**。
+5. **归档是双归档**，由 `archive-change` 技能执行（触发词："归档"）：
+   - 设计归档：变更目录移入 `openspec/changes/archive/YYYY-MM-DD-<需求编号>-<name>/`（日期取变更创建日），`.openspec.yaml` 写 `status: completed` + `archivedAt`；
+   - 代码归档：归档目录内必须有 `code-delivery.md`，记录仓库、分支、提交（short_id + 标题）、MR/PR 号、合入状态/部署环境。纯文档类变更须显式写「无代码变更」。
+6. `openspec/changes/` 根目录只允许存在「进行中」的变更（`tasks.md` 有未完成项）。每次会话收尾时运行 `node scripts/check-openspec-lifecycle.js [项目changes目录]` 检查（缺省查 flowmind 自身）：有 `tasks.md` 全完成的变更 → 双归档后再结束；长期停留未开发的纯设计 → 推进开发或注明阻塞原因。
+7. 未双归档的已完成变更视为流程未闭环，不得开启新的 OpenSpec 变更。
 
 ## Configuration
 

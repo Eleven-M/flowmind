@@ -12,6 +12,140 @@ const SECRET_PATTERNS = [
   { name: 'private key', pattern: /-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/ }
 ];
 
+/**
+ * Local learning/RAG/resource material that must never ship in the npm
+ * package. Patterns are matched against the npm pack file list (paths
+ * relative to the package root).
+ */
+const LOCAL_DATA_PATTERNS = [
+  { name: 'flowmind home directory', pattern: /(^|\/)\.flowmind(-[^/]+)?\// },
+  { name: 'learning data', pattern: /(^|\/)learning\// },
+  {
+    name: 'learning store file',
+    pattern: /(^|\/)(entities|resource-bindings|skill-bindings|scene-mappings|stats)\.json$/
+  },
+  { name: 'synced source material', pattern: /(^|\/)source\// },
+  { name: 'sdd-agent records', pattern: /(^|\/)sdd-records\// },
+  {
+    name: 'AI model artifact directory',
+    pattern:
+      /(^|\/)(models?|model-cache|model-cache-dir|checkpoints?|weights?|\.ollama|\.huggingface|\.cache\/huggingface|\.cache\/torch|\.cache\/modelscope|\.cache\/lm-studio|\.lmstudio|\.localai)\//
+  },
+  { name: 'AI model weight file', pattern: /(^|\/).+\.(?:gguf|ggml|safetensors|ckpt|pt|pth|onnx)$/i },
+  {
+    name: 'internal resource index',
+    pattern:
+      /(^|\/)(RESOURCE_INDEX\.md|project-git-map\.json|project-db-configs\.json|feign-link-map\.json|auto-flow-apis\.md|auto-flow-pipeline-map\.json)$/
+  },
+  { name: 'flowmind export bundle', pattern: /(^|\/)flowmind-(learnings|scenes|learning-bundle)[^/]*\.json$/ },
+  { name: 'env file', pattern: /(^|\/)\.env(\.|$)/ },
+  { name: 'npm config with credentials', pattern: /(^|\/)\.npmrc$/ },
+  { name: 'local skill marker', pattern: /(^|\/)skills\/[^/]+\/\.local\.json$/ }
+];
+
+function scanPackedFilesForLocalData(packedFiles) {
+  const findings = [];
+  for (const filePath of packedFiles || []) {
+    const normalized = String(filePath).replace(/^\.\//, '');
+    for (const rule of LOCAL_DATA_PATTERNS) {
+      if (rule.pattern.test(normalized)) {
+        findings.push({ file: normalized, issue: rule.name });
+        break;
+      }
+    }
+  }
+  return findings;
+}
+
+/**
+ * Skills and shipped code must stay generic: company/project-level names,
+ * business field names, and real credentials belong in local resources
+ * (skillConfig / bindings / source material), never in the distribution.
+ */
+const COMPANY_MARKER_PATTERNS = [
+  { name: 'company name', pattern: /aomi|澳觅/i },
+  { name: 'internal gateway', pattern: /mcpgateway/i },
+  { name: 'company business field', pattern: /amountOfSendInfo|takeoutPrice/i },
+  { name: 'internal API route', pattern: /takeout_store_search|comprehensive_search/i },
+  { name: 'company campaign term', pattern: /闪购/ },
+  { name: 'hardcoded webhook token', pattern: /access_token=[A-Za-z0-9_]{16,}/ },
+  { name: 'project target key', pattern: /merchantBackendLog/ }
+];
+
+// Legacy provider aliases kept for pre-2.2.0 config compatibility; they are
+// pure name mappings with no company endpoints or credentials.
+const COMPANY_MARKER_ALLOWLIST = ['friday-flow', 'friday-auto-flow'];
+
+const SHIPPED_SOURCE_DIRS = [
+  'bin',
+  'core',
+  'browser-extension',
+  'mcp',
+  'skills',
+  'tui',
+  'dashboard',
+  'scripts',
+  'config',
+  'docs',
+  'releases'
+];
+
+function stripAllowlistedMarkers(content) {
+  let stripped = content;
+  for (const marker of COMPANY_MARKER_ALLOWLIST) {
+    stripped = stripped.split(marker).join('');
+  }
+  return stripped;
+}
+
+function scanContentForCompanyMarkers(content, relativePath) {
+  const findings = [];
+  const stripped = stripAllowlistedMarkers(String(content || ''));
+  for (const rule of COMPANY_MARKER_PATTERNS) {
+    const match = stripped.match(rule.pattern);
+    if (match) {
+      findings.push({ file: relativePath, issue: rule.name, sample: match[0] });
+    }
+  }
+  return findings;
+}
+
+async function collectTextFiles(rootDir, relativeDirs = []) {
+  const files = [];
+  for (const relativeDir of relativeDirs) {
+    const fullDir = path.join(rootDir, relativeDir);
+    if (!(await fs.pathExists(fullDir))) continue;
+    const entries = await fs.readdir(fullDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const relativePath = path.join(relativeDir, entry.name);
+      const fullPath = path.join(rootDir, relativePath);
+      if (entry.isDirectory()) {
+        files.push(...(await collectTextFiles(rootDir, [relativePath])));
+      } else if (/\.(?:js|jsx|ts|md|json|ya?ml|html|css|mjs|cjs)$/i.test(entry.name)) {
+        const stat = await fs.stat(fullPath).catch(() => null);
+        if (stat && stat.size <= 512 * 1024) {
+          files.push({ fullPath, relativePath });
+        }
+      }
+    }
+  }
+  return files;
+}
+
+async function scanShippedSourceForCompanyMarkers(rootDir, dirs = SHIPPED_SOURCE_DIRS) {
+  const findings = [];
+  const files = await collectTextFiles(rootDir, dirs);
+  for (const { fullPath, relativePath } of files) {
+    // This module defines the detector patterns themselves; skip the
+    // signature file, exactly like an antivirus scanner does.
+    if (relativePath === path.join('core', 'release-check.js')) continue;
+    const content = await readIfExists(fullPath);
+    if (!content) continue;
+    findings.push(...scanContentForCompanyMarkers(content, relativePath));
+  }
+  return findings;
+}
+
 async function readIfExists(filePath) {
   if (!(await fs.pathExists(filePath))) return null;
   return fs.readFile(filePath, 'utf-8');
@@ -174,10 +308,26 @@ async function runReleaseCheck(options = {}) {
     path.join(rootDir, 'package.json'),
     ...(await collectFilesForSecretScan(rootDir, ['docs', 'config']))
   ];
+  // Also scan the actual package payload for secrets (bounded by size).
+  if (packedFiles.ok) {
+    for (const packedPath of packedFiles.files) {
+      if (!/\.(?:md|json|ya?ml|txt)$/i.test(packedPath)) continue;
+      const fullPath = path.join(rootDir, packedPath);
+      const stat = await fs.stat(fullPath).catch(() => null);
+      if (!stat || stat.size > 512 * 1024) continue;
+      secretTargets.push(fullPath);
+    }
+  }
   const secretFindings = [];
+  const secretScanned = new Set();
   for (const filePath of secretTargets) {
+    if (secretScanned.has(filePath)) continue;
+    secretScanned.add(filePath);
     secretFindings.push(...(await scanFileForSecrets(filePath)));
   }
+
+  const localDataFindings = packedFiles.ok ? scanPackedFilesForLocalData(packedFiles.files) : [];
+  const companyMarkerFindings = await scanShippedSourceForCompanyMarkers(rootDir);
 
   const checks = [
     {
@@ -213,6 +363,24 @@ async function runReleaseCheck(options = {}) {
         : `publint reported ${publintResult.messages.length} issue(s)`
     },
     {
+      key: 'local-data-scan',
+      status: localDataFindings.length === 0 ? 'ok' : 'error',
+      message:
+        localDataFindings.length === 0
+          ? 'No local learning/resource data in the npm package'
+          : `Local data must not ship: ${localDataFindings.map((item) => `${item.file} (${item.issue})`).join(', ')}`
+    },
+    {
+      key: 'generic-skill-scan',
+      status: companyMarkerFindings.length === 0 ? 'ok' : 'error',
+      message:
+        companyMarkerFindings.length === 0
+          ? 'Shipped skills/code stay generic (no company/project markers)'
+          : `Company markers must move to local resources: ${companyMarkerFindings
+              .map((item) => `${item.file} (${item.issue}: ${item.sample})`)
+              .join(', ')}`
+    },
+    {
       key: 'secret-scan',
       status: secretFindings.length === 0 ? 'ok' : 'error',
       message:
@@ -242,5 +410,10 @@ async function runReleaseCheck(options = {}) {
 
 module.exports = {
   runReleaseCheck,
-  SECRET_PATTERNS
+  scanPackedFilesForLocalData,
+  scanContentForCompanyMarkers,
+  scanShippedSourceForCompanyMarkers,
+  SECRET_PATTERNS,
+  LOCAL_DATA_PATTERNS,
+  COMPANY_MARKER_PATTERNS
 };
