@@ -337,8 +337,15 @@ class FlowMind {
       sourceInference
     };
 
-    // Execute skill
-    const result = await skill.execute(input, enhancedContext);
+    // Execute skill with an optional per-skill deadline. The signal lets
+    // cooperative skills cancel their transport; the race also protects
+    // legacy skills that do not consume AbortController yet.
+    const timeoutMs = Number(enhancedContext.skillConfig?.timeoutMs) || 0;
+    const result = await executeWithTimeout(
+      () => skill.execute(input, { ...enhancedContext, signal: enhancedContext.signal || undefined }),
+      timeoutMs,
+      skill.name
+    );
     const resolvedResult = await this.resolveDeferredMcpResult(result, skill, enhancedContext);
     const chainedResult = attachFollowUpChain(resolvedResult);
     const finalResult = attachKnowledgeDepositionCandidates(chainedResult, {
@@ -1285,6 +1292,26 @@ class FlowMind {
       summary: { total: checks.length, ok: checks.filter((c) => c.status === 'ok').length, warnings, errors }
     };
   }
+}
+
+function executeWithTimeout(operation, timeoutMs, skillName) {
+  if (!timeoutMs || timeoutMs <= 0) return operation();
+
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  let timer;
+  const operationResult = operation(controller?.signal);
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller?.abort();
+      const error = new Error(`Skill ${skillName || 'unknown'} timed out after ${timeoutMs}ms`);
+      error.code = 'SKILL_TIMEOUT';
+      error.retryable = true;
+      reject(error);
+    }, timeoutMs);
+    if (typeof timer.unref === 'function') timer.unref();
+  });
+
+  return Promise.race([operationResult, timeout]).finally(() => clearTimeout(timer));
 }
 
 module.exports = FlowMind;

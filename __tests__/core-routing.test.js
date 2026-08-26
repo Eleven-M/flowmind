@@ -256,6 +256,30 @@ describe('FlowMind routing and learning', () => {
     }));
   });
 
+  test('executeWithLearning enforces a configured skill timeout', async () => {
+    const flowmind = new FlowMind();
+    flowmind.config = {
+      get: jest.fn((key, defaultValue) => {
+        if (key === 'skillConfig.skills.slow-skill') return { timeoutMs: 10 };
+        return defaultValue;
+      })
+    };
+    flowmind.learning = {
+      getSkillLearnings: jest.fn().mockResolvedValue([]),
+      getPreferences: jest.fn().mockResolvedValue({}),
+      matchResourceBinding: jest.fn().mockResolvedValue(null)
+    };
+    flowmind.honor = { award: jest.fn().mockResolvedValue(undefined) };
+
+    await expect(flowmind.executeWithLearning({
+      name: 'slow-skill',
+      execute: () => new Promise(() => {})
+    }, 'slow request', {})).rejects.toMatchObject({
+      code: 'SKILL_TIMEOUT',
+      retryable: true
+    });
+  });
+
   test('selectSkill returns null for an unknown explicit skill', async () => {
     const flowmind = new FlowMind();
     flowmind.skills = {
