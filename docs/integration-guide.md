@@ -58,7 +58,7 @@ Generic MCP configuration:
       "command": "flowmind-mcp",
       "args": [],
       "env": {
-        "FLOWMIND_HOME": "/absolute/path/to/.flowmind"
+        "FLOWMIND_HOME": "/absolute/path/to/flowmind-home"
       }
     }
   }
