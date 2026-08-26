@@ -1,6 +1,6 @@
 ---
 name: resource-bind
-description: Resource binding and connection management skill for FlowMind. Manage database, Redis, API, and other external resource connections.
+description: Resource binding and connection management skill for FlowMind. Bind and manage database, Redis, and API resource connections and MCP credentials (资源绑定/连接管理). Not for deployment or pipeline execution.
 metadata:
   version: "1.0.0"
   author: flowmind
@@ -9,7 +9,7 @@ metadata:
 
 # Resource Bind Skill
 
-Manage database, Redis, API, and other external resource connections.
+Bind and manage database, Redis, API, and other external resource connections.
 
 ## Features
 
@@ -37,10 +37,10 @@ Manage database, Redis, API, and other external resource connections.
 ## Trigger Patterns
 
 ```
-"数据库", "database", "DB", "SQL"
+"数据库", "database", "SQL"
 "redis", "缓存", "cache"
-"API", "接口", "连接"
-"资源", "resource"
+"API连接", "API绑定", "DB连接", "接口连接"
+"资源绑定", "资源", "resource"
 "连接配置", "connection"
 ```
 

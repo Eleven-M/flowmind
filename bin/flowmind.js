@@ -18,7 +18,7 @@ const HonorEngine = require('../core/honor-engine');
 const ModelManager = require('../core/ai/model-manager');
 const { main: runUpdateCheck } = require('../scripts/check-update');
 const { launchInkApp } = require('../core/cli-ink');
-const { syncSddAgentToFlowMind } = require('../core/sdd-agent-sync');
+const { syncSddAgentToFlowMind, syncSharedLearning } = require('../core/sdd-agent-sync');
 const { getUpgradeStatus } = require('../core/upgrade-status');
 const { runReleaseCheck } = require('../core/release-check');
 const { WorkflowService } = require('../core/workflow-service');
@@ -481,8 +481,8 @@ async function promptResourceDetails(resourceKey) {
       {
         type: 'input',
         name: 'testEndpoint',
-        message: 'Test SLS endpoint:',
-        default: 'cn-shenzhen.log.aliyuncs.com'
+        message: 'Test SLS endpoint (<region-id>.log.aliyuncs.com):',
+        default: ''
       },
       {
         type: 'input',
@@ -499,8 +499,8 @@ async function promptResourceDetails(resourceKey) {
       {
         type: 'input',
         name: 'uatEndpoint',
-        message: 'UAT SLS endpoint:',
-        default: 'cn-shenzhen.log.aliyuncs.com'
+        message: 'UAT SLS endpoint (<region-id>.log.aliyuncs.com):',
+        default: ''
       },
       {
         type: 'input',
@@ -517,8 +517,8 @@ async function promptResourceDetails(resourceKey) {
       {
         type: 'input',
         name: 'prodEndpoint',
-        message: 'Prod SLS endpoint:',
-        default: 'cn-hongkong.log.aliyuncs.com'
+        message: 'Prod SLS endpoint (<region-id>.log.aliyuncs.com):',
+        default: ''
       },
       {
         type: 'input',
@@ -1532,17 +1532,17 @@ async function runSkillInitModule({ configDir, interactive }) {
 function buildSlsEnvConfig(answers) {
   return {
     test: {
-      endpoint: answers.testEndpoint || 'cn-shenzhen.log.aliyuncs.com',
+      endpoint: answers.testEndpoint || '',
       project: answers.testProject || '',
       logstore: answers.testLogstore || ''
     },
     uat: {
-      endpoint: answers.uatEndpoint || 'cn-shenzhen.log.aliyuncs.com',
+      endpoint: answers.uatEndpoint || '',
       project: answers.uatProject || '',
       logstore: answers.uatLogstore || ''
     },
     prod: {
-      endpoint: answers.prodEndpoint || 'cn-hongkong.log.aliyuncs.com',
+      endpoint: answers.prodEndpoint || '',
       project: answers.prodProject || '',
       logstore: answers.prodLogstore || ''
     }
@@ -2497,6 +2497,9 @@ program
         } else {
           displayResult(result);
         }
+
+        // Flush throttled learning/entity persistence before the process exits.
+        await fm.shutdown();
       }
     } catch (error) {
       if (options.json) {
@@ -2740,6 +2743,7 @@ skillCommand
   .option('-t, --triggers <patterns>', 'Comma-separated trigger patterns')
   .option('--components <list>', 'Comma-separated component dependencies')
   .option('--no-interactive', 'Skip prompts, use flags/defaults')
+  .option('--builtin', 'Scaffold into the repository skills/ directory (open-source contribution) instead of the local FlowMind skills directory')
   .action(async (name, options) => {
     try {
       const scaffold = require('../core/skill-scaffold');
@@ -2805,12 +2809,18 @@ skillCommand
         if (answers.components) config.components = answers.components;
       }
 
-      const skillsPath = path.join(__dirname, '..', 'skills');
+      // Local skills live under FLOWMIND_HOME/.flowmind/skills so business
+      // skills never enter the git repository or the npm package. Use
+      // --builtin to scaffold into the repo for open-source contributions.
+      const skillsPath = options.builtin ? path.join(__dirname, '..', 'skills') : null;
       const skillDir = await scaffold.createSkill(name, config, skillsPath);
 
       console.log(chalk.green(`\nSkill "${name}" created successfully!`));
       console.log(chalk.gray(`  ${path.join(path.relative(process.cwd(), skillDir), 'SKILL.md')}`));
       console.log(chalk.gray(`  ${path.join(path.relative(process.cwd(), skillDir), 'index.js')}`));
+      if (!options.builtin) {
+        console.log(chalk.gray(`  Location: local FlowMind skills directory (kept out of git/npm)`));
+      }
       console.log(chalk.cyan(`\nNext steps:`));
       console.log(`  1. Edit the execute() logic in index.js`);
       console.log(`  2. Update SKILL.md with detailed usage`);
@@ -2830,6 +2840,7 @@ program
   .option('-e, --edit <file>', 'Edit file')
   .option('-c, --config', 'Show resource configuration')
   .option('--sync-sdd-agent [dir]', 'Explicitly import local SDD-Agent resources and scenes into FlowMind')
+  .option('--bidirectional', 'After importing SDD-Agent data, export FlowMind learnings back to SDD-Agent')
   .option('-j, --json', 'Output as JSON (for tool integration)')
   .action(async (options) => {
     try {
@@ -2840,9 +2851,13 @@ program
       const bindings = await fm.learning.listResourceBindings();
 
       if (options.syncSddAgent !== undefined) {
-        const summary = await syncSddAgentToFlowMind({
+        const syncOptions = {
+          sddDir: typeof options.syncSddAgent === 'string' ? options.syncSddAgent : undefined,
           sourceDir: typeof options.syncSddAgent === 'string' ? options.syncSddAgent : undefined
-        });
+        };
+        const summary = options.bidirectional
+          ? await syncSharedLearning(syncOptions)
+          : await syncSddAgentToFlowMind(syncOptions);
 
         if (options.json) {
           console.log(JSON.stringify({ synced: summary }, null, 2));
@@ -3040,7 +3055,8 @@ program
           console.log(chalk.cyan('\nAI Providers:'));
           for (const provider of providers) {
             const providerStatus = provider.initialized ? chalk.green('✓') : chalk.red('✗');
-            console.log(`  ${providerStatus} ${provider.name}`);
+            const takeoverTag = provider.envTakeover ? chalk.yellow(' (env接管·优先failover)') : '';
+            console.log(`  ${providerStatus} ${provider.name}${takeoverTag}`);
             if (provider.info?.model) {
               const modelSuffix =
                 status.defaultModel && provider.info.model === status.defaultModel ? ' (global)' : ' (override)';
@@ -3173,6 +3189,9 @@ async function runInteractiveMode(fm) {
 
       console.log(''); // Empty line for spacing
     }
+
+    // Flush throttled learning/entity persistence on exit.
+    await fm.shutdown();
   } finally {
     restoreTerminal();
   }
@@ -3341,7 +3360,7 @@ async function maybeHandleBindingFlow(fm, input, result) {
 
   const envDefault = resolution.env || inferLogEnvironmentFromInput(input) || 'test';
   const businessDefault = inferLogBindingBusiness(input, resolution);
-  const endpointDefault = resolution.endpoint || endpointForEnv(envDefault);
+  const endpointDefault = resolution.endpoint || endpointForEnv(envDefault, fm?.config);
   const projectDefault = resolution.project || inferLogProjectFromInput(input);
   const logstoreDefault = resolution.logstore || inferLogstoreFromInput(input);
 
@@ -3472,12 +3491,16 @@ function inferLogstoreFromInput(input) {
   return match ? match[1] : '';
 }
 
-function endpointForEnv(env) {
+function endpointForEnv(env, config = null) {
+  // Environment-to-region mapping is a company deployment fact: resolve it
+  // from the locally configured logService endpoints when available, and
+  // never guess a region otherwise.
+  const configured = config?.get?.('components.logService.providers.aliyun-sls.config.endpoints') || null;
   const normalized = String(env || '').toLowerCase();
-  if (normalized === 'gray' || normalized === 'prod') {
-    return 'cn-hongkong.log.aliyuncs.com';
+  if (configured && configured[normalized]) {
+    return configured[normalized];
   }
-  return 'cn-shenzhen.log.aliyuncs.com';
+  return null;
 }
 
 function buildLogBindingAliases(input, answers, resolution = {}) {
@@ -4021,11 +4044,30 @@ function displayResourceSyncSummary(summary) {
   console.log(chalk.white(`Bindings imported: ${summary.counts.importedBindings}`));
   console.log(chalk.white(`Scenes imported: ${summary.counts.importedScenes}`));
   console.log(chalk.white(`Components synced: ${summary.counts.components}`));
+  console.log(chalk.white(`Skill learning records imported: ${summary.counts.importedSkillRecords}`));
+  console.log(chalk.white(`Skill learning rules imported: ${summary.counts.importedSkillRules}`));
+  if (summary.counts.importedGlobalRules) {
+    console.log(chalk.white(`Global rules imported: ${summary.counts.importedGlobalRules}`));
+  }
+  if (summary.counts.copiedLearningRecords) {
+    console.log(chalk.white(`Learning deposit docs copied: ${summary.counts.copiedLearningRecords}`));
+  }
+  if (summary.counts.exportedSkills !== undefined) {
+    console.log(chalk.white(`Skills exported to SDD-Agent: ${summary.counts.exportedSkills}`));
+    console.log(chalk.white(`Skill routes exported to SDD-Agent: ${summary.counts.exportedRoutes}`));
+    console.log(chalk.white(`Resource bindings exported to SDD-Agent: ${summary.counts.exportedResourceBindings}`));
+  }
   console.log(chalk.gray('\nLocal files updated:'));
   console.log(chalk.white(`  ${summary.files.resourceConfig}`));
   console.log(chalk.white(`  ${summary.files.componentConfig}`));
   console.log(chalk.white(`  ${summary.files.resourceBindings}`));
   console.log(chalk.white(`  ${summary.files.scenes}`));
+  console.log(chalk.white(`  ${summary.files.skillBindings}`));
+  if (summary.files.sddSkillBindings) {
+    console.log(chalk.white(`  ${summary.files.sddSkillBindings}`));
+    console.log(chalk.white(`  ${summary.files.sddResourceBindings}`));
+    console.log(chalk.white(`  ${summary.files.sddScenes}`));
+  }
 }
 
 function displayAIStatus(status) {
@@ -4064,7 +4106,8 @@ function displayAIStatus(status) {
   for (const [name, info] of Object.entries(providers)) {
     const statusIcon =
       info.health === 'ready' ? chalk.green('✓') : info.health === 'error' ? chalk.red('✗') : chalk.yellow('•');
-    console.log(chalk.cyan(`│   ${statusIcon} ${name}`));
+    const takeoverTag = info.envTakeover ? chalk.yellow(' (env接管·优先failover)') : '';
+    console.log(chalk.cyan(`│   ${statusIcon} ${name}${takeoverTag}`));
     if (info.info?.model) {
       const modelSuffix = status.defaultModel && info.info.model === status.defaultModel ? ' (global)' : ' (override)';
       console.log(chalk.cyan(`│     Model: ${info.info.model}${modelSuffix}`));
@@ -4528,7 +4571,7 @@ program
 program
   .command('browser-bind')
   .description('Capture one manual service management log query from the browser and save local API binding')
-  .option('--target <target>', 'Target key to bind, such as merchantBackendLog or adminService', 'merchantBackendLog')
+  .option('--target <target>', 'Target key to bind (defaults to the locally configured defaultTarget)')
   .option('--timeout <ms>', 'Binding timeout in milliseconds', '120000')
   .option('-j, --json', 'Output binding metadata as JSON')
   .action(async (options) => {
@@ -4537,9 +4580,15 @@ program
       const skillConfigPath = path.join(getFlowMindConfigDir(), 'skill-config.json');
       const skillConfig = await fs.pathExists(skillConfigPath) ? await fs.readJson(skillConfigPath) : {};
       const skill = skillConfig.skills?.['service-management-log-analysis'] || {};
+      // Target keys are project-level config: resolve from --target, the
+      // locally configured defaultTarget, or the first configured target.
+      const targetKey = options.target || skill.defaultTarget || Object.keys(skill.targets || {})[0];
+      if (!targetKey) {
+        throw new Error('未找到目标 key：请通过 --target <key> 指定，或在本地 skill-config.json 的 service-management-log-analysis.targets 中配置目标。');
+      }
       const target = {
-        key: options.target,
-        ...(skill.targets?.[options.target] || {})
+        key: targetKey,
+        ...(skill.targets?.[targetKey] || {})
       };
       const client = new (require('../core/browser-automation-bridge').BrowserBridgeClient)({
         url: savedBridgeConfig.url,
@@ -4555,7 +4604,7 @@ program
 
       const capture = await client.bindServiceManagementLog({
         target,
-        targetKey: options.target,
+        targetKey,
         timeoutMs: Number(options.timeout)
       });
       if (capture?.error) {
@@ -4566,14 +4615,14 @@ program
       }
       const saved = await saveServiceManagementApiBinding(
         {
-          target: options.target,
+          target: targetKey,
           api: capture.api
         },
         { flowmindHome: getFlowMindHomeDir() }
       );
       const result = {
         ok: true,
-        target: options.target,
+        target: targetKey,
         saved,
         capture: {
           method: capture.api?.method,

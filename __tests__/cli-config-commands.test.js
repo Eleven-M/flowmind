@@ -227,10 +227,10 @@ describe('flowmind CLI config commands', () => {
         token: 'setup-token'
       }),
       targets: expect.objectContaining({
-        merchantBackendLog: expect.objectContaining({
+        merchantLog: expect.objectContaining({
           url: 'https://service.example.test/#/merchant-log'
         }),
-        adminService: expect.objectContaining({
+        adminLog: expect.objectContaining({
           url: 'https://service.example.test/#/admin-log'
         })
       })
@@ -245,7 +245,7 @@ describe('flowmind CLI config commands', () => {
 
     const result = await saveServiceManagementApiBinding(
       {
-        target: 'merchantBackendLog',
+        target: 'merchantLog',
         api: {
           url: 'https://service.example.test/api/logs',
           method: 'GET',
@@ -267,14 +267,14 @@ describe('flowmind CLI config commands', () => {
 
     expect(result).toEqual(expect.objectContaining({
       ok: true,
-      target: 'merchantBackendLog',
+      target: 'merchantLog',
       parameterMapKeys: ['storeId'],
       responsePathKeys: expect.arrayContaining(['records', 'total']),
       fieldMapKeys: expect.arrayContaining(['resourceName', 'operationContent'])
     }));
 
     const skillConfig = await fs.readJson(path.join(tempHome, '.flowmind', 'skill-config.json'));
-    expect(skillConfig.skills['service-management-log-analysis'].targets.merchantBackendLog.api).toEqual(
+    expect(skillConfig.skills['service-management-log-analysis'].targets.merchantLog.api).toEqual(
       expect.objectContaining({
         url: 'https://service.example.test/api/logs',
         bodyTemplate: {

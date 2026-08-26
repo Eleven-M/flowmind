@@ -25,17 +25,17 @@ flowmind config --import config/flowmind-config-package.example.md --dry-run --j
       "defaultEnv": "uat",
       "envConfig": {
         "test": {
-          "endpoint": "cn-shenzhen.log.aliyuncs.com",
+          "endpoint": "<region-id>.log.aliyuncs.com",
           "project": "test-project",
           "logstore": "test-logstore"
         },
         "uat": {
-          "endpoint": "cn-shenzhen.log.aliyuncs.com",
+          "endpoint": "<region-id>.log.aliyuncs.com",
           "project": "uat-project",
           "logstore": "uat-logstore"
         },
         "prod": {
-          "endpoint": "cn-hongkong.log.aliyuncs.com",
+          "endpoint": "<region-id>.log.aliyuncs.com",
           "project": "prod-project",
           "logstore": "prod-logstore"
         }

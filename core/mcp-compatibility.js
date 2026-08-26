@@ -60,6 +60,12 @@ const McpServerMapping = Object.freeze({
     provider: 'auto-flow',
     description: 'Automated workflow and pipeline management'
   },
+  // Legacy MCP gateway alias for the same workflow server
+  'friday-auto-flow': {
+    type: ComponentType.WORKFLOW,
+    provider: 'friday-flow',
+    description: 'Automated workflow and pipeline management (legacy gateway alias)'
+  },
 
   // Report
   'auto-report': {
@@ -95,6 +101,7 @@ const ProviderToMcp = Object.freeze({
   'apiDoc:yapi': 'yapi-mcp',
   'knowledgeBase:yuque': 'yuque-mcp',
   'workflow:auto-flow': 'auto-flow',
+  'workflow:friday-flow': 'friday-auto-flow',
   'report:auto-report': 'auto-report',
   'serviceGovernance:aliyun-mse': 'aliyun-mse-mcp',
   'serviceGovernance:huawei-cse': 'huawei-cse-mcp',

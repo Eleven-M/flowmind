@@ -534,12 +534,9 @@ function inferEnvFromInput(input) {
   return null;
 }
 
-function inferEndpointFromEnv(env) {
-  const normalized = String(env || '').toLowerCase();
-  if (normalized === 'gray' || normalized === 'prod') {
-    return 'cn-hongkong.log.aliyuncs.com';
-  }
-  return 'cn-shenzhen.log.aliyuncs.com';
+function inferEndpointFromEnv(_env) {
+  // Region mapping is a company deployment fact: never guess an endpoint.
+  return '';
 }
 
 function inferProjectFromInput(input) {

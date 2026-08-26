@@ -73,6 +73,12 @@ class ComponentRegistry {
       const AutoFlowAdapter = require('./providers/automation/flow-adapter');
       return new AutoFlowAdapter(this.getProviderConfig('workflow', 'auto-flow'));
     });
+    // Legacy gateway naming: pre-2.2.0 configs register the same workflow
+    // server under the provider name "friday-flow" (MCP server "friday-auto-flow").
+    this.registerFactory('friday-flow', () => {
+      const AutoFlowAdapter = require('./providers/automation/flow-adapter');
+      return new AutoFlowAdapter(this.getProviderConfig('workflow', 'friday-flow'));
+    });
     this.registerFactory('auto-report', () => {
       const AutoReportAdapter = require('./providers/automation/report-adapter');
       return new AutoReportAdapter(this.getProviderConfig('report', 'auto-report'));
