@@ -184,4 +184,39 @@ describe('learning-engine smart routing', () => {
     expect(matched).not.toBeNull();
     expect(matched.confidence).toBeGreaterThanOrEqual(0);
   });
+
+  test('disables a route after repeated negative feedback', async () => {
+    const learning = await freshEngine();
+    await learning.learnSkillRoute('查询部署状态', 'auto-flow');
+
+    await learning.recordSkillRouteFeedback('查询部署状态', { correct: false });
+    await learning.recordSkillRouteFeedback('查询部署状态', { correct: false });
+    const route = await learning.recordSkillRouteFeedback('查询部署状态', { correct: false });
+
+    expect(route.status).toBe('disabled');
+    expect(await learning.matchSkillRoute('查询部署状态', ['auto-flow'])).toBeNull();
+  });
+
+  test('passive route promotion requires three eligible observations', async () => {
+    const learning = await freshEngine();
+    learning.config.set('learning.autoPromote.skillRouteMinSuccesses', 3);
+
+    const first = await learning.learnSuccessfulSkillRoute('分析部署变更', 'offline-design-analysis', {
+      quality: 'likely',
+      confidence: 0.7
+    });
+    const second = await learning.learnSuccessfulSkillRoute('分析部署变更', 'offline-design-analysis', {
+      quality: 'likely',
+      confidence: 0.8
+    });
+    expect(first.promoted).toBe(false);
+    expect(second.promoted).toBe(false);
+
+    const third = await learning.learnSuccessfulSkillRoute('分析部署变更', 'offline-design-analysis', {
+      quality: 'confirmed',
+      confidence: 1
+    });
+    expect(third.promoted).toBe(true);
+    expect(third.route.source).toBe('passive-success');
+  });
 });

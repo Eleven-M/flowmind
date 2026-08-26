@@ -21,6 +21,7 @@ const {
   createLearningResponse,
   createSkillError,
   createSkillResult,
+  getLearningOutcome,
   isErrorResultPayload
 } = require('./result-contract');
 const { attachKnowledgeDepositionCandidates } = require('./knowledge-deposition');
@@ -245,6 +246,7 @@ class FlowMind {
         learningApplied: Array.isArray(learnings) && learnings.length > 0
       });
       const processSucceeded = !isErrorResultPayload(formatted);
+      const learningOutcome = getLearningOutcome(result);
 
       if (processSucceeded && typeof this.learning.learnSkillRoute === 'function') {
         const userSpecifiedSkill = enhancedContext.userSpecifiedSkill || context.skill;
@@ -256,10 +258,13 @@ class FlowMind {
           );
         } else if (
           typeof this.learning.learnSuccessfulSkillRoute === 'function' &&
-          skill.name !== 'learning-engine'
+          skill.name !== 'learning-engine' &&
+          learningOutcome.eligible
         ) {
           await this.learning.learnSuccessfulSkillRoute(input, skill.name, {
-            source: 'passive-success'
+            source: 'passive-success',
+            quality: learningOutcome.quality,
+            confidence: learningOutcome.confidence
           });
         }
       }
@@ -784,7 +789,10 @@ class FlowMind {
     if (typeof this.learning?.matchSkillRoute === 'function') {
       const availableSkills = this.buildAiSkillCandidates().map((candidate) => candidate.name);
       const learnedRoute = await this.learning.matchSkillRoute(input, availableSkills);
-      if (learnedRoute?.skill) {
+      const routeThreshold = Number(
+        this.config?.get?.('learning.routeConfidenceThreshold', 0.78)
+      ) || 0.78;
+      if (learnedRoute?.skill && learnedRoute.confidence >= routeThreshold) {
         const learnedSkill = this.skills.get(learnedRoute.skill);
         if (learnedSkill) {
           this.lastSkillRoute = 'learned';

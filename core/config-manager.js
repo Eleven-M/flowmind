@@ -224,12 +224,15 @@ class ConfigManager {
         enabled: true,
         autoApply: true,
         confidenceThreshold: 0.7,
+        routeConfidenceThreshold: 0.78,
         maxRecordsPerSkill: 100,
         storagePath: path.join(this.getHomeDir(), '.flowmind', 'learning'),
         autoPromote: {
           enabled: true,
           resourceBindingMinUses: 3,
-          sceneMinUses: 2
+          sceneMinUses: 2,
+          skillRouteMinSuccesses: 2,
+          skillRouteMaxCorrections: 3
         }
       },
 

@@ -978,7 +978,7 @@ class LearningEngine {
         intentFamily: classifyRouteIntent(input),
         skill,
         source: metadata.source || 'passive-success',
-        stats: { successCount: 0, firstSeen: now, lastSeen: now }
+        stats: { successCount: 0, confirmedCount: 0, firstSeen: now, lastSeen: now }
       };
       this.skillBindings.passiveRoutes.push(passive);
     }
@@ -989,6 +989,12 @@ class LearningEngine {
     passive.intentFamily = classifyRouteIntent(input);
     passive.stats = passive.stats || {};
     passive.stats.successCount = (Number(passive.stats.successCount) || 0) + 1;
+    if (metadata.quality === 'confirmed') {
+      passive.stats.confirmedCount = (Number(passive.stats.confirmedCount) || 0) + 1;
+    }
+    passive.stats.lastConfidence = Number.isFinite(Number(metadata.confidence))
+      ? Math.max(0, Math.min(1, Number(metadata.confidence)))
+      : passive.stats.lastConfidence || 0;
     passive.stats.lastSeen = now;
 
     if (passive.stats.successCount >= threshold) {
@@ -1002,6 +1008,36 @@ class LearningEngine {
 
     await this.saveSkillBindings();
     return { promoted: false, passive };
+  }
+
+  /** Record explicit route feedback and disable repeatedly wrong routes. */
+  async recordSkillRouteFeedback(input, feedback = {}) {
+    const normalizedInput = normalizeRouteInput(input);
+    if (!normalizedInput) return null;
+    const semanticKey = buildRouteSemanticKey(input);
+    const route = (this.skillBindings.routes || []).find((item) =>
+      item.normalizedInput === normalizedInput || (semanticKey && item.semanticKey === semanticKey)
+    );
+    if (!route) return null;
+
+    route.stats = route.stats || {};
+    const now = new Date().toISOString();
+    if (feedback.correct === false) {
+      route.stats.correctionCount = (Number(route.stats.correctionCount) || 0) + 1;
+      route.stats.lastCorrected = now;
+      const maxCorrections = Math.max(
+        1,
+        Number(this.getAutoPromoteConfig().skillRouteMaxCorrections) || 3
+      );
+      if (route.stats.correctionCount >= maxCorrections) route.status = 'disabled';
+    } else if (feedback.correct === true) {
+      route.stats.confirmedCount = (Number(route.stats.confirmedCount) || 0) + 1;
+      route.stats.lastConfirmed = now;
+      route.status = 'active';
+    }
+
+    await this.saveSkillBindings();
+    return route;
   }
 
   /**
@@ -1038,6 +1074,7 @@ class LearningEngine {
     let best = null;
 
     for (const route of routes) {
+      if (route?.status === 'disabled') continue;
       if (!route?.skill || (allowed.size > 0 && !allowed.has(route.skill))) continue;
       if (route.intentFamily && route.intentFamily !== intentFamily) continue;
 
@@ -2136,6 +2173,7 @@ function findDirectRouteMatch(routes, options) {
   const exactBySemantic = new Map();
 
   for (const route of routes) {
+    if (route?.status === 'disabled') continue;
     if (!route?.skill || (allowed.size > 0 && !allowed.has(route.skill))) continue;
     if (route.intentFamily && route.intentFamily !== intentFamily) continue;
     if (route.normalizedInput) {

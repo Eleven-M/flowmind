@@ -128,10 +128,53 @@ function isErrorResultPayload(payload) {
   return isPlainObject(unwrapped) && unwrapped.type === 'error';
 }
 
+/**
+ * Normalize optional quality signals used by passive learning. Existing
+ * skills remain compatible: successful results without an explicit signal
+ * are treated as observations, not confirmed outcomes.
+ */
+function getLearningOutcome(payload) {
+  const unwrapped = unwrapFlowmindPayload(payload);
+  if (isErrorResultPayload(unwrapped)) {
+    return { quality: 'failed', confidence: 0, eligible: false };
+  }
+
+  const data = isPlainObject(unwrapped?.data) ? unwrapped.data : {};
+  const quality = String(
+    unwrapped?.learningQuality ||
+    unwrapped?.quality ||
+    data.learningQuality ||
+    data.quality ||
+    ''
+  ).toLowerCase();
+  const normalizedQuality = ['confirmed', 'likely', 'partial', 'failed'].includes(quality)
+    ? quality
+    : 'observation';
+  const confidenceValue = Number(
+    unwrapped?.learningConfidence ??
+    unwrapped?.confidence ??
+    data.learningConfidence ??
+    data.confidence
+  );
+  const confidence = Number.isFinite(confidenceValue)
+    ? Math.max(0, Math.min(1, confidenceValue))
+    : normalizedQuality === 'confirmed' ? 1 : normalizedQuality === 'likely' ? 0.6 : 0.4;
+
+  return {
+    quality: normalizedQuality,
+    confidence,
+    // Observation results may still contribute to a passive streak, but they
+    // never count as explicit confirmation. Partial and failed results are
+    // excluded from automatic route learning.
+    eligible: normalizedQuality !== 'partial' && normalizedQuality !== 'failed'
+  };
+}
+
 module.exports = {
   createSkillResult,
   createSkillError,
   createLearningResponse,
   unwrapFlowmindPayload,
-  isErrorResultPayload
+  isErrorResultPayload,
+  getLearningOutcome
 };
