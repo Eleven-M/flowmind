@@ -51,14 +51,14 @@ Minimal skill config shape:
     "skills": {
       "service-management-log-analysis": {
         "project": "service-management",
-        "defaultTarget": "merchantBackendLog",
+        "defaultTarget": "merchantLog",
         "targets": {
-          "merchantBackendLog": {
+          "merchantLog": {
             "label": "商户后台日志",
             "url": "https://your-service-management-host/#/merchant-log-route",
             "selectors": {}
           },
-          "adminService": {
+          "adminLog": {
             "label": "管理后台服务",
             "url": "https://your-service-management-host/#/admin-service-log-route",
             "selectors": {}

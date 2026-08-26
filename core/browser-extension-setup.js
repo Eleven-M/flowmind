@@ -29,7 +29,7 @@ async function prepareServiceManagementBrowserSetup(options = {}) {
       ...(existingConfig.skills || {}),
       [SKILL_NAME]: {
         ...existingSkill,
-        defaultTarget: existingSkill.defaultTarget || 'merchantBackendLog',
+        defaultTarget: existingSkill.defaultTarget || Object.keys(targets)[0] || null,
         queryMode: existingSkill.queryMode || 'api-first',
         browserBridge: {
           ...existingBridge,
@@ -84,7 +84,11 @@ async function saveServiceManagementApiBinding(binding = {}, options = {}) {
     throw new Error('FLOWMIND_HOME or HOME is required');
   }
 
-  const targetKey = binding.target || options.target || 'merchantBackendLog';
+  // Target keys are project-level config; callers must provide one.
+  const targetKey = binding.target || options.target || null;
+  if (!targetKey) {
+    throw new Error('A target key is required: pass binding.target or options.target.');
+  }
   const configDir = path.join(flowmindHome, '.flowmind');
   const skillConfigPath = path.join(configDir, 'skill-config.json');
   const existingConfig = await readJsonIfExists(skillConfigPath, { skills: {} });
@@ -152,15 +156,15 @@ async function saveServiceManagementApiBinding(binding = {}, options = {}) {
 function buildTargets(options = {}, existingTargets = {}) {
   const targets = { ...existingTargets };
   if (options.merchantUrl) {
-    targets.merchantBackendLog = {
-      ...(targets.merchantBackendLog || {}),
+    targets.merchantLog = {
+      ...(targets.merchantLog || {}),
       label: '商户后台日志',
       url: options.merchantUrl
     };
   }
   if (options.adminUrl) {
-    targets.adminService = {
-      ...(targets.adminService || {}),
+    targets.adminLog = {
+      ...(targets.adminLog || {}),
       label: '管理后台服务',
       url: options.adminUrl
     };

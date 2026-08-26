@@ -86,7 +86,7 @@ async function enrichRecords({ records = [], params = {}, settings = {}, context
         ...extractIdsFromJsonText(stringifyMaybe(record.responseParams), idPattern, excludeKeys),
         ...extractEntityIds(`${record.operationContent || ''} ${record.resourceName || ''}`, idPattern)
       ],
-      changeSets: extractChangeSets(stringifyMaybe(record.requestParams), idPattern, excludeKeys),
+      changeSets: extractChangeSets(stringifyMaybe(record.requestParams), idPattern, excludeKeys, settings),
       statusTokens: extractStatusTokens(text)
     };
   });
@@ -410,7 +410,7 @@ function extractEntityIds(text, pattern) {
  * product objects; account objects are skipped and arrays flattened, so the
  * output is what actually changed on the product (name, price, status, ...).
  */
-function extractChangeSets(text, pattern, excludeKeys) {
+function extractChangeSets(text, pattern, excludeKeys, settings = {}) {
   const parsed = safeJsonParse(String(text || ''));
   if (parsed === null || typeof parsed !== 'object') return [];
   const objects = [];
@@ -421,7 +421,7 @@ function extractChangeSets(text, pattern, excludeKeys) {
     collectReferencedIdsDeep(item, pattern, ids);
     const uniqueIds = [...new Set(ids)];
     if (uniqueIds.length === 0) continue;
-    const fields = renderChangeFields(item, excludeKeys);
+    const fields = renderChangeFields(item, excludeKeys, settings);
     if (Object.keys(fields).length === 0) continue;
     for (const id of uniqueIds) sets.push({ id, fields });
   }
@@ -438,8 +438,13 @@ function flattenPayloadObjects(node, out) {
   out.push(node);
 }
 
-function renderChangeFields(item, excludeKeys) {
+function renderChangeFields(item, excludeKeys, settings = {}) {
   const fields = {};
+  // SKU price field names are project-level API facts: resolve them from the
+  // local skillConfig (`enrichment.skuPriceFields`) with generic defaults.
+  const skuPriceFields = Array.isArray(settings.enrichment?.skuPriceFields)
+    ? settings.enrichment.skuPriceFields.map(String)
+    : ['price', 'salePrice'];
   for (const [key, value] of Object.entries(item)) {
     if (CHANGE_SKIP_KEYS.has(key) || excludeKeys.has(key) || CHANGE_NOISE_KEYS.has(key)) continue;
     if (value === undefined || value === null || value === '') continue;
@@ -447,7 +452,10 @@ function renderChangeFields(item, excludeKeys) {
     const lower = String(key).toLowerCase();
     if (lower === 'skus' && Array.isArray(value)) {
       const prices = value
-        .map((sku) => sku?.takeoutPrice)
+        .map((sku) => {
+          const field = skuPriceFields.find((name) => sku?.[name] !== undefined && sku?.[name] !== null);
+          return field ? sku[field] : null;
+        })
         .filter(Boolean)
         .slice(0, 3)
         .map(cleanDisplayValue);

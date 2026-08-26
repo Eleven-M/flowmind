@@ -214,7 +214,7 @@ describe('service-management-log-analysis skill', () => {
 
     // Nested arrays, SKU ids, classification ids, and account objects must
     // not leak into the product id list.
-    const nested = '[[{"id":"20260716121358201759","typeId":"20251110143241844147","name":"(商品) 頂香料頭醬油","skus":[{"id":"202607161213582127600","menuId":"20260716121358201759","takeoutPrice":"(價格（分）) 300"}],"tags":{"categoryId":"20250410110907134110"}},{"id":"20220720172827353040","orgId":"300000009","loginId":"a@b.com"}]]';
+    const nested = '[[{"id":"20260716121358201759","typeId":"20251110143241844147","name":"(商品) 頂香料頭醬油","skus":[{"id":"202607161213582127600","menuId":"20260716121358201759","price":"(價格（分）) 300"}],"tags":{"categoryId":"20250410110907134110"}},{"id":"20220720172827353040","orgId":"300000009","loginId":"a@b.com"}]]';
     expect(enrichment.extractIdsFromJsonText(nested, '\\d{17,25}', excludeKeys))
       .toEqual(['20260716121358201759']);
 
@@ -230,6 +230,13 @@ describe('service-management-log-analysis skill', () => {
     ]);
     expect(Object.keys(changeSets[0].fields)).not.toContain('typeId');
     expect(changeSets[0].fields).not.toHaveProperty('orgId');
+
+    // Project-specific SKU price fields come from local skillConfig.
+    const projectField = nested.replace('"price":"(價格（分）) 300"', '"unitFee":"(價格（分）) 300"');
+    const projectChangeSets = enrichment.extractChangeSets(projectField, '\\d{17,25}', excludeKeys, {
+      enrichment: { skuPriceFields: ['unitFee'] }
+    });
+    expect(projectChangeSets[0].fields.价格).toBe('1 个规格（3.00 元）');
 
     const rows = enrichment.parseMarkdownTable(
       '| ID | NAME | STORE_ID |\n| --- | --- | --- |\n| 20241210091517433750 | 布里歐修吐司 | 25498 |'
@@ -446,6 +453,7 @@ function sampleConfig() {
     targets: {
       merchantBackendLog: {
         label: '商户后台日志',
+        matchKeywords: ['商户后台', '商户操作', 'merchant'],
         url: 'https://service.example.com/logs/merchant',
         api: {
           url: 'https://service.example.com/api/log/page',
@@ -462,6 +470,7 @@ function sampleConfig() {
       },
       adminService: {
         label: '管理后台服务',
+        matchKeywords: ['管理后台服务', 'admin'],
         url: 'https://service.example.com/logs/admin-service',
         selectors: {
           queryButton: "button:has-text('查询')"

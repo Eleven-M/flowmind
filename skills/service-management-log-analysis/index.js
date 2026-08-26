@@ -31,7 +31,7 @@ module.exports = {
           requiredConfig: buildRequiredConfigHint(settings)
         },
         retryHints: [
-          '在 skillConfig.skills.service-management-log-analysis.targets 中配置 merchantBackendLog 或 adminService。',
+          '在本地 skillConfig.skills.service-management-log-analysis.targets 中配置目标（key 由项目决定，如 merchantLog/adminLog）。',
           '至少配置目标页面 url；如需自动抓取，再补充 api 或 selectors。'
         ],
         bindingHint: buildBindingHint(params, settings)
@@ -158,15 +158,15 @@ function resolveQueryParams(input, context = {}) {
     ...(context.params || {}),
     ...context
   };
+  const settings = resolveSkillSettings(context);
   const source = normalizeSource(
     pickFirst(
       merged.source,
       merged.target,
       extractAfter(input, /(?:日志来源|目标|target|source)\s*[:=：]\s*([^\s，,]+)/i),
-      /商户.*操作日志|商户后台日志/.test(input) ? 'merchantBackendLog' : null,
-      /商户后台日志/.test(input) ? 'merchantBackendLog' : null,
-      /管理后台服务/.test(input) ? 'adminService' : null
-    )
+      matchTargetByInput(input, settings)
+    ),
+    settings
   );
   const todayRange = /今日|今天|today/i.test(input) ? resolveTodayRange() : {};
   const storeId = pickFirst(merged.storeId, extractAfter(input, /门店\s*[:：]?\s*(\d+)/i));
@@ -221,7 +221,7 @@ function resolveQueryParams(input, context = {}) {
 
 function resolveTarget(params = {}, settings = {}) {
   const targets = settings.targets || {};
-  const key = normalizeSource(params.source || settings.defaultTarget);
+  const key = normalizeSource(params.source || settings.defaultTarget, settings);
   if (key && targets[key]) {
     return {
       key,
@@ -229,7 +229,7 @@ function resolveTarget(params = {}, settings = {}) {
     };
   }
 
-  const fallbackKey = normalizeSource(settings.defaultTarget) || Object.keys(targets)[0];
+  const fallbackKey = normalizeSource(settings.defaultTarget, settings) || Object.keys(targets)[0];
   return fallbackKey && targets[fallbackKey] ? { key: fallbackKey, ...targets[fallbackKey] } : null;
 }
 
@@ -440,10 +440,11 @@ function sanitizeDiagnostics(diagnostics) {
 }
 
 function buildRequiredConfigHint(settings = {}) {
+  const configuredTargets = Object.keys(settings.targets || {});
   return {
     configPath: 'skillConfig.skills.service-management-log-analysis',
     project: settings.project || 'service-management',
-    requiredTargets: ['merchantBackendLog', 'adminService'],
+    requiredTargets: configuredTargets.length > 0 ? configuredTargets : ['<your-target-key>'],
     requiredPerTarget: ['label', 'url', 'api.url or selectors', 'columns.resourceName', 'columns.operationContent']
   };
 }
@@ -451,18 +452,44 @@ function buildRequiredConfigHint(settings = {}) {
 function buildBindingHint(params = {}, settings = {}) {
   return {
     skill: SKILL_NAME,
-    target: params.source || settings.defaultTarget || 'merchantBackendLog',
+    target: params.source || settings.defaultTarget || null,
     auth: 'reuse browser session after manual login',
     reference: 'skills/service-management-log-analysis/references/config.md'
   };
 }
 
-function normalizeSource(value) {
+/**
+ * Resolve a user-supplied source keyword against locally configured targets.
+ * Matching is config-driven: each target may declare `matchKeywords`, so the
+ * skill itself carries no project-specific key names.
+ */
+function normalizeSource(value, settings = {}) {
   if (!value) return null;
   const normalized = String(value).trim();
-  if (/商户后台|merchant/i.test(normalized)) return 'merchantBackendLog';
-  if (/管理后台服务|admin/i.test(normalized)) return 'adminService';
+  const targets = settings.targets || {};
+  if (targets[normalized]) return normalized;
+
+  const lowered = normalized.toLowerCase();
+  for (const [key, target] of Object.entries(targets)) {
+    const keywords = Array.isArray(target?.matchKeywords) ? target.matchKeywords : [];
+    if (keywords.some((keyword) => keyword && lowered.includes(String(keyword).toLowerCase()))) {
+      return key;
+    }
+  }
+
   return normalized;
+}
+
+function matchTargetByInput(input, settings = {}) {
+  const text = String(input || '');
+  if (!text) return null;
+  for (const [key, target] of Object.entries(settings.targets || {})) {
+    const keywords = Array.isArray(target?.matchKeywords) ? target.matchKeywords : [];
+    if (keywords.some((keyword) => keyword && text.includes(String(keyword)))) {
+      return key;
+    }
+  }
+  return null;
 }
 
 function extractAfter(input, regex) {

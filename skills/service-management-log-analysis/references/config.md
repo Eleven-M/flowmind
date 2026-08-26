@@ -11,7 +11,7 @@ Place configuration under `~/.flowmind/skill-config.json`:
   "skills": {
     "service-management-log-analysis": {
       "project": "service-management",
-      "defaultTarget": "merchantBackendLog",
+      "defaultTarget": "merchantLog",
       "queryMode": "api-first",
       "browserBridge": {
         "enabled": true,
@@ -20,7 +20,7 @@ Place configuration under `~/.flowmind/skill-config.json`:
       },
       "maxPages": 20,
       "targets": {
-        "merchantBackendLog": {
+        "merchantLog": {
           "label": "商户后台日志",
           "url": "https://your-service-management-host/#/merchant-log-route",
           "api": {
@@ -87,7 +87,7 @@ Place configuration under `~/.flowmind/skill-config.json`:
             "linkIp": "linkIP"
           }
         },
-        "adminService": {
+        "adminLog": {
           "label": "管理后台服务",
           "url": "https://your-service-management-host/#/admin-service-log-route",
           "selectors": {},
@@ -134,7 +134,7 @@ Operation log records often carry opaque entity IDs inside `requestParams` / `re
         {
           "name": "primary-menu-source",
           "databaseId": "paste-dms-database-id",
-          "table": "your-schema.takeout_menu",
+          "table": "your-schema.menu_item",
           "idField": "ID",
           "nameField": "NAME",
           "extraFields": ["STORE_ID", "PRICE", "STATUS", "IS_DELETED"],
@@ -149,7 +149,7 @@ Operation log records often carry opaque entity IDs inside `requestParams` / `re
         {
           "name": "activity-source",
           "databaseId": "paste-dms-database-id",
-          "table": "your-schema.takeout_menu_activity",
+          "table": "your-schema.menu_item_activity",
           "idField": "menu_id",
           "nameField": null,
           "extraFields": ["activity_price", "discount_rate", "begin_date", "end_date", "state"],
@@ -200,12 +200,12 @@ If the page API authenticates through request headers (for example a token heade
 You can also let the browser extension capture one manual query and save the binding locally:
 
 ```bash
-flowmind browser-bind --target merchantBackendLog
+flowmind browser-bind --target merchantLog
 ```
 
 Keep `flowmind browser-bridge` running, then open the log page in the logged-in Chrome profile. FlowMind will show a page prompt; set representative filters and click `查询` once. The extension captures the request/response, infers `parameterMap`, `responsePath`, and `fieldMap`, and writes only to `~/.flowmind/skill-config.json`.
 
-Use `--target adminService` when binding the management backend service log page.
+Use `--target adminLog` when binding the management backend service log page.
 
 ## Browser Extension Bridge
 
