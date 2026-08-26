@@ -10,6 +10,8 @@ const SceneMatcher = require('./scene-matcher');
 const ConfigManager = require('./config-manager');
 const ComponentRegistry = require('./component-registry');
 const ModelManager = require('./ai/model-manager');
+const EntityMemory = require('./entity-memory');
+const { extractEntitiesFromResult } = require('./entity-extraction');
 const eventBus = require('./event-bus');
 const { autoSyncSddAgentToFlowMind } = require('./sdd-agent-sync');
 const { inferSourceContext } = require('./source-inference');
@@ -37,6 +39,7 @@ class FlowMind {
     this.config = new ConfigManager(options.configPath);
     this.honor = new HonorEngine(this.config);
     this.learning = new LearningEngine(this.config, this.honor);
+    this.entityMemory = new EntityMemory(this.config, this.learning.writeQueue);
     this.matcher = new SceneMatcher(this.config, this.learning);
     this.components = new ComponentRegistry(this.config);
     this.skills = new SkillLoader(this.config, this.learning, this.components, this.honor);
@@ -67,6 +70,7 @@ class FlowMind {
     await this.components.initAll();
     await this.honor.init();
     await this.learning.init();
+    await this.entityMemory.init();
     await this.skills.loadAll();
     await this.matcher.loadScenes();
 
@@ -208,19 +212,22 @@ class FlowMind {
       const extractedParams = await this.safeExtractParameters(input, skill.name);
 
       // 6. Execute with learning applied
+      const learnings = await this.learning.getSkillLearnings(skill.name);
       const executeContext = {
         ...enhancedContext,
         ...extractedParams,
         intent: intent,
         flowmind: this,
-        currentSkill: skill.name
+        currentSkill: skill.name,
+        learnings
       };
       const result = await this.executeWithLearning(skill, input, executeContext);
 
       // 7. Generate AI summary (if available)
       const summary = await this.safeSummarizeResult(result, {
         skill: skill.name,
-        intent: intent
+        intent: intent,
+        learnings
       });
 
       const aiStatus = typeof this.ai?.getStatus === 'function' ? this.ai.getStatus() : {};
@@ -234,7 +241,8 @@ class FlowMind {
         aiEnhanced: !!summary,
         aiProvider: aiStatus.defaultProvider || null,
         aiModel: aiStatus.defaultModel || null,
-        skillRoute: this.lastSkillRoute || 'rules'
+        skillRoute: this.lastSkillRoute || 'rules',
+        learningApplied: Array.isArray(learnings) && learnings.length > 0
       });
       const processSucceeded = !isErrorResultPayload(formatted);
 
@@ -246,6 +254,13 @@ class FlowMind {
             skill.name,
             { source: enhancedContext.userSpecifiedSkill ? 'conversation-directive' : 'explicit-option' }
           );
+        } else if (
+          typeof this.learning.learnSuccessfulSkillRoute === 'function' &&
+          skill.name !== 'learning-engine'
+        ) {
+          await this.learning.learnSuccessfulSkillRoute(input, skill.name, {
+            source: 'passive-success'
+          });
         }
       }
 
@@ -284,8 +299,10 @@ class FlowMind {
   async executeWithLearning(skill, input, context) {
     const skillStartTime = Date.now();
 
-    // Get learning rules for this skill
-    const learnings = await this.learning.getSkillLearnings(skill.name);
+    // Get learning rules for this skill (reuse pre-fetched rules when present)
+    const learnings = Array.isArray(context.learnings)
+      ? context.learnings
+      : await this.learning.getSkillLearnings(skill.name);
     const resourceBinding = await this.learning.matchResourceBinding(input, skill.name);
     let sourceInference = context.sourceInference || null;
     if (!sourceInference) {
@@ -295,6 +312,8 @@ class FlowMind {
         sourceInference = null;
       }
     }
+
+    const relatedEntities = this.entityMemory?.searchEntities?.(input, 5) || [];
 
     // Apply learning rules to context
     const enhancedContext = {
@@ -309,6 +328,7 @@ class FlowMind {
         ...(await this.learning.getPreferences(skill.name))
       },
       resourceBinding,
+      relatedEntities,
       sourceInference
     };
 
@@ -319,6 +339,17 @@ class FlowMind {
     const finalResult = attachKnowledgeDepositionCandidates(chainedResult, {
       repo: enhancedContext.preferences?.defaultNamespace
     });
+
+    // Deposit observed entities into cross-skill memory; failures must not
+    // affect the main flow.
+    try {
+      const entities = extractEntitiesFromResult(finalResult, skill.name);
+      if (entities.length > 0 && typeof this.entityMemory?.recordEntities === 'function') {
+        await this.entityMemory.recordEntities(entities, skill.name);
+      }
+    } catch (error) {
+      // Entity deposition is best-effort only.
+    }
 
     if (resourceBinding?.id) {
       await this.learning.markResourceBindingUsed(resourceBinding.id, {
@@ -764,13 +795,17 @@ class FlowMind {
 
     const ruleCandidates = (await this.skills.getCandidates(input, context))
       .filter((candidate) => this.isAutomaticSkillCandidate(candidate.name, input, context));
-    const aiContext = {
-      ...context,
-      currentSkill: context.currentSkill || null
-    };
 
     const aiCandidateList = (ruleCandidates.length > 0 ? ruleCandidates : this.buildAiSkillCandidates())
       .filter((candidate) => this.isAutomaticSkillCandidate(candidate.name, input, context));
+
+    const aiContext = {
+      ...context,
+      currentSkill: context.currentSkill || null,
+      routeHistory: typeof this.learning?.getRouteHistoryHint === 'function'
+        ? this.learning.getRouteHistoryHint(input, aiCandidateList.map((candidate) => candidate.name))
+        : []
+    };
 
     const canUseAiSelection = this.ai && typeof this.ai.selectSkill === 'function';
     let aiAttempted = false;
@@ -1122,6 +1157,8 @@ class FlowMind {
 
     // Save learning data
     try {
+      await this.learning?.flushLearningPersists?.();
+      await this.entityMemory?.flush?.();
       if (this.learning?.skillBindings) {
         await this.learning.saveSkillBindings();
       }

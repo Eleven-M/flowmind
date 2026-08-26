@@ -48,16 +48,89 @@ class WriteQueue {
   }
 }
 
+/**
+ * Debounced persister for high-frequency write paths. Marks state dirty and
+ * coalesces bursts of writes into a single delayed flush; a failed write
+ * restores the dirty flag so the next flush retries.
+ */
+class PersistThrottler {
+  constructor(writeFn, delayMs = 5000) {
+    this.writeFn = writeFn;
+    this.delayMs = Math.max(0, Number(delayMs) || 0);
+    this.dirty = false;
+    this.timer = null;
+    this.pending = null;
+  }
+
+  markDirty() {
+    this.dirty = true;
+    if (this.delayMs > 0 && !this.timer) {
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        this.write();
+      }, this.delayMs);
+      if (typeof this.timer.unref === 'function') {
+        this.timer.unref();
+      }
+    }
+  }
+
+  write() {
+    if (this.pending) {
+      return this.pending;
+    }
+    if (!this.dirty) {
+      return Promise.resolve();
+    }
+    this.dirty = false;
+    this.pending = Promise.resolve()
+      .then(() => this.writeFn())
+      .catch(() => {
+        this.dirty = true;
+      })
+      .then(() => {
+        this.pending = null;
+      });
+    return this.pending;
+  }
+
+  async flush() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    await this.write();
+  }
+}
+
 class LearningEngine {
   constructor(config, honorEngine = null) {
     this.config = config;
     this.honorEngine = honorEngine;
     this.learningPath = null;
     this.writeQueue = new WriteQueue();
+    this.persistThrottleMs = Math.max(
+      0,
+      Number(
+        config?.get?.(
+          'learning.persistThrottleMs',
+          process.env.FLOWMIND_LEARNING_DIRECT_WRITE === '1' ? 0 : 5000
+        )
+      ) || 0
+    );
+    this.resourceBindingsThrottler = new PersistThrottler(
+      () => this.saveResourceBindings(),
+      this.persistThrottleMs
+    );
+    this.skillBindingsThrottler = new PersistThrottler(
+      () => this.saveSkillBindings(),
+      this.persistThrottleMs
+    );
     this.records = {};
     this.skillBindings = {};
     this.resourceBindings = {};
     this.scenes = { version: '1.0', mappings: [] };
+    this.semanticIndex = { version: '1.0', entries: [], lastUpdated: null };
     this.stats = {};
     this.initialized = false;
   }
@@ -81,6 +154,7 @@ class LearningEngine {
     await this.loadResourceBindings();
     await this.loadScenes();
     await this.loadStats();
+    await this.loadSemanticIndex();
 
     this.initialized = true;
   }
@@ -456,13 +530,22 @@ class LearningEngine {
       }
 
       for (const alias of binding.aliases || []) {
-        if (alias && normalized.includes(String(alias).toLowerCase())) {
+        if (!alias) continue;
+        const normalizedAlias = String(alias).toLowerCase();
+        if (isWeakAlias(normalizedAlias)) continue;
+        if (normalized.includes(normalizedAlias)) {
           score += 6;
+        } else if (bigramDice(normalizedAlias, normalized) >= 0.5) {
+          score += 3;
         }
       }
 
       for (const keyword of binding.keywords || []) {
-        if (keyword && normalized.includes(String(keyword).toLowerCase())) {
+        if (!keyword) continue;
+        const normalizedKeyword = String(keyword).toLowerCase();
+        if (normalized.includes(normalizedKeyword)) {
+          score += 1;
+        } else if (bigramDice(normalizedKeyword, normalized) >= 0.5) {
           score += 1;
         }
       }
@@ -491,23 +574,14 @@ class LearningEngine {
         return envMatches.slice().sort(compareBindingFallback)[0];
       }
 
-      const sameComponent = componentType ? bindings.filter((binding) => binding.componentType === componentType) : [];
-      if (sameComponent.length === 0) {
+      // Without an env hint or textual match, only a previously promoted
+      // binding (preferredResourceBindings) may act as a fallback.
+      if (!preferredBindingId) {
         return null;
       }
 
-      if (sameComponent.length === 1) {
-        return sameComponent[0];
-      }
-
-      const preferredSameComponent = preferredBindingId
-        ? sameComponent.find((binding) => binding.id === preferredBindingId)
-        : null;
-      if (preferredSameComponent) {
-        return preferredSameComponent;
-      }
-
-      return sameComponent.slice().sort(compareBindingFallback)[0];
+      const preferred = bindings.find((binding) => binding.id === preferredBindingId);
+      return preferred || null;
     }
 
     return best;
@@ -535,7 +609,7 @@ class LearningEngine {
       };
       bindings[index] = updatedBinding;
       this.resourceBindings.lastUpdated = new Date().toISOString();
-      await this.saveResourceBindings();
+      await this.scheduleResourceBindingsPersist();
     });
 
     if (updatedBinding) {
@@ -653,7 +727,8 @@ class LearningEngine {
     return this.config.get('learning.autoPromote', {
       enabled: true,
       resourceBindingMinUses: 3,
-      sceneMinUses: 2
+      sceneMinUses: 2,
+      skillRouteMinSuccesses: 2
     });
   }
 
@@ -827,7 +902,13 @@ class LearningEngine {
       ? this.skillBindings.routes
       : [];
     const now = new Date().toISOString();
+    const intentFamily = classifyRouteIntent(input);
+    const semanticKey = buildRouteSemanticKey(input);
     let route = this.skillBindings.routes.find((item) => item.normalizedInput === normalizedInput);
+
+    if (!route && semanticKey) {
+      route = this.skillBindings.routes.find((item) => item.semanticKey === semanticKey);
+    }
 
     if (route) {
       route.stats = route.stats || {};
@@ -837,7 +918,9 @@ class LearningEngine {
       }
       route.input = String(input).trim();
       route.skill = skill;
-      route.intentFamily = classifyRouteIntent(input);
+      route.intentFamily = intentFamily;
+      route.normalizedInput = normalizedInput;
+      route.semanticKey = semanticKey;
       route.updatedAt = now;
       route.source = metadata.source || route.source || 'user';
       route.stats.learnCount = (Number(route.stats.learnCount) || 0) + 1;
@@ -846,7 +929,8 @@ class LearningEngine {
         id: `route-${Date.now()}-${shortId()}`,
         input: String(input).trim(),
         normalizedInput,
-        intentFamily: classifyRouteIntent(input),
+        semanticKey,
+        intentFamily,
         skill,
         source: metadata.source || 'user',
         createdAt: now,
@@ -867,6 +951,59 @@ class LearningEngine {
     return route;
   }
 
+  async learnSuccessfulSkillRoute(input, skill, metadata = {}) {
+    const config = this.getAutoPromoteConfig();
+    if (!config.enabled || !skill || !input) return null;
+
+    const normalizedInput = normalizeRouteInput(input);
+    if (!normalizedInput) return null;
+
+    const semanticKey = buildRouteSemanticKey(input);
+    const routeKey = semanticKey || normalizedInput;
+    const threshold = Math.max(2, Number(config.skillRouteMinSuccesses) || 2);
+    const now = new Date().toISOString();
+
+    this.skillBindings.passiveRoutes = Array.isArray(this.skillBindings.passiveRoutes)
+      ? this.skillBindings.passiveRoutes
+      : [];
+
+    let passive = this.skillBindings.passiveRoutes.find((item) => item.routeKey === routeKey && item.skill === skill);
+    if (!passive) {
+      passive = {
+        id: `passive-route-${Date.now()}-${shortId()}`,
+        input: String(input).trim(),
+        normalizedInput,
+        semanticKey,
+        routeKey,
+        intentFamily: classifyRouteIntent(input),
+        skill,
+        source: metadata.source || 'passive-success',
+        stats: { successCount: 0, firstSeen: now, lastSeen: now }
+      };
+      this.skillBindings.passiveRoutes.push(passive);
+    }
+
+    passive.input = String(input).trim();
+    passive.normalizedInput = normalizedInput;
+    passive.semanticKey = semanticKey;
+    passive.intentFamily = classifyRouteIntent(input);
+    passive.stats = passive.stats || {};
+    passive.stats.successCount = (Number(passive.stats.successCount) || 0) + 1;
+    passive.stats.lastSeen = now;
+
+    if (passive.stats.successCount >= threshold) {
+      const promoted = await this.learnSkillRoute(input, skill, {
+        source: metadata.source || 'passive-success'
+      });
+      this.skillBindings.passiveRoutes = this.skillBindings.passiveRoutes.filter((item) => item.id !== passive.id);
+      await this.saveSkillBindings();
+      return { promoted: true, route: promoted, passive };
+    }
+
+    await this.saveSkillBindings();
+    return { promoted: false, passive };
+  }
+
   /**
    * Match learned routes conservatively: exact matches always win, while
    * fuzzy matches must retain the same high-level action family.
@@ -876,8 +1013,28 @@ class LearningEngine {
     if (!normalizedInput) return null;
     const allowed = new Set(availableSkills || []);
     const intentFamily = classifyRouteIntent(input);
+    const semanticKey = buildRouteSemanticKey(input);
     const routes = Array.isArray(this.skillBindings.routes) ? this.skillBindings.routes : [];
     const now = Date.now();
+
+    const direct = findDirectRouteMatch(routes, {
+      normalizedInput,
+      semanticKey,
+      intentFamily,
+      allowed
+    });
+    if (direct) {
+      direct.stats = direct.stats || {};
+      direct.stats.useCount = (Number(direct.stats.useCount) || 0) + 1;
+      direct.stats.lastUsed = new Date().toISOString();
+      await this.scheduleSkillBindingsPersist();
+      return {
+        skill: direct.skill,
+        confidence: scoreDirectRoute(direct, direct.normalizedInput === normalizedInput),
+        route: direct
+      };
+    }
+
     let best = null;
 
     for (const route of routes) {
@@ -914,8 +1071,81 @@ class LearningEngine {
     best.route.stats = best.route.stats || {};
     best.route.stats.useCount = (Number(best.route.stats.useCount) || 0) + 1;
     best.route.stats.lastUsed = new Date().toISOString();
-    await this.saveSkillBindings();
+    await this.scheduleSkillBindingsPersist();
     return best;
+  }
+
+  /**
+   * Persist resource bindings. High-frequency callers (markResourceBindingUsed)
+   * go through the throttler; direct-write mode (persistThrottleMs=0) saves
+   * immediately.
+   */
+  async scheduleResourceBindingsPersist() {
+    if (this.persistThrottleMs <= 0) {
+      await this.saveResourceBindings();
+      return;
+    }
+    this.resourceBindingsThrottler.markDirty();
+  }
+
+  /**
+   * Persist skill bindings. matchSkillRoute hits this on every successful
+   * match, so it is debounced to avoid rewriting the whole bindings file.
+   */
+  async scheduleSkillBindingsPersist() {
+    if (this.persistThrottleMs <= 0) {
+      await this.saveSkillBindings();
+      return;
+    }
+    this.skillBindingsThrottler.markDirty();
+  }
+
+  /**
+   * Flush any pending throttled persistence immediately.
+   */
+  async flushLearningPersists() {
+    await this.resourceBindingsThrottler.flush();
+    await this.skillBindingsThrottler.flush();
+  }
+
+  /**
+   * Pure-read hint of historically learned routes for AI skill selection.
+   * Returns up to `limit` routes matching the input's intent family with
+   * bigram similarity >= 0.5, boosted by usage frequency.
+   */
+  getRouteHistoryHint(input, availableSkills = [], limit = 3) {
+    const normalizedInput = normalizeRouteInput(input);
+    if (!normalizedInput) return [];
+
+    const allowed = Array.isArray(availableSkills) && availableSkills.length > 0
+      ? new Set(availableSkills)
+      : null;
+    const intentFamily = classifyRouteIntent(input);
+    const routes = Array.isArray(this.skillBindings.routes) ? this.skillBindings.routes : [];
+    const hints = [];
+
+    for (const route of routes) {
+      if (!route?.skill) continue;
+      if (allowed && !allowed.has(route.skill)) continue;
+      if (route.intentFamily && route.intentFamily !== intentFamily) continue;
+
+      const similarity = bigramDice(route.normalizedInput, normalizedInput);
+      if (similarity < 0.5) continue;
+
+      const useCount = Number(route.stats?.useCount) || 0;
+      hints.push({
+        skill: route.skill,
+        input: route.input || route.normalizedInput,
+        useCount,
+        similarity: Math.round(similarity * 100) / 100
+      });
+    }
+
+    return hints
+      .map((hint) => ({ ...hint, rank: hint.similarity + Math.min(hint.useCount * 0.02, 0.1) }))
+      .sort((left, right) => right.rank - left.rank)
+      .slice(0, Math.max(1, Number(limit) || 3))
+      .map(({ rank, ...hint }) => hint);
   }
 
   /**
@@ -928,8 +1158,9 @@ class LearningEngine {
       this.skillBindings = await fs.readJson(bindingsPath);
       this.skillBindings.bindings = this.skillBindings.bindings || {};
       this.skillBindings.routes = Array.isArray(this.skillBindings.routes) ? this.skillBindings.routes : [];
+      this.skillBindings.passiveRoutes = Array.isArray(this.skillBindings.passiveRoutes) ? this.skillBindings.passiveRoutes : [];
     } else {
-      this.skillBindings = { version: '1.0', bindings: {}, routes: [] };
+      this.skillBindings = { version: '1.0', bindings: {}, routes: [], passiveRoutes: [] };
     }
   }
 
@@ -1087,7 +1318,9 @@ class LearningEngine {
     const skill = options.skill ? String(options.skill) : null;
     const requestedLimit = Number(options.limit);
     const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(500, requestedLimit)) : 50;
+    const query = options.query ? String(options.query) : null;
     const recordsBySkill = await this.collectRecords();
+    const semanticIndex = await this.rebuildSemanticIndex(recordsBySkill);
     const feedback = Object.entries(recordsBySkill)
       .flatMap(([recordSkill, records]) =>
         (Array.isArray(records) ? records : []).map((record) => ({ skill: record.skill || recordSkill, ...record }))
@@ -1112,7 +1345,7 @@ class LearningEngine {
 
     return {
       generatedAt: new Date().toISOString(),
-      filters: { skill, limit },
+      filters: { skill, limit, query },
       summary: {
         totalFeedback: Object.values(recordsBySkill).reduce(
           (total, records) => total + (Array.isArray(records) ? records.length : 0),
@@ -1121,6 +1354,8 @@ class LearningEngine {
         returnedFeedback: feedback.length,
         learnedSkills: Object.keys(this.skillBindings.bindings || {}).length,
         learnedRoutes: (this.skillBindings.routes || []).length,
+        passiveRoutes: (this.skillBindings.passiveRoutes || []).length,
+        semanticEntries: semanticIndex.entries.length,
         scenes: (this.scenes?.mappings || []).length,
         resourceBindings: (this.resourceBindings.bindings || []).length,
         sourceFiles: sourceFiles.length
@@ -1142,6 +1377,11 @@ class LearningEngine {
         })
       ),
       resourceBindings: (this.resourceBindings.bindings || []).map((binding) => sanitizeResourceBinding(binding)),
+      semanticIndex: {
+        version: semanticIndex.version,
+        lastUpdated: semanticIndex.lastUpdated,
+        entries: this.searchSemanticIndex(query || skill || '', { skill, limit: Math.min(limit, 50) }).map(redactSensitiveDeep)
+      },
       packages: {
         currentBundle: {
           kind: 'flowmind-learning-bundle',
@@ -1152,6 +1392,145 @@ class LearningEngine {
         sourceFiles
       }
     };
+  }
+
+  async loadSemanticIndex() {
+    const indexPath = path.join(this.expandPath(this.learningPath), 'semantic-index.json');
+    if (await fs.pathExists(indexPath)) {
+      try {
+        const loaded = await fs.readJson(indexPath);
+        this.semanticIndex = {
+          version: loaded.version || '1.0',
+          entries: Array.isArray(loaded.entries) ? loaded.entries : [],
+          lastUpdated: loaded.lastUpdated || null
+        };
+        return;
+      } catch (error) {
+        // Rebuilt lazily by getLearningAssets.
+      }
+    }
+    this.semanticIndex = { version: '1.0', entries: [], lastUpdated: null };
+  }
+
+  async saveSemanticIndex() {
+    const indexPath = path.join(this.expandPath(this.learningPath), 'semantic-index.json');
+    await fs.writeJson(indexPath, this.semanticIndex, { spaces: 2 });
+  }
+
+  async rebuildSemanticIndex(recordsBySkill = null) {
+    recordsBySkill = recordsBySkill || await this.collectRecords();
+    const entries = [];
+
+    for (const [recordSkill, records] of Object.entries(recordsBySkill || {})) {
+      for (const record of records || []) {
+        const text = [record.input, record.application?.condition, record.application?.action, record.type].filter(Boolean).join(' ');
+        entries.push(createSemanticEntry({
+          id: record.id || `record-${entries.length + 1}`,
+          type: 'feedback',
+          skill: record.skill || recordSkill,
+          text,
+          title: record.input || record.application?.action || record.type,
+          source: `records/${recordSkill}/${record.id}.json`,
+          stats: { timestamp: record.timestamp || null }
+        }));
+      }
+    }
+
+    for (const route of this.skillBindings.routes || []) {
+      entries.push(createSemanticEntry({
+        id: route.id,
+        type: 'route',
+        skill: route.skill,
+        text: [route.input, route.normalizedInput, route.semanticKey].filter(Boolean).join(' '),
+        title: route.input || route.normalizedInput,
+        source: 'skill-bindings.routes',
+        stats: route.stats || {},
+        semanticKey: route.semanticKey || buildRouteSemanticKey(route.input || route.normalizedInput)
+      }));
+    }
+
+    for (const route of this.skillBindings.passiveRoutes || []) {
+      entries.push(createSemanticEntry({
+        id: route.id,
+        type: 'passive-route',
+        skill: route.skill,
+        text: [route.input, route.normalizedInput, route.semanticKey].filter(Boolean).join(' '),
+        title: route.input || route.normalizedInput,
+        source: 'skill-bindings.passiveRoutes',
+        stats: route.stats || {},
+        semanticKey: route.semanticKey || buildRouteSemanticKey(route.input || route.normalizedInput)
+      }));
+    }
+
+    for (const [skillName, binding] of Object.entries(this.skillBindings.bindings || {})) {
+      for (const rule of binding.rules || []) {
+        entries.push(createSemanticEntry({
+          id: `${skillName}-rule-${entries.length + 1}`,
+          type: 'rule',
+          skill: skillName,
+          text: [rule.condition, rule.action, rule.priority].filter(Boolean).join(' '),
+          title: rule.action || rule.condition,
+          source: 'skill-bindings.rules',
+          stats: { lastLearning: binding.lastLearning || null }
+        }));
+      }
+    }
+
+    for (const scene of this.scenes.mappings || []) {
+      entries.push(createSemanticEntry({
+        id: scene.id,
+        type: 'scene',
+        skill: scene.workflow?.skills?.[0]?.skill || null,
+        text: [scene.name, ...(scene.keywords || []), ...(scene.patterns || [])].filter(Boolean).join(' '),
+        title: scene.name || scene.id,
+        source: 'scenes',
+        stats: scene.stats || {}
+      }));
+    }
+
+    for (const binding of this.resourceBindings.bindings || []) {
+      entries.push(createSemanticEntry({
+        id: binding.id,
+        type: 'resource',
+        skill: binding.skill || null,
+        text: [binding.business, binding.provider, binding.componentType, ...(binding.aliases || []), ...(binding.keywords || [])].filter(Boolean).join(' '),
+        title: binding.business || binding.id,
+        source: 'resource-bindings',
+        stats: binding.stats || {}
+      }));
+    }
+
+    this.semanticIndex = {
+      version: '1.0',
+      lastUpdated: new Date().toISOString(),
+      entries: mergeSemanticEntries(entries.filter(Boolean))
+    };
+    await this.saveSemanticIndex();
+    return this.semanticIndex;
+  }
+
+  searchSemanticIndex(input, options = {}) {
+    const query = String(input || '').trim();
+    if (!query) return [];
+    const skill = options.skill ? String(options.skill) : null;
+    const limit = Math.max(1, Math.min(100, Number(options.limit) || 20));
+    const normalized = normalizeRouteInput(query);
+    const semanticKey = buildRouteSemanticKey(query);
+
+    return (this.semanticIndex.entries || [])
+      .filter((entry) => !skill || entry.skill === skill)
+      .map((entry) => {
+        let score = 0;
+        if (semanticKey && entry.semanticKey === semanticKey) score += 12;
+        if (entry.normalizedText && normalized.includes(entry.normalizedText)) score += 8;
+        if (entry.normalizedText && entry.normalizedText.includes(normalized)) score += 6;
+        if (entry.normalizedText) score += bigramDice(entry.normalizedText, normalized) * 5;
+        score += Math.min(Number(entry.stats?.useCount) || 0, 10) * 0.1;
+        return { ...entry, score: Math.round(score * 100) / 100 };
+      })
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => right.score - left.score || String(left.type).localeCompare(String(right.type)))
+      .slice(0, limit);
   }
 
   /**
@@ -1699,18 +2078,25 @@ function mergeSkillRoutes(existing, incoming) {
   const routes = new Map();
   for (const route of [...(existing || []), ...(incoming || [])]) {
     if (!route?.skill || !route?.normalizedInput) continue;
-    const key = route.normalizedInput;
+    const normalizedRoute = {
+      ...route,
+      semanticKey: route.semanticKey || buildRouteSemanticKey(route.input || route.normalizedInput),
+      intentFamily: route.intentFamily || classifyRouteIntent(route.input || route.normalizedInput),
+      stats: { ...(route.stats || {}) }
+    };
+    const key = normalizedRoute.semanticKey || normalizedRoute.normalizedInput;
     const previous = routes.get(key);
     routes.set(key, previous ? {
       ...previous,
-      ...route,
+      ...normalizedRoute,
+      aliases: [...new Set([...(previous.aliases || []), previous.input, normalizedRoute.input].filter(Boolean))],
       stats: {
         ...(previous.stats || {}),
-        ...(route.stats || {}),
-        learnCount: (Number(previous.stats?.learnCount) || 0) + (Number(route.stats?.learnCount) || 0),
-        useCount: (Number(previous.stats?.useCount) || 0) + (Number(route.stats?.useCount) || 0)
+        ...(normalizedRoute.stats || {}),
+        learnCount: (Number(previous.stats?.learnCount) || 0) + (Number(normalizedRoute.stats?.learnCount) || 0),
+        useCount: (Number(previous.stats?.useCount) || 0) + (Number(normalizedRoute.stats?.useCount) || 0)
       }
-    } : { ...route, stats: { ...(route.stats || {}) } });
+    } : normalizedRoute);
   }
   return [...routes.values()];
 }
@@ -1732,6 +2118,89 @@ function classifyRouteIntent(input) {
   return 'general';
 }
 
+function buildRouteSemanticKey(input) {
+  const intent = classifyRouteIntent(input);
+  const normalized = normalizeRouteInput(input)
+    .replace(/(?:帮我|请|麻烦|一下|一下子|当前|这个|这些|一下当前|一下这个|需求|任务|问题)/g, '')
+    .replace(/(?:分析|梳理|总结|说明|解释|了解|还原|查询|查看|状态|执行|运行|启动|触发|部署|发布|上线)/g, '');
+  const tokens = normalized.match(/[\u4e00-\u9fffa-z0-9_-]+/gi) || [];
+  const compact = [...new Set(tokens.join('').match(/[\u4e00-\u9fffa-z0-9_-]{2,}/gi) || [])]
+    .join('')
+    .slice(0, 80);
+  return compact ? `${intent}:${compact}` : null;
+}
+
+function findDirectRouteMatch(routes, options) {
+  const { normalizedInput, semanticKey, intentFamily, allowed } = options;
+  const exactByInput = new Map();
+  const exactBySemantic = new Map();
+
+  for (const route of routes) {
+    if (!route?.skill || (allowed.size > 0 && !allowed.has(route.skill))) continue;
+    if (route.intentFamily && route.intentFamily !== intentFamily) continue;
+    if (route.normalizedInput) {
+      exactByInput.set(route.normalizedInput, route);
+    }
+    const routeSemanticKey = route.semanticKey || buildRouteSemanticKey(route.input || route.normalizedInput);
+    if (routeSemanticKey) {
+      exactBySemantic.set(routeSemanticKey, route);
+    }
+  }
+
+  return exactByInput.get(normalizedInput) || (semanticKey ? exactBySemantic.get(semanticKey) : null) || null;
+}
+
+function scoreDirectRoute(route, exactMatch) {
+  const baseScore = exactMatch ? 1 : 0.96;
+  const correctionCount = Number(route.stats?.correctionCount) || 0;
+  const correctionPenalty = Math.min(correctionCount * 0.1, 0.3);
+  return Math.max(baseScore * 0.85 - correctionPenalty, 0);
+}
+
+function createSemanticEntry(entry = {}) {
+  const text = String(entry.text || entry.title || '').trim();
+  if (!entry.id || !text) return null;
+  const normalizedText = normalizeRouteInput(text);
+  return {
+    id: String(entry.id),
+    type: entry.type || 'unknown',
+    skill: entry.skill || null,
+    title: String(entry.title || text).slice(0, 160),
+    source: entry.source || null,
+    semanticKey: entry.semanticKey || buildRouteSemanticKey(text),
+    normalizedText,
+    keywords: extractSemanticKeywords(text),
+    stats: { ...(entry.stats || {}) }
+  };
+}
+
+function extractSemanticKeywords(value) {
+  return [...new Set(String(value || '').toLowerCase().match(/[\u3400-\u9fffa-z0-9._-]{2,}/gi) || [])].slice(0, 20);
+}
+
+function mergeSemanticEntries(entries) {
+  const merged = new Map();
+  for (const entry of entries || []) {
+    const key = `${entry.type}:${entry.semanticKey || entry.normalizedText || entry.id}:${entry.skill || ''}`;
+    const previous = merged.get(key);
+    if (!previous) {
+      merged.set(key, entry);
+      continue;
+    }
+    merged.set(key, {
+      ...previous,
+      ...entry,
+      keywords: [...new Set([...(previous.keywords || []), ...(entry.keywords || [])])],
+      stats: {
+        ...(previous.stats || {}),
+        ...(entry.stats || {}),
+        useCount: (Number(previous.stats?.useCount) || 0) + (Number(entry.stats?.useCount) || 0)
+      }
+    });
+  }
+  return [...merged.values()];
+}
+
 function bigramDice(left, right) {
   if (!left || !right) return 0;
   if (left === right) return 1;
@@ -1751,6 +2220,22 @@ function bigramDice(left, right) {
     }
   }
   return (2 * overlap) / ((left.length - 1) + (right.length - 1));
+}
+
+const ENV_ONLY_ALIASES = new Set([
+  'test', 'prod', 'uat', 'gray', 'dev', 'online', 'pts',
+  '测试', '生产', '预发', '灰度', '压测'
+]);
+
+/**
+ * Weak aliases are too short or purely environment words; matching on them
+ * causes false positives (e.g. alias "test" hitting any test-env request).
+ */
+function isWeakAlias(alias) {
+  const normalized = String(alias || '').trim().toLowerCase();
+  if (!normalized) return true;
+  if (ENV_ONLY_ALIASES.has(normalized)) return true;
+  return normalized.length <= 4;
 }
 
 function mergeUniqueRules(left, right) {
@@ -1850,6 +2335,7 @@ function inferEnvToken(value) {
   if (/(?:^|[^a-z])test(?:[^a-z]|$)|测试/.test(normalized)) return 'test';
   if (/(?:^|[^a-z])gray(?:[^a-z]|$)|灰度/.test(normalized)) return 'gray';
   if (/(?:^|[^a-z])prod(?:[^a-z]|$)|生产|线上|正式/.test(normalized)) return 'prod';
+  if (/(?:^|[^a-z])pts(?:[^a-z]|$)|压测/.test(normalized)) return 'pts';
   return null;
 }
 
@@ -1946,3 +2432,7 @@ async function listLearningSourceFiles(rootDir) {
 }
 
 module.exports = LearningEngine;
+module.exports.bigramDice = bigramDice;
+module.exports.isWeakAlias = isWeakAlias;
+module.exports.PersistThrottler = PersistThrottler;
+module.exports.WriteQueue = WriteQueue;

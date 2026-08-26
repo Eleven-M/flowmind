@@ -139,6 +139,28 @@ describe('learning-engine smart routing', () => {
     expect(learning.skillBindings.routes[0].stats.correctionCount).toBe(1);
   });
 
+  test('semantic duplicates link to the previously learned skill route quickly', async () => {
+    const learning = await freshEngine();
+
+    await learning.learnSkillRoute('帮我分析当前合同校验额度流程', 'offline-design-analysis');
+    await learning.learnSkillRoute('梳理一下合同校验额度流程', 'offline-design-analysis');
+
+    expect(learning.skillBindings.routes).toHaveLength(1);
+    expect(learning.skillBindings.routes[0].stats.learnCount).toBe(2);
+    expect(learning.skillBindings.routes[0].semanticKey).toBeTruthy();
+
+    const matched = await learning.matchSkillRoute(
+      '分析合同校验额度流程',
+      ['offline-design-analysis', 'auto-flow']
+    );
+    expect(matched).toEqual(expect.objectContaining({
+      skill: 'offline-design-analysis',
+      confidence: expect.any(Number)
+    }));
+    expect(matched.confidence).toBeGreaterThan(0.8);
+    expect(matched.route.stats.useCount).toBe(1);
+  });
+
   test('route below Dice threshold is not matched even with high useCount', async () => {
     const learning = await freshEngine();
     await learning.learnSkillRoute('completely different thing', 'code-review');

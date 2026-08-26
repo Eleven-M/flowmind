@@ -276,13 +276,17 @@ describe('learning bundle export and install', () => {
       connection: { endpoint: 'https://logs.example.com', token: 'must-not-leak' }
     });
 
-    const assets = await learning.getLearningAssets({ skill: 'log-audit', limit: 10 });
+    const assets = await learning.getLearningAssets({ skill: 'log-audit', limit: 10, query: '日志表格输出' });
 
     expect(assets.summary).toEqual(
-      expect.objectContaining({ returnedFeedback: 1, learnedSkills: 1, resourceBindings: 1, sourceFiles: 1 })
+      expect.objectContaining({ returnedFeedback: 1, learnedSkills: 1, resourceBindings: 1, sourceFiles: 1, semanticEntries: expect.any(Number) })
     );
     expect(assets.feedback[0]).toEqual(expect.objectContaining({ id: 'learn-assets-1', skill: 'log-audit' }));
     expect(assets.skills[0]).toEqual(expect.objectContaining({ name: 'log-audit', feedbackCount: 1 }));
+    expect(assets.semanticIndex.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'feedback', skill: 'log-audit' })
+    ]));
+    expect(await fs.pathExists(path.join(tempHome, '.flowmind', 'learning', 'semantic-index.json'))).toBe(true);
     expect(assets.resourceBindings[0].connection).toEqual({ endpoint: 'https://logs.example.com' });
     expect(assets.packages.sourceFiles[0]).toEqual(
       expect.objectContaining({ path: 'packages/team.lakebook', extension: '.lakebook' })

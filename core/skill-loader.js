@@ -14,16 +14,41 @@ class SkillLoader {
     this.honorEngine = honorEngine;
     this.skills = new Map();
     this.skillPath = config.get('skills.path', path.join(__dirname, '..', 'skills'));
+    // Local (user-authored) skills live under FLOWMIND_HOME/.flowmind/skills
+    // and stay out of the git repository and npm package. They are loaded on
+    // top of built-in skills and may override a same-named built-in. Disable
+    // with `skills.localPath: false`.
+    const configuredLocalPath = config.get(
+      'skills.localPath',
+      path.join(
+        process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || '',
+        '.flowmind',
+        'skills'
+      )
+    );
+    this.localSkillPath =
+      configuredLocalPath === false || configuredLocalPath === 'none' ? null : configuredLocalPath;
   }
 
   /**
-   * Load all skills
+   * Load all skills: built-in directory first, then the local skills
+   * directory (local skills override same-named built-ins).
    */
   async loadAll() {
-    const skillsDir = this.skillPath;
+    await this.loadSkillsFrom(this.skillPath, { warnIfMissing: true });
 
+    if (this.localSkillPath && this.localSkillPath !== this.skillPath) {
+      await this.loadSkillsFrom(this.localSkillPath, { warnIfMissing: false });
+    }
+
+    return Array.from(this.skills.values());
+  }
+
+  async loadSkillsFrom(skillsDir, options = {}) {
     if (!await fs.pathExists(skillsDir)) {
-      console.warn(`Skills directory not found: ${skillsDir}`);
+      if (options.warnIfMissing) {
+        console.warn(`Skills directory not found: ${skillsDir}`);
+      }
       return;
     }
 
@@ -31,14 +56,12 @@ class SkillLoader {
 
     for (const entry of entries) {
       const skillDir = path.join(skillsDir, entry);
-      const stat = await fs.stat(skillDir);
+      const stat = await fs.stat(skillDir).catch(() => null);
 
-      if (stat.isDirectory()) {
+      if (stat && stat.isDirectory()) {
         await this.loadSkill(entry, skillDir);
       }
     }
-
-    return Array.from(this.skills.values());
   }
 
   /**

@@ -7,7 +7,10 @@ const {
   buildComponentConfig,
   convertResourceBindings,
   convertSceneMappings,
+  convertSkillBindings,
   mergeBindings,
+  syncFlowMindToSddAgent,
+  syncSharedLearning,
   syncSddAgentToFlowMind
 } = require('../core/sdd-agent-sync');
 
@@ -327,6 +330,348 @@ describe('sdd-agent sync helpers', () => {
     expect(result.skipped).toBe(true);
     expect(result.reason).toBe('not-enabled');
     expect(await fs.pathExists(path.join(targetHome, '.flowmind', 'resource-config.json'))).toBe(false);
+
+    await fs.remove(sourceDir);
+    await fs.remove(targetHome);
+  });
+
+  test('convertSkillBindings maps records/rules per skill and globalRules to _global', () => {
+    const converted = convertSkillBindings({
+      version: '1.0',
+      bindings: {
+        'log-audit': {
+          learningCount: 2,
+          lastLearning: '2026-08-14T09:00:00.000Z',
+          records: [
+            { recordId: 'sdd-1', type: 'process_correction', summary: '规则一', priority: 'high' },
+            { recordId: 'sdd-2', type: 'output_format', summary: '规则二', priority: 'medium' }
+          ],
+          rules: [
+            { condition: 'trace 输出含多服务', action: '按服务分块渲染', source: 'sdd-1' }
+          ]
+        },
+        'empty-skill': { learningCount: 0, records: [], rules: [] }
+      },
+      globalRules: [
+        { pattern: '并列配置体系', action: '独立处理各配置段', source: 'rule-1' }
+      ]
+    });
+
+    expect(converted.importedSkillRecords).toBe(2);
+    expect(converted.importedSkillRules).toBe(1);
+    expect(converted.importedGlobalRules).toBe(1);
+    expect(converted.bindings['empty-skill']).toBeUndefined();
+    expect(converted.bindings['log-audit']).toEqual(expect.objectContaining({
+      learningCount: 2,
+      lastLearning: '2026-08-14T09:00:00.000Z',
+      metadata: expect.objectContaining({ importedFrom: 'sdd-agent' })
+    }));
+    expect(converted.bindings._global.rules).toEqual([
+      { condition: '并列配置体系', action: '独立处理各配置段', source: 'rule-1' }
+    ]);
+  });
+
+  test('sync imports skill learning rules idempotently without clobbering flowmind data', async () => {
+    const sourceDir = path.join(os.tmpdir(), `sdd-agent-source-${Date.now()}`);
+    const targetHome = path.join(os.tmpdir(), `flowmind-target-${Date.now()}`);
+    await fs.ensureDir(path.join(sourceDir, 'learning'));
+    await fs.ensureDir(path.join(targetHome, '.flowmind', 'learning'));
+    await fs.writeJson(path.join(sourceDir, 'resource-config.json'), {
+      version: '1.0',
+      resources: {},
+      mcpServers: {},
+      aliases: {}
+    }, { spaces: 2 });
+    await fs.writeJson(path.join(sourceDir, 'learning', 'skill-bindings.json'), {
+      version: '1.0',
+      bindings: {
+        'auto-flow': {
+          learningCount: 1,
+          records: [
+            { recordId: 'lr-auto-flow-archive-001', type: 'process_correction', summary: '归档规则', priority: 'high' }
+          ],
+          rules: [
+            { condition: '当执行飞流部署时', action: '先补写归档记录', source: 'lr-auto-flow-archive-001' }
+          ]
+        },
+        'log-audit': {
+          learningCount: 1,
+          records: [
+            { recordId: 'lr-log-audit-001', type: 'output_format', summary: '分块渲染', priority: 'high' }
+          ],
+          rules: [
+            { condition: 'trace 输出含多服务', action: '按服务分块渲染并高亮异常', source: 'lr-log-audit-001' }
+          ]
+        }
+      },
+      globalRules: [
+        { pattern: '全局规则一', action: '独立处理配置段', source: 'g-1' }
+      ]
+    }, { spaces: 2 });
+    await fs.writeJson(path.join(targetHome, '.flowmind', 'learning', 'skill-bindings.json'), {
+      version: '1.0',
+      bindings: {
+        'log-audit': {
+          learningCount: 1,
+          lastLearning: '2026-08-20T00:00:00.000Z',
+          records: [
+            { recordId: 'fm-log-audit-1', type: 'correction', summary: 'flowmind 自己学的', priority: 'high' }
+          ],
+          rules: [
+            { condition: 'When uat trace lookup', action: 'Use uat binding', priority: 'high' }
+          ],
+          preferredResourceBindings: { logService: 'bind-uat' }
+        }
+      },
+      routes: [
+        { id: 'route-1', skill: 'log-audit', normalizedInput: '查询日志', stats: { useCount: 1 } }
+      ]
+    }, { spaces: 2 });
+
+    const summary = await syncSddAgentToFlowMind({ sourceDir, targetHome });
+    expect(summary.counts.importedSkillRecords).toBe(2);
+    expect(summary.counts.importedGlobalRules).toBe(1);
+    expect(summary.files.skillBindings).toContain('skill-bindings.json');
+
+    const skillBindingsPath = path.join(targetHome, '.flowmind', 'learning', 'skill-bindings.json');
+    const imported = await fs.readJson(skillBindingsPath);
+
+    // Union merge: flowmind's own record + sdd-agent's records coexist.
+    const logAudit = imported.bindings['log-audit'];
+    expect(logAudit.records.map((record) => record.recordId).sort()).toEqual(['fm-log-audit-1', 'lr-log-audit-001']);
+    expect(logAudit.rules).toHaveLength(2);
+    expect(logAudit.preferredResourceBindings).toEqual({ logService: 'bind-uat' });
+    expect(logAudit.lastLearning).toBe('2026-08-20T00:00:00.000Z');
+    expect(imported.bindings['auto-flow'].records).toHaveLength(1);
+    expect(imported.bindings._global.rules).toEqual([
+      expect.objectContaining({ condition: '全局规则一', action: '独立处理配置段' })
+    ]);
+    // flowmind's learned routes are preserved.
+    expect(imported.routes).toHaveLength(1);
+
+    // Idempotency: a second sync does not duplicate or inflate anything.
+    await syncSddAgentToFlowMind({ sourceDir, targetHome });
+    const rerun = await fs.readJson(skillBindingsPath);
+    expect(rerun.bindings['log-audit'].records).toHaveLength(2);
+    expect(rerun.bindings['log-audit'].rules).toHaveLength(2);
+    expect(rerun.bindings['log-audit'].learningCount).toBe(logAudit.learningCount);
+    expect(rerun.bindings._global.rules).toHaveLength(1);
+    expect(rerun.routes).toHaveLength(1);
+
+    await fs.remove(sourceDir);
+    await fs.remove(targetHome);
+  });
+
+  test('sync copies learning deposit markdown documents and tracks them in the signature', async () => {
+    const sourceDir = path.join(os.tmpdir(), `sdd-agent-source-${Date.now()}`);
+    const targetHome = path.join(os.tmpdir(), `flowmind-target-${Date.now()}`);
+    await fs.ensureDir(path.join(sourceDir, 'learning', 'records'));
+    await fs.ensureDir(path.join(sourceDir, 'source'));
+    await fs.writeJson(path.join(sourceDir, 'resource-config.json'), {
+      version: '1.0',
+      resources: {},
+      mcpServers: {},
+      aliases: {}
+    }, { spaces: 2 });
+    await fs.writeJson(path.join(sourceDir, 'learning', 'skill-bindings.json'), {
+      version: '1.0',
+      bindings: {}
+    }, { spaces: 2 });
+    await fs.writeFile(path.join(sourceDir, 'learning', 'records', '2026-07-02-analysis.md'), '# 沉淀一\n');
+    await fs.writeFile(path.join(sourceDir, 'learning', 'records', '2026-07-30-analysis.md'), '# 沉淀二\n');
+    await fs.writeFile(path.join(sourceDir, 'learning', 'learning-index.md'), '# 索引\n');
+
+    const summary = await syncSddAgentToFlowMind({ sourceDir, targetHome });
+    expect(summary.counts.copiedLearningRecords).toBe(2);
+    expect(await fs.pathExists(path.join(targetHome, '.flowmind', 'source', 'sdd-records', '2026-07-02-analysis.md'))).toBe(true);
+    expect(await fs.pathExists(path.join(targetHome, '.flowmind', 'source', 'sdd-records', 'learning-index.md'))).toBe(true);
+
+    // Signature tracks the deposit docs: unchanged → up-to-date, changed → resync.
+    await autoSyncSddAgentToFlowMind({ sourceDir, targetHome, force: true });
+    const unchanged = await autoSyncSddAgentToFlowMind({ sourceDir, targetHome, force: true });
+    expect(unchanged.synced).toBe(false);
+    expect(unchanged.reason).toBe('up-to-date');
+
+    await fs.writeFile(path.join(sourceDir, 'learning', 'records', '2026-07-02-analysis.md'), '# 沉淀一（更新）\n');
+    const changed = await autoSyncSddAgentToFlowMind({ sourceDir, targetHome, force: true });
+    expect(changed.synced).toBe(true);
+    const refreshed = await fs.readFile(
+      path.join(targetHome, '.flowmind', 'source', 'sdd-records', '2026-07-02-analysis.md'),
+      'utf8'
+    );
+    expect(refreshed).toContain('沉淀一（更新）');
+
+    await fs.remove(sourceDir);
+    await fs.remove(targetHome);
+  });
+
+  test('syncFlowMindToSddAgent exports learned skills, routes, resources and scenes back to sdd-agent', async () => {
+    const flowmindHome = path.join(os.tmpdir(), `flowmind-source-${Date.now()}`);
+    const targetDir = path.join(os.tmpdir(), `sdd-agent-target-${Date.now()}`);
+    const flowmindDir = path.join(flowmindHome, '.flowmind');
+    await fs.ensureDir(path.join(flowmindDir, 'learning', 'records', 'offline-design-analysis'));
+    await fs.ensureDir(path.join(targetDir, 'learning'));
+
+    await fs.writeJson(path.join(flowmindDir, 'learning', 'skill-bindings.json'), {
+      version: '1.0',
+      bindings: {
+        'offline-design-analysis': {
+          learningCount: 1,
+          records: [
+            { recordId: 'existing-record', type: 'correction', summary: '已有记录', priority: 'medium' }
+          ],
+          rules: [
+            { condition: '已有条件', action: '已有动作', source: 'existing-record' }
+          ]
+        }
+      },
+      routes: [
+        {
+          id: 'route-contract-quota',
+          input: '分析合同校验额度流程',
+          normalizedInput: '分析合同校验额度流程',
+          semanticKey: 'analyze:合同校验额度流程',
+          intentFamily: 'analyze',
+          skill: 'offline-design-analysis',
+          stats: { learnCount: 2, useCount: 3 }
+        }
+      ]
+    }, { spaces: 2 });
+    await fs.writeJson(path.join(flowmindDir, 'learning', 'resource-bindings.json'), {
+      version: '1.0',
+      bindings: [
+        {
+          id: 'bind-yapi-retail',
+          business: '零售',
+          aliases: ['retail'],
+          componentType: 'apiDoc',
+          provider: 'yapi'
+        }
+      ]
+    }, { spaces: 2 });
+    await fs.writeJson(path.join(flowmindDir, 'learning', 'scenes.json'), {
+      version: '1.0',
+      mappings: [
+        {
+          id: 'scene-contract-quota',
+          name: '合同额度分析',
+          keywords: ['合同', '额度'],
+          workflow: {
+            skills: [{ skill: 'offline-design-analysis', params: { action: 'analyze' } }]
+          },
+          stats: { useCount: 2, successRate: 1 }
+        }
+      ]
+    }, { spaces: 2 });
+    await fs.writeJson(
+      path.join(flowmindDir, 'learning', 'records', 'offline-design-analysis', 'learn-contract.json'),
+      {
+        id: 'learn-contract',
+        timestamp: '2026-08-25T00:00:00.000Z',
+        skill: 'offline-design-analysis',
+        type: 'correction',
+        input: '合同额度要先查历史设计',
+        application: {
+          condition: 'When analyzing contract quota',
+          action: 'Load historical design first',
+          priority: 'high'
+        }
+      },
+      { spaces: 2 }
+    );
+    await fs.writeJson(path.join(targetDir, 'learning', 'skill-bindings.json'), {
+      version: '1.0',
+      bindings: {
+        'log-audit': {
+          learningCount: 1,
+          records: [{ recordId: 'sdd-log-1', type: 'format', summary: '日志格式', priority: 'medium' }],
+          rules: [{ condition: '日志', action: '表格', source: 'sdd-log-1' }]
+        }
+      }
+    }, { spaces: 2 });
+
+    const summary = await syncFlowMindToSddAgent({ sourceHome: flowmindHome, targetDir });
+
+    expect(summary.counts.exportedSkills).toBe(1);
+    expect(summary.counts.exportedRoutes).toBe(1);
+    expect(summary.counts.exportedResourceBindings).toBe(1);
+    expect(summary.counts.exportedScenes).toBe(1);
+    expect(summary.counts.writtenLearningRecords).toBe(1);
+
+    const skillBindings = await fs.readJson(path.join(targetDir, 'learning', 'skill-bindings.json'));
+    expect(skillBindings.bindings['log-audit']).toBeTruthy();
+    expect(skillBindings.bindings['offline-design-analysis'].records).toEqual(expect.arrayContaining([
+      expect.objectContaining({ recordId: 'existing-record' }),
+      expect.objectContaining({ recordId: 'learn-contract', priority: 'high' })
+    ]));
+    expect(skillBindings.routes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'route-contract-quota', skill: 'offline-design-analysis' })
+    ]));
+
+    const resourceBindings = await fs.readJson(path.join(targetDir, 'learning', 'resource-bindings.json'));
+    expect(resourceBindings.bindings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'bind-yapi-retail', business: '零售' })
+    ]));
+
+    const scenes = await fs.readJson(path.join(targetDir, 'learning', 'scene-mappings.json'));
+    expect(scenes.mappings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sceneName: '合同额度分析' })
+    ]));
+    expect(await fs.pathExists(path.join(targetDir, 'learning', 'records', 'offline-design-analysis-learn-contract.md'))).toBe(true);
+
+    await fs.remove(flowmindHome);
+    await fs.remove(targetDir);
+  });
+
+  test('syncSharedLearning imports sdd-agent data and exports flowmind routes in one pass', async () => {
+    const sourceDir = path.join(os.tmpdir(), `sdd-agent-source-${Date.now()}`);
+    const targetHome = path.join(os.tmpdir(), `flowmind-target-${Date.now()}`);
+    await fs.ensureDir(path.join(sourceDir, 'learning'));
+    await fs.ensureDir(path.join(targetHome, '.flowmind', 'learning'));
+    await fs.writeJson(path.join(sourceDir, 'resource-config.json'), {
+      version: '1.0',
+      resources: {},
+      mcpServers: {},
+      aliases: {}
+    }, { spaces: 2 });
+    await fs.writeJson(path.join(sourceDir, 'learning', 'skill-bindings.json'), {
+      version: '1.0',
+      bindings: {
+        'auto-flow': {
+          learningCount: 1,
+          records: [{ recordId: 'sdd-auto-1', type: 'process', summary: '部署归档', priority: 'high' }],
+          rules: [{ condition: '部署', action: '归档', source: 'sdd-auto-1' }]
+        }
+      }
+    }, { spaces: 2 });
+    await fs.writeJson(path.join(targetHome, '.flowmind', 'learning', 'skill-bindings.json'), {
+      version: '1.0',
+      bindings: {},
+      routes: [
+        {
+          id: 'route-1',
+          input: '分析合同校验额度流程',
+          normalizedInput: '分析合同校验额度流程',
+          semanticKey: 'analyze:合同校验额度流程',
+          intentFamily: 'analyze',
+          skill: 'offline-design-analysis',
+          stats: { learnCount: 1, useCount: 0 }
+        }
+      ]
+    }, { spaces: 2 });
+
+    const summary = await syncSharedLearning({ sddDir: sourceDir, flowmindHome: targetHome });
+
+    expect(summary.counts.importedSkillRecords).toBe(1);
+    expect(summary.counts.exportedRoutes).toBe(1);
+
+    const flowmindBindings = await fs.readJson(path.join(targetHome, '.flowmind', 'learning', 'skill-bindings.json'));
+    expect(flowmindBindings.bindings['auto-flow'].records).toHaveLength(1);
+
+    const sddBindings = await fs.readJson(path.join(sourceDir, 'learning', 'skill-bindings.json'));
+    expect(sddBindings.routes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'route-1', skill: 'offline-design-analysis' })
+    ]));
 
     await fs.remove(sourceDir);
     await fs.remove(targetHome);

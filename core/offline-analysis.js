@@ -1,4 +1,5 @@
 const fs = require('fs-extra');
+const os = require('os');
 const path = require('path');
 const { getSourceDir, loadSourceContext } = require('./source-inference');
 
@@ -18,6 +19,7 @@ const GENERIC_QUERY_WORDS = new Set([
   'summary', 'design', 'flow', 'code', 'document', 'docs', 'local', 'project'
 ]);
 const MAX_TEXT_LENGTH = 160000;
+const MAX_CHUNK_LENGTH = 3200;
 const MAX_EXCERPT_LENGTH = 240;
 const DATA_IDENTIFIER_STOP_WORDS = new Set(['a', 'an', 'command', 'flowmind', 'of', 'set', 'the', 'where', 'with']);
 
@@ -31,15 +33,16 @@ async function analyzeOffline(input, options = {}) {
   const terms = buildQueryTerms(query);
   const sourceRoot = await resolveReadableRoot(options.sourceDir || getSourceDir(options));
   const repoRoot = await resolveReadableRoot(options.repoDir || options.cwd || process.cwd());
+  const sourceCache = await loadOfflineCache(options);
   const indexContext = await loadIndexContext(sourceRoot);
   const indexBoosts = buildIndexBoosts(indexContext.resourceIndex || [], terms);
   const limitations = [];
 
   const [materialSources, codeSources] = await Promise.all([
-    collectMaterialSources(sourceRoot, indexBoosts, limits, limitations),
+    collectMaterialSources(sourceRoot, indexBoosts, limits, limitations, sourceCache),
     options.includeCode === false
       ? Promise.resolve([])
-      : collectCodeSources(repoRoot, sourceRoot, indexBoosts, limits, limitations)
+      : collectCodeSources(repoRoot, sourceRoot, indexBoosts, limits, limitations, sourceCache)
   ]);
   const learningSources = buildLearningSources(options.learningAssets || {});
   const candidates = [...materialSources, ...learningSources, ...codeSources];
@@ -60,6 +63,8 @@ async function analyzeOffline(input, options = {}) {
     limitations.push('No explicit ordered flow was found; the report contains only structural and topical signals.');
   }
 
+  await sourceCache.flush();
+
   return {
     mode: 'offline-deterministic',
     query,
@@ -71,7 +76,10 @@ async function analyzeOffline(input, options = {}) {
         materials: materialSources.length,
         learning: learningSources.length,
         code: codeSources.filter((source) => source.kind === 'code').length,
-        repositoryDocuments: codeSources.filter((source) => source.kind === 'document').length
+        repositoryDocuments: codeSources.filter((source) => source.kind === 'document').length,
+        chunks: candidates.filter((source) => source.chunkId).length,
+        cacheHits: sourceCache.hits,
+        cacheWrites: sourceCache.writes
       },
       selected: evidence.length
     },
@@ -86,6 +94,86 @@ async function analyzeOffline(input, options = {}) {
     limitations: [...new Set(limitations)],
     guarantees: ['No AI provider used', 'No network access', 'Analyzed code was not executed']
   };
+}
+
+async function loadOfflineCache(options = {}) {
+  if (options.disableCache === true) {
+    return createNoopOfflineCache();
+  }
+
+  const flowmindHome = process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || os.homedir();
+  const cachePath = options.cachePath || path.join(flowmindHome, '.flowmind', 'cache', 'offline-analysis-cache.json');
+  let store = { version: '1.0', entries: {} };
+  if (await fs.pathExists(cachePath)) {
+    try {
+      const loaded = await fs.readJson(cachePath);
+      store = {
+        version: loaded.version || '1.0',
+        entries: loaded.entries && typeof loaded.entries === 'object' ? loaded.entries : {}
+      };
+    } catch {
+      store = { version: '1.0', entries: {} };
+    }
+  }
+
+  let dirty = false;
+  const cache = {
+    hits: 0,
+    writes: 0,
+    async get(filePath, stat, kind) {
+      const key = cacheKey(filePath);
+      const entry = store.entries[key];
+      if (!entry || entry.signature !== fileSignature(stat) || entry.kind !== kind) return null;
+      cache.hits += 1;
+      return cloneCandidates(entry.candidates || []);
+    },
+    set(filePath, stat, kind, candidates) {
+      const key = cacheKey(filePath);
+      store.entries[key] = {
+        kind,
+        signature: fileSignature(stat),
+        cachedAt: new Date().toISOString(),
+        candidates: cloneCandidates(candidates || [])
+      };
+      dirty = true;
+      cache.writes += 1;
+    },
+    async flush() {
+      if (!dirty) return;
+      await fs.ensureDir(path.dirname(cachePath));
+      await fs.writeJson(cachePath, {
+        version: store.version || '1.0',
+        lastUpdated: new Date().toISOString(),
+        entries: store.entries
+      }, { spaces: 2 });
+      dirty = false;
+    }
+  };
+  return cache;
+}
+
+function createNoopOfflineCache() {
+  return {
+    hits: 0,
+    writes: 0,
+    async get() {
+      return null;
+    },
+    set() {},
+    async flush() {}
+  };
+}
+
+function cacheKey(filePath) {
+  return path.resolve(filePath);
+}
+
+function fileSignature(stat) {
+  return `${stat.size}:${stat.mtimeMs}`;
+}
+
+function cloneCandidates(candidates) {
+  return JSON.parse(JSON.stringify(candidates || []));
 }
 
 function normalizeLimits(options) {
@@ -187,7 +275,7 @@ function buildIndexBoosts(entries, terms) {
   return boosts;
 }
 
-async function collectMaterialSources(root, indexBoosts, limits, limitations) {
+async function collectMaterialSources(root, indexBoosts, limits, limitations, sourceCache = createNoopOfflineCache()) {
   if (!root) return [];
   const files = await discoverFiles(root, DOCUMENT_EXTENSIONS, limits.maxMaterialFiles);
   const sources = [];
@@ -195,10 +283,14 @@ async function collectMaterialSources(root, indexBoosts, limits, limitations) {
     const relativePath = normalizeRelativePath(path.relative(root, file));
     const extension = path.extname(file).toLowerCase();
     try {
-      const parsed = extension === '.lakebook'
-        ? await readLakebook(file, relativePath, limits, limitations)
-        : [await readTextDocument(file, relativePath, extension, limits)];
-      for (const source of parsed.filter(Boolean)) {
+      const stat = await fs.stat(file);
+      const cached = await sourceCache.get(file, stat, 'material');
+      const parsed = cached || (extension === '.lakebook'
+        ? await readLakebook(file, relativePath, limits, limitations, stat)
+        : [await readTextDocument(file, relativePath, extension, limits, stat)]);
+      const chunks = cached || chunkCandidates(parsed.filter(Boolean), { chunkDocuments: true, chunkCode: false });
+      if (!cached) sourceCache.set(file, stat, 'material', chunks);
+      for (const source of chunks.filter(Boolean)) {
         const boost = findIndexBoost(indexBoosts, relativePath);
         sources.push({ ...source, indexScore: boost?.score || 0, indexEntry: boost?.entry || null });
       }
@@ -209,7 +301,7 @@ async function collectMaterialSources(root, indexBoosts, limits, limitations) {
   return sources;
 }
 
-async function collectCodeSources(repoRoot, sourceRoot, indexBoosts, limits, limitations) {
+async function collectCodeSources(repoRoot, sourceRoot, indexBoosts, limits, limitations, sourceCache = createNoopOfflineCache()) {
   if (!repoRoot || repoRoot === sourceRoot) return [];
   const files = await discoverFiles(repoRoot, CODE_EXTENSIONS, limits.maxCodeFiles);
   const sources = [];
@@ -221,6 +313,14 @@ async function collectCodeSources(repoRoot, sourceRoot, indexBoosts, limits, lim
         limitations.push(`Skipped oversized code file: ${relativePath}`);
         continue;
       }
+      const cached = await sourceCache.get(file, stat, 'code');
+      if (cached) {
+        sources.push(...cached.map((candidate) => ({
+          ...candidate,
+          indexScore: getRepositoryIndexScore(indexBoosts, repoRoot, relativePath)
+        })));
+        continue;
+      }
       const buffer = await fs.readFile(file);
       if (looksBinary(buffer)) continue;
       const text = redactSensitiveText(buffer.toString('utf8')).slice(0, MAX_TEXT_LENGTH);
@@ -228,7 +328,12 @@ async function collectCodeSources(repoRoot, sourceRoot, indexBoosts, limits, lim
       const title = kind === 'code' ? path.basename(relativePath) : inferTitle(text, relativePath);
       const candidate = createCandidate(kind, relativePath, title, text);
       candidate.indexScore = getRepositoryIndexScore(indexBoosts, repoRoot, relativePath);
-      sources.push(candidate);
+      const chunks = chunkCandidates([candidate], { chunkDocuments: true, chunkCode: true });
+      sourceCache.set(file, stat, 'code', chunks);
+      sources.push(...chunks.map((chunk) => ({
+        ...chunk,
+        indexScore: candidate.indexScore
+      })));
     } catch (error) {
       limitations.push(`Skipped ${relativePath}: ${error.message}`);
     }
@@ -283,8 +388,8 @@ function isPathInside(root, target) {
   return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-async function readTextDocument(file, relativePath, extension, limits) {
-  const stat = await fs.stat(file);
+async function readTextDocument(file, relativePath, extension, limits, stat = null) {
+  stat = stat || await fs.stat(file);
   if (stat.size > limits.maxFileBytes) throw new Error(`file exceeds ${limits.maxFileBytes} bytes`);
   const buffer = await fs.readFile(file);
   if (looksBinary(buffer) && extension !== '.lake') throw new Error('binary content is not supported');
@@ -295,8 +400,8 @@ async function readTextDocument(file, relativePath, extension, limits) {
   return createCandidate('document', relativePath, inferTitle(text, relativePath), text);
 }
 
-async function readLakebook(file, relativePath, limits, limitations = []) {
-  const stat = await fs.stat(file);
+async function readLakebook(file, relativePath, limits, limitations = [], stat = null) {
+  stat = stat || await fs.stat(file);
   if (stat.size > limits.maxArchiveBytes) throw new Error(`archive exceeds ${limits.maxArchiveBytes} bytes`);
   const archive = await fs.readFile(file);
   const issues = [];
@@ -434,12 +539,169 @@ function createCandidate(kind, relativePath, title, text) {
   return {
     kind,
     path: normalizeRelativePath(relativePath),
+    sourcePath: normalizeRelativePath(relativePath).split('#')[0],
+    chunkId: null,
     title: String(title || path.basename(relativePath)).trim(),
     text: normalizedText,
     headings: extractHeadings(normalizedText),
     symbols: kind === 'code' ? extractCodeSignals(normalizedText) : null,
     indexScore: 0,
     indexEntry: null
+  };
+}
+
+function chunkCandidates(candidates, options = {}) {
+  const chunked = [];
+  for (const candidate of candidates || []) {
+    if (!candidate?.text) continue;
+    if (candidate.kind === 'code' && options.chunkCode) {
+      chunked.push(...chunkCodeCandidate(candidate));
+      continue;
+    }
+    if ((candidate.kind === 'document' || candidate.kind === 'learning') && options.chunkDocuments) {
+      chunked.push(...chunkDocumentCandidate(candidate));
+      continue;
+    }
+    chunked.push(candidate);
+  }
+  return chunked.length > 0 ? chunked : candidates;
+}
+
+function chunkDocumentCandidate(candidate) {
+  const sections = splitDocumentSections(candidate.text);
+  return sections.map((section, index) => createChunkCandidate(candidate, {
+    index,
+    title: section.title || candidate.title,
+    text: section.text,
+    startLine: section.startLine,
+    endLine: section.endLine,
+    chunkType: 'section'
+  }));
+}
+
+function splitDocumentSections(text) {
+  const lines = String(text || '').split('\n');
+  const sections = [];
+  let current = null;
+
+  function pushCurrent() {
+    if (!current) return;
+    const body = current.lines.join('\n').trim();
+    if (!body) return;
+    sections.push({
+      title: current.title,
+      text: body,
+      startLine: current.startLine,
+      endLine: current.startLine + current.lines.length - 1
+    });
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const heading = line.match(/^\s{0,3}#{1,6}\s+(.+)$/);
+    if (heading || !current) {
+      if (heading) pushCurrent();
+      current = {
+        title: heading ? heading[1].trim() : null,
+        startLine: index + 1,
+        lines: []
+      };
+    }
+    current.lines.push(line);
+    if (current.lines.join('\n').length >= MAX_CHUNK_LENGTH) {
+      pushCurrent();
+      current = {
+        title: current.title,
+        startLine: index + 2,
+        lines: []
+      };
+    }
+  }
+  pushCurrent();
+  return sections.length > 0 ? sections : [{ title: null, text: String(text || '').slice(0, MAX_CHUNK_LENGTH), startLine: 1, endLine: lines.length }];
+}
+
+function chunkCodeCandidate(candidate) {
+  const lines = String(candidate.text || '').split('\n');
+  const chunks = [];
+  const starts = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (isCodeChunkStart(lines[index])) starts.push(index);
+  }
+
+  if (starts.length === 0) {
+    return splitByLineWindow(candidate, 80);
+  }
+
+  for (let position = 0; position < starts.length; position += 1) {
+    const start = starts[position];
+    const nextStart = starts[position + 1] ?? lines.length;
+    const from = Math.max(0, start - 3);
+    const to = Math.min(lines.length, Math.max(nextStart, start + 20));
+    const text = lines.slice(from, to).join('\n').trim();
+    if (!text) continue;
+    chunks.push(createChunkCandidate(candidate, {
+      index: chunks.length,
+      title: inferCodeChunkTitle(lines[start]) || candidate.title,
+      text,
+      startLine: from + 1,
+      endLine: to,
+      chunkType: 'symbol'
+    }));
+  }
+
+  return chunks.length > 0 ? chunks : splitByLineWindow(candidate, 80);
+}
+
+function splitByLineWindow(candidate, windowSize) {
+  const lines = String(candidate.text || '').split('\n');
+  const chunks = [];
+  for (let start = 0; start < lines.length; start += windowSize) {
+    const slice = lines.slice(start, start + windowSize).join('\n').trim();
+    if (!slice) continue;
+    chunks.push(createChunkCandidate(candidate, {
+      index: chunks.length,
+      title: candidate.title,
+      text: slice,
+      startLine: start + 1,
+      endLine: Math.min(lines.length, start + windowSize),
+      chunkType: 'window'
+    }));
+  }
+  return chunks;
+}
+
+function isCodeChunkStart(line) {
+  return /^(?:\s*(?:export\s+)?(?:async\s+)?function\s+\w+|\s*class\s+\w+|\s*(?:async\s+)?[A-Za-z_$][\w$]*\s*\([^)]*\)\s*\{|\s*(?:public|private|protected)\s+[\w<>,.?\[\]]+\s+\w+\s*\()/i.test(String(line || ''));
+}
+
+function inferCodeChunkTitle(line) {
+  const text = String(line || '').trim();
+  const match = text.match(/(?:class|function)\s+([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*)\s*\(/);
+  return match ? (match[1] || match[2]) : text.slice(0, 80);
+}
+
+function createChunkCandidate(candidate, chunk) {
+  const sourcePath = candidate.sourcePath || String(candidate.path || '').split('#')[0];
+  const chunkId = `${chunk.chunkType || 'chunk'}-${chunk.index + 1}`;
+  const pathWithChunk = `${candidate.path}#${chunkId}`;
+  const text = String(chunk.text || '').slice(0, MAX_CHUNK_LENGTH);
+  return {
+    ...candidate,
+    path: pathWithChunk,
+    sourcePath,
+    chunkId,
+    chunk: {
+      type: chunk.chunkType || 'chunk',
+      index: chunk.index,
+      startLine: chunk.startLine || 1,
+      endLine: chunk.endLine || chunk.startLine || 1
+    },
+    title: chunk.title || candidate.title,
+    text,
+    headings: extractHeadings(text),
+    symbols: candidate.kind === 'code' ? extractCodeSignals(text) : candidate.symbols
   };
 }
 
@@ -597,6 +859,8 @@ function buildEvidence(candidate, terms) {
   return {
     kind: candidate.kind,
     path: candidate.path,
+    sourcePath: candidate.sourcePath || candidate.path,
+    chunk: candidate.chunk || null,
     title: candidate.title,
     score: Math.round(candidate.score * 10) / 10,
     headings: candidate.headings.slice(0, 12),
@@ -676,7 +940,7 @@ function buildDesignFlow(evidence, limit) {
         order: steps.length + 1,
         stage: inferFlowStage(description),
         description,
-        evidence: { path: source.path, title: source.title }
+        evidence: { path: source.path, sourcePath: source.sourcePath || source.path, title: source.title, chunk: source.chunk || null }
       });
       if (steps.length >= limit) return steps;
     }
@@ -756,6 +1020,8 @@ function buildTestFocus(designFlow, architecture) {
 function toCitation(item) {
   return {
     path: item.path,
+    sourcePath: item.sourcePath || item.path,
+    chunk: item.chunk || null,
     kind: item.kind,
     title: item.title,
     score: item.score,

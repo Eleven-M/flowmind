@@ -581,6 +581,173 @@ function mergeScenes(existingScenes = [], incomingScenes = []) {
   return merged;
 }
 
+/**
+ * Convert sdd-agent skill bindings (records/rules per skill plus top-level
+ * globalRules) into flowmind skill-binding shape. Global rules are mapped to
+ * the reserved `_global` skill so they survive the migration without being
+ * attributed to a nonexistent skill.
+ */
+function convertSkillBindings(sddSkillBindings = {}) {
+  const converted = {};
+  const sourceBindings = isObject(sddSkillBindings.bindings) ? sddSkillBindings.bindings : {};
+  let importedSkillRecords = 0;
+  let importedSkillRules = 0;
+
+  for (const [skillName, binding] of Object.entries(sourceBindings)) {
+    if (!isObject(binding)) continue;
+    const records = (Array.isArray(binding.records) ? binding.records : [])
+      .filter((record) => isObject(record) && record.recordId);
+    const rules = (Array.isArray(binding.rules) ? binding.rules : []).filter(isObject);
+    if (records.length === 0 && rules.length === 0) continue;
+
+    converted[skillName] = {
+      learningCount: Number(binding.learningCount) || records.length,
+      lastLearning: binding.lastLearning || null,
+      records,
+      rules,
+      metadata: {
+        importedFrom: 'sdd-agent',
+        originalLearningCount: Number(binding.learningCount) || records.length
+      }
+    };
+    importedSkillRecords += records.length;
+    importedSkillRules += rules.length;
+  }
+
+  const globalRules = (Array.isArray(sddSkillBindings.globalRules) ? sddSkillBindings.globalRules : [])
+    .filter(isObject)
+    .map((rule) => ({
+      condition: rule.pattern || rule.condition || null,
+      action: rule.action || null,
+      source: rule.source || 'sdd-agent-global'
+    }))
+    .filter((rule) => rule.condition || rule.action);
+
+  if (globalRules.length > 0) {
+    const existing = converted._global || { learningCount: 0, lastLearning: null, records: [], rules: [] };
+    converted._global = {
+      ...existing,
+      learningCount: Math.max(Number(existing.learningCount) || 0, globalRules.length),
+      rules: [...(existing.rules || []), ...globalRules],
+      metadata: { importedFrom: 'sdd-agent', scope: 'global' }
+    };
+  }
+
+  return {
+    bindings: converted,
+    importedSkillRecords,
+    importedSkillRules,
+    importedGlobalRules: globalRules.length
+  };
+}
+
+function mergeUniqueByKey(items, keyName) {
+  const merged = [];
+  const seen = new Set();
+  for (const item of items || []) {
+    const key = item?.[keyName] || JSON.stringify(item || {});
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(item);
+  }
+  return merged;
+}
+
+function mergeUniqueJson(items) {
+  const merged = [];
+  const seen = new Set();
+  for (const item of items || []) {
+    const key = JSON.stringify(item || {});
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(item);
+  }
+  return merged;
+}
+
+function latestIsoTimestamp(left, right) {
+  if (!left) return right || null;
+  if (!right) return left || null;
+  return String(right) > String(left) ? right : left;
+}
+
+/**
+ * Union-merge imported sdd-agent skill bindings into flowmind's own learned
+ * bindings. Flowmind-side data (records, rules, preferredResourceBindings)
+ * is never removed or overwritten; re-running the import is idempotent.
+ */
+function mergeSkillBindingCollections(existing = {}, incoming = {}) {
+  const merged = { ...existing };
+
+  for (const [skillName, incomingBinding] of Object.entries(incoming || {})) {
+    if (!isObject(incomingBinding)) continue;
+
+    const existingBinding = isObject(merged[skillName])
+      ? merged[skillName]
+      : { learningCount: 0, records: [], rules: [] };
+
+    const records = mergeUniqueByKey(
+      [...(existingBinding.records || []), ...(incomingBinding.records || [])],
+      'recordId'
+    );
+    const rules = mergeUniqueJson([...(existingBinding.rules || []), ...(incomingBinding.rules || [])]);
+
+    merged[skillName] = {
+      ...existingBinding,
+      records,
+      rules,
+      learningCount: Math.max(
+        Number(existingBinding.learningCount) || 0,
+        Number(incomingBinding.learningCount) || 0,
+        records.length
+      ),
+      lastLearning: latestIsoTimestamp(existingBinding.lastLearning, incomingBinding.lastLearning)
+    };
+  }
+
+  return merged;
+}
+
+async function collectLearningRecordFiles(sourceDir) {
+  const recordsDir = path.join(sourceDir, 'learning', 'records');
+  if (!(await fs.pathExists(recordsDir))) return [];
+  const entries = await fs.readdir(recordsDir).catch(() => []);
+  return entries
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => path.join(recordsDir, name))
+    .sort();
+}
+
+/**
+ * Copy sdd-agent analysis deposit documents (learning/records/*.md plus the
+ * index) into flowmind's source material directory so `flowmind analyze` and
+ * learning assets can reference them.
+ */
+async function copyLearningRecordFiles(sourceDir, targetSourceDir) {
+  const files = await collectLearningRecordFiles(sourceDir);
+  const copied = [];
+  if (files.length === 0) return copied;
+
+  const targetRecordsDir = path.join(targetSourceDir, 'sdd-records');
+  await fs.ensureDir(targetRecordsDir);
+
+  for (const filePath of files) {
+    const targetPath = path.join(targetRecordsDir, path.basename(filePath));
+    await fs.copy(filePath, targetPath, { overwrite: true, dereference: true });
+    copied.push(targetPath);
+  }
+
+  const indexPath = path.join(sourceDir, 'learning', 'learning-index.md');
+  if (await fs.pathExists(indexPath)) {
+    await fs.copy(indexPath, path.join(targetRecordsDir, 'learning-index.md'), {
+      overwrite: true,
+      dereference: true
+    });
+  }
+
+  return copied;
+}
+
 async function readJsonIfExists(filePath, fallback) {
   if (!(await fs.pathExists(filePath))) return fallback;
   return fs.readJson(filePath);
@@ -627,7 +794,9 @@ async function buildSyncSignature(sourceDir) {
     path.join(sourceDir, 'resource-config.json'),
     path.join(sourceDir, 'learning', 'scene-mappings.json'),
     path.join(sourceDir, 'learning', 'skill-bindings.json'),
-    ...SDD_SOURCE_SYNC_FILES.map((fileName) => path.join(sourceDir, 'source', fileName))
+    path.join(sourceDir, 'learning', 'learning-index.md'),
+    ...SDD_SOURCE_SYNC_FILES.map((fileName) => path.join(sourceDir, 'source', fileName)),
+    ...(await collectLearningRecordFiles(sourceDir))
   ];
 
   const entries = [];
@@ -731,12 +900,14 @@ async function syncSddAgentToFlowMind(options = {}) {
   const targetComponentConfigPath = path.join(targetDir, 'component-config.json');
   const targetBindingsPath = path.join(targetLearningDir, 'resource-bindings.json');
   const targetScenesPath = path.join(targetLearningDir, 'scenes.json');
+  const targetSkillBindingsPath = path.join(targetLearningDir, 'skill-bindings.json');
   const targetSourceDir = path.join(targetDir, 'source');
 
   const existingResourceConfig = await readJsonIfExists(targetResourceConfigPath, {});
   const existingComponentConfig = await readJsonIfExists(targetComponentConfigPath, { version: '1.0.0', components: {} });
   const existingBindings = await readJsonIfExists(targetBindingsPath, { version: '1.0', bindings: [] });
   const existingScenes = await readJsonIfExists(targetScenesPath, { version: '1.0', mappings: [] });
+  const existingSkillBindings = await readJsonIfExists(targetSkillBindingsPath, { version: '1.0', bindings: {} });
 
   const nextResourceConfig = deepMerge(existingResourceConfig, sanitizeResourceConfig(sddConfig, sddSkillBindings));
   const nextComponentConfig = deepMerge(existingComponentConfig, buildComponentConfig(sddConfig, sddSkillBindings, workflowTransport));
@@ -753,12 +924,25 @@ async function syncSddAgentToFlowMind(options = {}) {
     mappings: mergeScenes(existingScenes.mappings || [], importedScenes)
   };
 
+  const convertedSkillBindings = convertSkillBindings(sddSkillBindings);
+  const nextSkillBindings = {
+    version: existingSkillBindings.version || '1.0',
+    lastUpdated: new Date().toISOString(),
+    bindings: mergeSkillBindingCollections(
+      isObject(existingSkillBindings.bindings) ? existingSkillBindings.bindings : {},
+      convertedSkillBindings.bindings
+    ),
+    routes: Array.isArray(existingSkillBindings.routes) ? existingSkillBindings.routes : []
+  };
+
   await fs.ensureDir(targetLearningDir);
   await fs.writeJson(targetResourceConfigPath, nextResourceConfig, { spaces: 2 });
   await fs.writeJson(targetComponentConfigPath, nextComponentConfig, { spaces: 2 });
   await fs.writeJson(targetBindingsPath, nextBindings, { spaces: 2 });
   await fs.writeJson(targetScenesPath, nextScenes, { spaces: 2 });
+  await fs.writeJson(targetSkillBindingsPath, nextSkillBindings, { spaces: 2 });
   const copiedSourceFiles = await copySelectedSourceFiles(sourceDir, targetSourceDir);
+  const copiedLearningRecords = await copyLearningRecordFiles(sourceDir, targetSourceDir);
 
   return {
     sourceDir,
@@ -768,15 +952,353 @@ async function syncSddAgentToFlowMind(options = {}) {
       componentConfig: targetComponentConfigPath,
       resourceBindings: targetBindingsPath,
       scenes: targetScenesPath,
-      sourceFiles: copiedSourceFiles.map((item) => item.targetPath)
+      skillBindings: targetSkillBindingsPath,
+      sourceFiles: copiedSourceFiles.map((item) => item.targetPath),
+      learningRecords: copiedLearningRecords
     },
     counts: {
       importedBindings: importedBindings.length,
       totalBindings: nextBindings.bindings.length,
       importedScenes: importedScenes.length,
       totalScenes: nextScenes.mappings.length,
+      importedSkillRecords: convertedSkillBindings.importedSkillRecords,
+      importedSkillRules: convertedSkillBindings.importedSkillRules,
+      importedGlobalRules: convertedSkillBindings.importedGlobalRules,
+      totalSkills: Object.keys(nextSkillBindings.bindings || {}).length,
       components: Object.keys(nextComponentConfig.components || {}).length,
-      copiedSourceFiles: copiedSourceFiles.length
+      copiedSourceFiles: copiedSourceFiles.length,
+      copiedLearningRecords: copiedLearningRecords.length
+    }
+  };
+}
+
+function toSddRecordSummary(record = {}) {
+  return record.summary || record.input || record.application?.action || record.type || record.id;
+}
+
+function toSddRule(record = {}) {
+  const application = record.application || {};
+  return {
+    condition: application.condition || record.condition || record.input || `When ${record.skill || 'flowmind'} is used`,
+    action: application.action || record.action || toSddRecordSummary(record),
+    source: record.id || record.recordId || 'flowmind'
+  };
+}
+
+function convertFlowMindSkillBindingsForSdd(flowmindSkillBindings = {}, recordsBySkill = {}) {
+  const next = {
+    version: flowmindSkillBindings.version || '1.0',
+    lastUpdated: new Date().toISOString(),
+    bindings: {},
+    globalRules: [],
+    routes: Array.isArray(flowmindSkillBindings.routes) ? flowmindSkillBindings.routes : []
+  };
+
+  for (const [skillName, binding] of Object.entries(flowmindSkillBindings.bindings || {})) {
+    if (!isObject(binding)) continue;
+    const records = (binding.records || []).filter(isObject);
+    const rules = (binding.rules || []).filter(isObject);
+    next.bindings[skillName] = {
+      learningCount: Math.max(Number(binding.learningCount) || 0, records.length, (recordsBySkill[skillName] || []).length),
+      lastLearning: binding.lastLearning || null,
+      records,
+      rules,
+      preferredResourceBindings: binding.preferredResourceBindings || undefined,
+      metadata: {
+        ...(binding.metadata || {}),
+        syncedFrom: 'flowmind'
+      }
+    };
+  }
+
+  for (const [skillName, records] of Object.entries(recordsBySkill || {})) {
+    if (!Array.isArray(records) || records.length === 0) continue;
+    const binding = next.bindings[skillName] || {
+      learningCount: 0,
+      lastLearning: null,
+      records: [],
+      rules: [],
+      metadata: { syncedFrom: 'flowmind' }
+    };
+    const existingRecordIds = new Set((binding.records || []).map((item) => item.recordId || item.id).filter(Boolean));
+    const existingRuleKeys = new Set((binding.rules || []).map((item) => JSON.stringify(item || {})));
+
+    for (const record of records) {
+      if (!record?.id || existingRecordIds.has(record.id)) continue;
+      binding.records.push({
+        recordId: record.id,
+        type: record.type || 'flowmind_learning',
+        summary: toSddRecordSummary(record),
+        priority: record.application?.priority || record.priority || 'medium'
+      });
+      const rule = toSddRule(record);
+      const ruleKey = JSON.stringify(rule);
+      if (!existingRuleKeys.has(ruleKey)) {
+        binding.rules.push(rule);
+        existingRuleKeys.add(ruleKey);
+      }
+      existingRecordIds.add(record.id);
+      binding.lastLearning = latestIsoTimestamp(binding.lastLearning, record.timestamp);
+    }
+
+    binding.learningCount = Math.max(Number(binding.learningCount) || 0, binding.records.length);
+    next.bindings[skillName] = binding;
+  }
+
+  const globalBinding = next.bindings._global;
+  if (globalBinding?.rules?.length) {
+    next.globalRules = globalBinding.rules.map((rule) => ({
+      pattern: rule.condition || rule.pattern || null,
+      action: rule.action || null,
+      source: rule.source || 'flowmind-global'
+    })).filter((rule) => rule.pattern || rule.action);
+  }
+
+  return next;
+}
+
+function convertFlowMindScenesForSdd(flowmindScenes = {}) {
+  return {
+    version: flowmindScenes.version || '1.0',
+    lastUpdated: new Date().toISOString(),
+    mappings: (flowmindScenes.mappings || []).map((scene) => ({
+      id: String(scene.id || '').startsWith('sdd-') ? String(scene.id).slice(4) : scene.id,
+      sceneName: scene.name || scene.sceneName || 'FlowMind Scene',
+      keywords: scene.keywords || [],
+      patterns: scene.patterns || [],
+      skillSequence: (scene.workflow?.skills || []).map((step) => ({
+        skill: step.skill,
+        action: step.params?.action,
+        params: step.params || {}
+      })),
+      userPreference: scene.preferences || {},
+      useCount: scene.stats?.useCount || 0,
+      lastUsed: scene.stats?.lastUsed || null,
+      confidence: scene.stats?.successRate || 1.0,
+      metadata: {
+        ...(scene.metadata || {}),
+        syncedFrom: 'flowmind'
+      }
+    }))
+  };
+}
+
+function mergeSddSkillBindings(existing = {}, incoming = {}) {
+  const merged = {
+    version: existing.version || incoming.version || '1.0',
+    lastUpdated: new Date().toISOString(),
+    bindings: { ...(existing.bindings || {}) },
+    globalRules: mergeUniqueJson([...(existing.globalRules || []), ...(incoming.globalRules || [])]),
+    routes: mergeUniqueByKey([...(existing.routes || []), ...(incoming.routes || [])], 'id')
+  };
+
+  for (const [skillName, incomingBinding] of Object.entries(incoming.bindings || {})) {
+    const current = merged.bindings[skillName] || { learningCount: 0, records: [], rules: [] };
+    const records = mergeUniqueByKey([...(current.records || []), ...(incomingBinding.records || [])], 'recordId');
+    const rules = mergeUniqueJson([...(current.rules || []), ...(incomingBinding.rules || [])]);
+    merged.bindings[skillName] = {
+      ...current,
+      ...incomingBinding,
+      records,
+      rules,
+      learningCount: Math.max(Number(current.learningCount) || 0, Number(incomingBinding.learningCount) || 0, records.length),
+      lastLearning: latestIsoTimestamp(current.lastLearning, incomingBinding.lastLearning),
+      preferredResourceBindings: {
+        ...(current.preferredResourceBindings || {}),
+        ...(incomingBinding.preferredResourceBindings || {})
+      },
+      metadata: {
+        ...(current.metadata || {}),
+        ...(incomingBinding.metadata || {})
+      }
+    };
+  }
+
+  return merged;
+}
+
+function mergeSddSceneMappings(existing = {}, incoming = {}) {
+  return {
+    version: existing.version || incoming.version || '1.0',
+    lastUpdated: new Date().toISOString(),
+    mappings: mergeScenes(existing.mappings || [], incoming.mappings || [])
+  };
+}
+
+async function collectFlowMindRecords(flowmindLearningDir) {
+  const recordsRoot = path.join(flowmindLearningDir, 'records');
+  const records = {};
+  if (!(await fs.pathExists(recordsRoot))) return records;
+
+  const skillDirs = await fs.readdir(recordsRoot);
+  for (const skill of skillDirs) {
+    const skillPath = path.join(recordsRoot, skill);
+    const stat = await fs.stat(skillPath).catch(() => null);
+    if (!stat?.isDirectory()) continue;
+    const files = await fs.readdir(skillPath);
+    for (const file of files) {
+      if (!file.endsWith('.json') || file === 'preferences.json') continue;
+      const record = await fs.readJson(path.join(skillPath, file)).catch(() => null);
+      if (!record?.id) continue;
+      records[skill] = records[skill] || [];
+      records[skill].push(record);
+    }
+  }
+  return records;
+}
+
+function buildSddLearningMarkdown(record, skill) {
+  const rule = toSddRule(record);
+  return [
+    '# Learning Record',
+    '',
+    '## Metadata',
+    `- **ID**: ${record.id}`,
+    `- **Timestamp**: ${record.timestamp || new Date().toISOString()}`,
+    `- **Skill**: ${record.skill || skill}`,
+    `- **Type**: ${record.type || 'flowmind_learning'}`,
+    `- **Severity**: ${record.severity || 'minor'}`,
+    '- **Status**: active',
+    '',
+    '## Context',
+    `- **User Request**: ${record.input || ''}`,
+    '- **Execution Context**: Synced from FlowMind learning runtime',
+    `- **Trigger**: ${record.trigger || record.source || 'flowmind'}`,
+    '',
+    '## Correction Details',
+    '',
+    '### Corrected Approach (Accurate)',
+    '```',
+    rule.action || '',
+    '```',
+    '',
+    '## Application Rules',
+    `- **Condition**: ${rule.condition}`,
+    `- **Action**: ${rule.action}`,
+    `- **Priority**: ${record.application?.priority || record.priority || 'medium'}`,
+    '',
+    '## Skill Binding',
+    `- **Primary Skill**: ${record.skill || skill}`,
+    '- **Binding Strength**: normal',
+    '',
+    '## Tags',
+    ['flowmind-sync', record.type, record.skill || skill].filter(Boolean).join(', '),
+    ''
+  ].join('\n');
+}
+
+async function writeSddLearningRecordMarkdown(recordsBySkill, targetDir) {
+  const recordsDir = path.join(targetDir, 'learning', 'records');
+  await fs.ensureDir(recordsDir);
+  const written = [];
+
+  for (const [skill, records] of Object.entries(recordsBySkill || {})) {
+    for (const record of records || []) {
+      if (!record?.id) continue;
+      const safeSkill = String(skill || record.skill || 'global').replace(/[^a-zA-Z0-9_.-]+/g, '-');
+      const safeId = String(record.id).replace(/[^a-zA-Z0-9_.-]+/g, '-');
+      const filePath = path.join(recordsDir, `${safeSkill}-${safeId}.md`);
+      if (await fs.pathExists(filePath)) continue;
+      await fs.writeFile(filePath, buildSddLearningMarkdown(record, skill), 'utf8');
+      written.push(filePath);
+    }
+  }
+
+  return written;
+}
+
+async function syncFlowMindToSddAgent(options = {}) {
+  const sourceHome = options.sourceHome || getHomeDir();
+  const sourceDir = path.join(sourceHome, '.flowmind');
+  const sourceLearningDir = path.join(sourceDir, 'learning');
+  const targetDir = options.targetDir || path.join(os.homedir(), '.sdd-agent');
+
+  const sourceSkillBindingsPath = path.join(sourceLearningDir, 'skill-bindings.json');
+  if (!(await fs.pathExists(sourceSkillBindingsPath))) {
+    throw new Error(`FlowMind skill bindings not found: ${sourceSkillBindingsPath}`);
+  }
+
+  const sourceResourceBindingsPath = path.join(sourceLearningDir, 'resource-bindings.json');
+  const sourceScenesPath = path.join(sourceLearningDir, 'scenes.json');
+  const targetLearningDir = path.join(targetDir, 'learning');
+  await fs.ensureDir(targetLearningDir);
+
+  const flowmindSkillBindings = await readJsonIfExists(sourceSkillBindingsPath, { version: '1.0', bindings: {}, routes: [] });
+  const flowmindResourceBindings = await readJsonIfExists(sourceResourceBindingsPath, { version: '1.0', bindings: [] });
+  const flowmindScenes = await readJsonIfExists(sourceScenesPath, { version: '1.0', mappings: [] });
+  const flowmindRecords = await collectFlowMindRecords(sourceLearningDir);
+
+  const targetSkillBindingsPath = path.join(targetLearningDir, 'skill-bindings.json');
+  const targetResourceBindingsPath = path.join(targetLearningDir, 'resource-bindings.json');
+  const targetScenesPath = path.join(targetLearningDir, 'scene-mappings.json');
+
+  const existingSkillBindings = await readJsonIfExists(targetSkillBindingsPath, { version: '1.0', bindings: {}, globalRules: [] });
+  const existingResourceBindings = await readJsonIfExists(targetResourceBindingsPath, { version: '1.0', bindings: [] });
+  const existingScenes = await readJsonIfExists(targetScenesPath, { version: '1.0', mappings: [] });
+
+  const incomingSkillBindings = convertFlowMindSkillBindingsForSdd(flowmindSkillBindings, flowmindRecords);
+  const nextSkillBindings = mergeSddSkillBindings(existingSkillBindings, incomingSkillBindings);
+  const nextResourceBindings = {
+    version: existingResourceBindings.version || '1.0',
+    lastUpdated: new Date().toISOString(),
+    bindings: mergeBindings(existingResourceBindings.bindings || [], flowmindResourceBindings.bindings || [])
+  };
+  const nextScenes = mergeSddSceneMappings(existingScenes, convertFlowMindScenesForSdd(flowmindScenes));
+  const writtenRecords = await writeSddLearningRecordMarkdown(flowmindRecords, targetDir);
+
+  await fs.writeJson(targetSkillBindingsPath, nextSkillBindings, { spaces: 2 });
+  await fs.writeJson(targetResourceBindingsPath, nextResourceBindings, { spaces: 2 });
+  await fs.writeJson(targetScenesPath, nextScenes, { spaces: 2 });
+
+  return {
+    sourceDir,
+    targetDir,
+    files: {
+      skillBindings: targetSkillBindingsPath,
+      resourceBindings: targetResourceBindingsPath,
+      scenes: targetScenesPath,
+      learningRecords: writtenRecords
+    },
+    counts: {
+      exportedSkills: Object.keys(incomingSkillBindings.bindings || {}).length,
+      exportedRoutes: incomingSkillBindings.routes.length,
+      exportedResourceBindings: (flowmindResourceBindings.bindings || []).length,
+      exportedScenes: (flowmindScenes.mappings || []).length,
+      exportedLearningRecords: Object.values(flowmindRecords).reduce((sum, records) => sum + records.length, 0),
+      writtenLearningRecords: writtenRecords.length
+    }
+  };
+}
+
+async function syncSharedLearning(options = {}) {
+  const importSummary = await syncSddAgentToFlowMind({
+    sourceDir: options.sddDir,
+    targetHome: options.flowmindHome,
+    workflowTransport: options.workflowTransport
+  });
+  const exportSummary = await syncFlowMindToSddAgent({
+    sourceHome: options.flowmindHome,
+    targetDir: options.sddDir
+  });
+
+  return {
+    sourceDir: importSummary.sourceDir,
+    targetDir: importSummary.targetDir,
+    importSummary,
+    exportSummary,
+    counts: {
+      ...importSummary.counts,
+      exportedSkills: exportSummary.counts.exportedSkills,
+      exportedRoutes: exportSummary.counts.exportedRoutes,
+      exportedResourceBindings: exportSummary.counts.exportedResourceBindings,
+      exportedScenes: exportSummary.counts.exportedScenes,
+      exportedLearningRecords: exportSummary.counts.exportedLearningRecords
+    },
+    files: {
+      ...importSummary.files,
+      sddSkillBindings: exportSummary.files.skillBindings,
+      sddResourceBindings: exportSummary.files.resourceBindings,
+      sddScenes: exportSummary.files.scenes
     }
   };
 }
@@ -786,13 +1308,17 @@ module.exports = {
   buildComponentConfig,
   convertResourceBindings,
   convertSceneMappings,
+  convertSkillBindings,
   deepMerge,
   mergeBindings,
   mergeScenes,
+  mergeSkillBindingCollections,
   buildWorkflowBindings,
   buildWorkflowResource,
   normalizeMcpServer,
   sanitizeResourceConfig,
   syncSddAgentToFlowMind,
-  autoSyncSddAgentToFlowMind
+  autoSyncSddAgentToFlowMind,
+  syncFlowMindToSddAgent,
+  syncSharedLearning
 };

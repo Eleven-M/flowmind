@@ -50,13 +50,35 @@ describe('offline design analysis', () => {
     expect(result.guarantees).toContain('No AI provider used');
     expect(result.citations).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: 'contract-renewal.md', kind: 'document' }),
-        expect.objectContaining({ path: 'src/renewal-service.js', kind: 'code' })
+        expect.objectContaining({ sourcePath: 'contract-renewal.md', kind: 'document', chunk: expect.any(Object) }),
+        expect.objectContaining({ sourcePath: 'src/renewal-service.js', kind: 'code', chunk: expect.any(Object) })
       ])
     );
+    expect(result.scope.scanned.chunks).toBeGreaterThan(0);
+    expect(result.citations.some((citation) => String(citation.path).includes('#'))).toBe(true);
     expect(result.designFlow.map((step) => step.description).join(' ')).toContain('校验合同状态');
     expect(result.architecture.symbols).toContain('RenewalService');
     expect(JSON.stringify(result)).not.toContain('must-not-leak');
+  });
+
+  test('reuses the offline source cache for unchanged local files', async () => {
+    const first = await analyzeOffline('离线分析合同续约历史资料和代码，生成设计流程', {
+      sourceDir,
+      repoDir
+    });
+    const second = await analyzeOffline('离线分析合同续约历史资料和代码，生成设计流程', {
+      sourceDir,
+      repoDir
+    });
+
+    expect(first.scope.scanned.cacheWrites).toBeGreaterThan(0);
+    expect(second.scope.scanned.cacheHits).toBeGreaterThan(0);
+    expect(second.scope.scanned.cacheWrites).toBe(0);
+    expect(second.scope.scanned.chunks).toBeGreaterThan(0);
+    expect(await fs.pathExists(path.join(tempRoot, '.flowmind', 'cache', 'offline-analysis-cache.json'))).toBe(true);
+    expect(second.citations.map((citation) => citation.sourcePath)).toEqual(
+      expect.arrayContaining(first.citations.map((citation) => citation.sourcePath))
+    );
   });
 
   test('reads safe Lakebook JSON entries and ignores traversal entries', () => {
@@ -124,6 +146,31 @@ describe('offline design analysis', () => {
     expect(result.metadata.skillRoute).toBe('learned');
     expect(flowmind.learning.skillBindings.routes).toEqual(expect.arrayContaining([
       expect.objectContaining({ skill: 'offline-design-analysis', source: 'explicit-option' })
+    ]));
+  });
+
+  test('passively promotes repeated successful skill routes', async () => {
+    const flowmind = new FlowMind({ ai: { providers: {}, defaultProvider: null } });
+
+    const first = await flowmind.process('分析合同续约设计流程', {
+      sourceDir,
+      cwd: repoDir
+    });
+    const second = await flowmind.process('帮我分析一下合同续约设计流程', {
+      sourceDir,
+      cwd: repoDir
+    });
+    const third = await flowmind.process('梳理合同续约设计流程', {
+      sourceDir,
+      cwd: repoDir
+    });
+
+    expect(first.metadata.skill).toBe('offline-design-analysis');
+    expect(second.metadata.skill).toBe('offline-design-analysis');
+    expect(third.metadata.skill).toBe('offline-design-analysis');
+    expect(third.metadata.skillRoute).toBe('learned');
+    expect(flowmind.learning.skillBindings.routes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ skill: 'offline-design-analysis', source: 'passive-success' })
     ]));
   });
 

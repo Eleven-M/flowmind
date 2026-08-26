@@ -5,6 +5,7 @@
 
 const fs = require('fs-extra');
 const path = require('path');
+const os = require('os');
 
 const NAME_REGEX = /^[a-z][a-z0-9-]*$/;
 
@@ -184,14 +185,24 @@ ${body}
 /**
  * Create a new skill scaffold on disk.
  * Returns the absolute directory path.
+ *
+ * Local (user-authored) skills default to FLOWMIND_HOME/.flowmind/skills so
+ * business skills never land inside the git repository or the npm package.
+ * Pass an explicit skillsPath (e.g. the repo skills/ dir) only when
+ * scaffolding a built-in skill for the open-source distribution.
  */
+function getLocalSkillsDir() {
+  const home = process.env.FLOWMIND_HOME || process.env.HOME || process.env.USERPROFILE || os.homedir();
+  return path.join(home, '.flowmind', 'skills');
+}
+
 async function createSkill(name, config = {}, skillsPath = null) {
   const validation = validateSkillName(name);
   if (!validation.valid) {
     throw new Error(validation.reason);
   }
 
-  const baseDir = skillsPath || path.join(__dirname, '..', 'skills');
+  const baseDir = skillsPath || getLocalSkillsDir();
   const skillDir = path.join(baseDir, name);
 
   if (await fs.pathExists(skillDir)) {
@@ -214,6 +225,7 @@ module.exports = {
   generateSkillMd,
   generateSkillIndex,
   validateSkillName,
+  getLocalSkillsDir,
   VALID_CATEGORIES,
   COMPONENT_CHOICES
 };

@@ -632,17 +632,17 @@ function buildResourceConfig(selectedResources = [], details = {}) {
       defaultEnv: details.sls?.defaultEnv || 'uat',
       envConfig: details.sls?.envConfig || {
         test: {
-          endpoint: 'cn-shenzhen.log.aliyuncs.com',
+          endpoint: '',
           project: '',
           logstore: ''
         },
         uat: {
-          endpoint: 'cn-shenzhen.log.aliyuncs.com',
+          endpoint: '',
           project: '',
           logstore: ''
         },
         prod: {
-          endpoint: 'cn-hongkong.log.aliyuncs.com',
+          endpoint: '',
           project: '',
           logstore: ''
         }
@@ -743,11 +743,7 @@ function buildComponentConfig(selectedResources = [], details = {}) {
           enabled: true,
           mcpServer: sls.mcpServer || RESOURCE_META.sls.mcpServer,
           config: {
-            endpoints: sls.endpoints || {
-              test: 'cn-shenzhen.log.aliyuncs.com',
-              uat: 'cn-shenzhen.log.aliyuncs.com',
-              prod: 'cn-hongkong.log.aliyuncs.com'
-            },
+            endpoints: sls.endpoints || {},
             envConfig: sls.envConfig || {},
             defaultProject: sls.defaultProject || '',
             defaultLogstore: sls.defaultLogstore || ''
