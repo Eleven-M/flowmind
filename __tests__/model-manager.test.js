@@ -97,4 +97,34 @@ describe('model manager', () => {
       { id: 'model-b', label: 'model-b', raw: { name: 'model-b' } }
     ]);
   });
+
+  test('caches repeated structured AI calls to reduce duplicate model work', async () => {
+    const chat = jest.fn().mockResolvedValue(JSON.stringify({ intent: 'query', confidence: 0.9 }));
+    const manager = new ModelManager({
+      defaultProvider: 'demo',
+      providers: {
+        demo: {}
+      },
+      cacheMaxAge: 60000
+    });
+
+    manager._registerBuiltinProviders = () => {};
+    manager.providerFactories = {
+      demo: () => ({
+        initialized: true,
+        async init() {},
+        chat,
+        getInfo() {
+          return {};
+        }
+      })
+    };
+
+    await manager.init();
+
+    await manager.understandIntent('查询日志', { conversationHistory: [{ input: 'large ignored context' }] });
+    await manager.understandIntent('查询日志', { conversationHistory: [{ input: 'different ignored context' }] });
+
+    expect(chat).toHaveBeenCalledTimes(1);
+  });
 });

@@ -3,6 +3,7 @@
  * 管理多个模型 Provider，提供统一的调用接口
  */
 
+const { createHash } = require('crypto');
 const OpenAIProvider = require('./providers/openai');
 const AnthropicProvider = require('./providers/anthropic');
 const OllamaProvider = require('./providers/ollama');
@@ -53,8 +54,39 @@ class ModelManager {
       }
     }
 
+    // 注册环境级接管 Provider（当前模型工具）：主 Provider 不可用时按最高优先级接管
+    await this._ensureEnvTakeoverProvider();
+
     this.initialized = true;
     return this;
+  }
+
+  /**
+   * 注册环境提供的接管 Provider（当前模型工具，如 Claude Code 注入的 anthropic 网关凭据）。
+   * 不改变 defaultProvider；当默认 Provider 失败（如 glm 余额不足 429）时，
+   * 该 Provider 以最高 failover 优先级接管 AI 调用。
+   */
+  async _ensureEnvTakeoverProvider() {
+    if (this.providers.has('anthropic')) return null;
+    if (process.env.FLOWMIND_DISABLE_ENV_AI_TAKEOVER === '1') return null;
+
+    const baseUrl = process.env.ANTHROPIC_BASE_URL;
+    const token = process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
+    if (!baseUrl || !token) return null;
+
+    try {
+      const provider = await this.initProvider('anthropic', {
+        baseUrl,
+        authToken: process.env.ANTHROPIC_AUTH_TOKEN || undefined,
+        apiKey: process.env.ANTHROPIC_API_KEY || undefined,
+        model: process.env.ANTHROPIC_MODEL || undefined
+      });
+      provider.envTakeover = true;
+      return provider;
+    } catch (error) {
+      this._warn(`Env takeover provider (anthropic) unavailable: ${error.message}`);
+      return null;
+    }
   }
 
   /**
@@ -181,13 +213,13 @@ class ModelManager {
   async understandIntent(input, context = {}) {
     if (!this.features.intentUnderstanding) return null;
 
-    return this._callWithFailover(async (provider) => {
+    return this._cachedCallWithFailover('intentUnderstanding', { input, context: compactCacheContext(context) }, async (provider) => {
       const messages = [
         { role: 'system', content: prompts.intent.system },
         { role: 'user', content: prompts.intent.user(input, context) }
       ];
       const response = await provider.chat(messages, { responseFormat: { type: 'json_object' } });
-      return JSON.parse(response);
+      return this._parseJsonResponse(response, 'intentUnderstanding');
     }, 'intentUnderstanding');
   }
 
@@ -201,13 +233,13 @@ class ModelManager {
   async extractParameters(input, skillName, skillSchema = {}) {
     if (!this.features.parameterExtraction) return {};
 
-    return this._callWithFailover(async (provider) => {
+    return this._cachedCallWithFailover('parameterExtraction', { input, skillName, skillSchema }, async (provider) => {
       const messages = [
         { role: 'system', content: prompts.extraction.system },
         { role: 'user', content: prompts.extraction.user(input, skillName, skillSchema) }
       ];
       const response = await provider.chat(messages, { responseFormat: { type: 'json_object' } });
-      return JSON.parse(response);
+      return this._parseJsonResponse(response, 'parameterExtraction');
     }, 'parameterExtraction');
   }
 
@@ -220,13 +252,17 @@ class ModelManager {
   async selectSkill(input, candidates, context = {}) {
     if (!this.features.skillSelection) return null;
 
-    return this._callWithFailover(async (provider) => {
+    return this._cachedCallWithFailover('skillSelection', {
+      input,
+      candidates: compactSkillCandidates(candidates),
+      context: compactCacheContext(context)
+    }, async (provider) => {
       const messages = [
         { role: 'system', content: prompts.selection.system },
         { role: 'user', content: prompts.selection.user(input, candidates, context) }
       ];
       const response = await provider.chat(messages, { responseFormat: { type: 'json_object' } });
-      return JSON.parse(response);
+      return this._parseJsonResponse(response, 'skillSelection');
     }, 'skillSelection');
   }
 
@@ -239,7 +275,10 @@ class ModelManager {
   async summarizeResult(result, context = {}) {
     if (!this.features.resultSummary) return null;
 
-    return this._callWithFailover(async (provider) => {
+    return this._cachedCallWithFailover('resultSummary', {
+      result: compactForCache(result),
+      context: compactCacheContext(context)
+    }, async (provider) => {
       const messages = [
         { role: 'system', content: prompts.summary.system },
         { role: 'user', content: prompts.summary.user(result, context) }
@@ -303,13 +342,13 @@ class ModelManager {
   async analyzeLearningFeedback(input, context = {}) {
     if (!this.features.learningFeedback) return null;
 
-    return this._callWithFailover(async (provider) => {
+    return this._cachedCallWithFailover('learningFeedback', { input, context: compactCacheContext(context) }, async (provider) => {
       const messages = [
         { role: 'system', content: prompts.learning.system },
         { role: 'user', content: prompts.learning.user(input, context) }
       ];
       const response = await provider.chat(messages, { responseFormat: { type: 'json_object' } });
-      return JSON.parse(response);
+      return this._parseJsonResponse(response, 'learningFeedback');
     }, 'learningFeedback');
   }
 
@@ -361,11 +400,19 @@ class ModelManager {
       }
     }
 
-    // Try other providers
-    for (const [name, provider] of this.providers) {
-      if (name === this.defaultProvider || !provider.initialized) continue;
+    // Try other providers; env takeover provider (当前模型工具) gets top failover priority
+    const failoverCandidates = [...this.providers.entries()]
+      .filter(([_name, provider]) => provider.initialized && provider !== defaultProvider)
+      .sort((a, b) => (b[1].envTakeover ? 1 : 0) - (a[1].envTakeover ? 1 : 0));
+
+    for (const [name, provider] of failoverCandidates) {
       try {
-        this._warnOnce(`failover:${name}`, `Failing over to provider: ${name} for ${feature}`);
+        this._warnOnce(
+          `failover:${name}`,
+          provider.envTakeover
+            ? `[AI接管] ${this.defaultProvider} 不可用，当前模型工具已接管 AI 调用 (provider: ${name}) for ${feature}`
+            : `Failing over to provider: ${name} for ${feature}`
+        );
         return await fn(provider);
       } catch (error) {
         this._warnOnce(this._buildWarningKey(provider, error), `Failover provider ${name} failed for ${feature}: ${error.message}`);
@@ -374,6 +421,75 @@ class ModelManager {
 
     // All providers failed, use rule-based fallback
     return this._fallback(feature);
+  }
+
+  async _cachedCallWithFailover(feature, payload, fn) {
+    const key = this._buildCacheKey(feature, payload);
+    const cached = this._getCached(key);
+    if (cached !== null && cached !== undefined) {
+      return cached;
+    }
+
+    const value = await this._callWithFailover(fn, feature);
+    if (value !== null && value !== undefined) {
+      this._setCache(key, value);
+    }
+    return value;
+  }
+
+  _buildCacheKey(feature, payload) {
+    const digest = createHash('sha1')
+      .update(stableStringify({
+        provider: this.defaultProvider,
+        model: this.defaultModel,
+        feature,
+        payload
+      }))
+      .digest('hex');
+    return `${feature}:${digest}`;
+  }
+
+  /**
+   * 解析模型返回的 JSON（容忍 ```json 代码块、前后缀说明文字、thinking 前缀等）
+   * @private
+   */
+  _parseJsonResponse(response, feature) {
+    const text = String(response || '').trim();
+    if (!text) {
+      throw new Error(`Empty AI response for ${feature}`);
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      // fallthrough: try to locate the first JSON object/array in the text
+    }
+
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const candidates = [];
+    if (fenced && fenced[1]) candidates.push(fenced[1].trim());
+
+    const firstBrace = text.indexOf('{');
+    const firstBracket = text.indexOf('[');
+    const start = firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)
+      ? firstBracket
+      : firstBrace;
+    const lastBrace = text.lastIndexOf('}');
+    const lastBracket = text.lastIndexOf(']');
+    const end = Math.max(lastBrace, lastBracket);
+    if (start !== -1 && end > start) {
+      candidates.push(text.slice(start, end + 1));
+    }
+
+    for (const candidate of candidates) {
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        continue;
+      }
+    }
+
+    throw new Error(`Invalid JSON response for ${feature}: ${text.slice(0, 120)}`);
   }
 
   _warn(message) {
@@ -459,6 +575,7 @@ class ModelManager {
         health: providerHealth,
         error: provider.lastError || null,
         lastCheckedAt: provider.lastCheckedAt || null,
+        envTakeover: provider.envTakeover === true,
         info: provider.getInfo()
       };
     }
@@ -472,6 +589,57 @@ class ModelManager {
       providers: providers
     };
   }
+}
+
+function compactCacheContext(context = {}) {
+  return {
+    intent: context.intent || null,
+    action: context.action || null,
+    currentSkill: context.currentSkill || null,
+    skill: context.skill || null,
+    aiAvailable: context.aiAvailable,
+    routeHistory: Array.isArray(context.routeHistory)
+      ? context.routeHistory.slice(0, 5).map((hint) => ({
+          skill: hint.skill,
+          input: hint.input,
+          useCount: hint.useCount,
+          similarity: hint.similarity
+        }))
+      : []
+  };
+}
+
+function compactSkillCandidates(candidates = []) {
+  return (Array.isArray(candidates) ? candidates : []).map((candidate) => ({
+    name: candidate.name,
+    description: candidate.description,
+    category: candidate.category,
+    score: candidate.score
+  }));
+}
+
+function compactForCache(value) {
+  const text = stableStringify(value);
+  return text.length > 12000 ? `${text.slice(0, 12000)}...[truncated:${text.length}]` : text;
+}
+
+function stableStringify(value) {
+  return JSON.stringify(normalizeForStableStringify(value));
+}
+
+function normalizeForStableStringify(value, depth = 0) {
+  if (depth > 6) return '[MaxDepth]';
+  if (Array.isArray(value)) return value.slice(0, 100).map((item) => normalizeForStableStringify(item, depth + 1));
+  if (!value || typeof value !== 'object') return value;
+
+  const result = {};
+  for (const key of Object.keys(value).sort()) {
+    const item = value[key];
+    if (typeof item === 'function') continue;
+    if (key === 'flowmind' || key === 'componentRegistry' || key === 'conversationHistory') continue;
+    result[key] = normalizeForStableStringify(item, depth + 1);
+  }
+  return result;
 }
 
 module.exports = ModelManager;

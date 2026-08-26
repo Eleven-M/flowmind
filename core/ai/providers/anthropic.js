@@ -7,22 +7,34 @@ const BaseModel = require('../base-model');
 class AnthropicProvider extends BaseModel {
   constructor(config = {}) {
     super('anthropic', config);
-    this.apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY;
-    this.model = config.model || 'claude-sonnet-4-20250514';
-    this.baseUrl = config.baseUrl || 'https://api.anthropic.com';
+    this.apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY || null;
+    // 当前模型工具（Claude Code 等）通过 ANTHROPIC_AUTH_TOKEN 注入 Bearer 凭据
+    this.authToken = config.authToken || process.env.ANTHROPIC_AUTH_TOKEN || null;
+    this.model = config.model || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+    this.baseUrl = config.baseUrl || process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
     this.maxTokens = config.maxTokens ?? 2000;
     this.temperature = config.temperature ?? 0.3;
   }
 
   async init() {
-    if (!this.apiKey) {
-      throw new Error('Anthropic API key is required. Set ANTHROPIC_API_KEY environment variable or provide in config.');
+    if (!this.apiKey && !this.authToken) {
+      throw new Error('Anthropic credentials are required. Set ANTHROPIC_AUTH_TOKEN/ANTHROPIC_API_KEY environment variables or provide apiKey/authToken in config.');
     }
     this.initialized = true;
   }
 
   validateConfig() {
-    return !!this.apiKey;
+    return !!(this.apiKey || this.authToken);
+  }
+
+  _authHeaders() {
+    const headers = {
+      'Content-Type': 'application/json',
+      'anthropic-version': '2023-06-01'
+    };
+    if (this.authToken) headers.Authorization = `Bearer ${this.authToken}`;
+    if (this.apiKey) headers['x-api-key'] = this.apiKey;
+    return headers;
   }
 
   async chat(messages, options = {}) {
@@ -40,11 +52,7 @@ class AnthropicProvider extends BaseModel {
 
     const response = await this.fetchWithRetry(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.apiKey,
-        'anthropic-version': '2023-06-01'
-      },
+      headers: this._authHeaders(),
       body: JSON.stringify({
         model: options.model || this.model,
         max_tokens: options.maxTokens ?? this.maxTokens,
@@ -60,7 +68,12 @@ class AnthropicProvider extends BaseModel {
     }
 
     const data = await response.json();
-    return data.content[0].text;
+    // 兼容 thinking/text 混合块（如 glm 经 anthropic 网关输出 reasoning 块）
+    const blocks = Array.isArray(data.content) ? data.content : [];
+    const text = blocks
+      .map((block) => (block && typeof block.text === 'string' ? block.text : ''))
+      .join('');
+    return text || (typeof data.completion === 'string' ? data.completion : '');
   }
 
   async complete(prompt, options = {}) {
@@ -69,15 +82,11 @@ class AnthropicProvider extends BaseModel {
 
   async isAvailable() {
     try {
-      if (!this.apiKey) return false;
+      if (!this.apiKey && !this.authToken) return false;
       // Anthropic has no /models endpoint; make a lightweight messages call to verify
       const response = await this.fetchWithRetry(`${this.baseUrl}/v1/messages`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-          'anthropic-version': '2023-06-01'
-        },
+        headers: this._authHeaders(),
         body: JSON.stringify({
           model: this.model,
           max_tokens: 1,
@@ -93,7 +102,13 @@ class AnthropicProvider extends BaseModel {
   }
 
   getInfo() {
-    return { ...super.getInfo(), model: this.model, baseUrl: this.baseUrl };
+    return {
+      ...super.getInfo(),
+      model: this.model,
+      baseUrl: this.baseUrl,
+      envTakeover: this.envTakeover === true,
+      takeoverLabel: this.envTakeover ? '当前模型工具(env接管·优先failover)' : null
+    };
   }
 }
 

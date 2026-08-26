@@ -28,8 +28,47 @@ module.exports = {
       prompt += `用户意图: ${context.intent}\n`;
     }
 
-    prompt += `\n执行结果:\n${JSON.stringify(result, null, 2)}`;
+    const learnings = Array.isArray(context.learnings) ? context.learnings.filter(Boolean) : [];
+    if (learnings.length > 0) {
+      prompt += `\n已学习约束（必须遵循）:\n`;
+      for (const learning of learnings.slice(0, 10)) {
+        const condition = learning?.condition || learning?.summary || '默认条件';
+        const action = learning?.action || JSON.stringify(learning);
+        prompt += `- ${condition} → ${action}\n`;
+      }
+    }
+
+    prompt += `\n执行结果:\n${compactResultForPrompt(result, context.maxSummaryChars || 8000)}`;
 
     return prompt;
   }
 };
+
+function compactResultForPrompt(result, maxChars) {
+  const normalized = normalizeResult(result);
+  const text = JSON.stringify(normalized, null, 2);
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n... [truncated ${text.length - maxChars} chars]`;
+}
+
+function normalizeResult(value, depth = 0) {
+  if (depth > 6) return '[MaxDepth]';
+  if (Array.isArray(value)) {
+    return value.slice(0, 80).map((item) => normalizeResult(item, depth + 1));
+  }
+  if (!value || typeof value !== 'object') return value;
+
+  const result = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (/token|secret|password|authorization|cookie/i.test(key)) {
+      result[key] = '[REDACTED]';
+      continue;
+    }
+    if (typeof item === 'string') {
+      result[key] = item.length > 1200 ? `${item.slice(0, 1200)}...` : item;
+      continue;
+    }
+    result[key] = normalizeResult(item, depth + 1);
+  }
+  return result;
+}

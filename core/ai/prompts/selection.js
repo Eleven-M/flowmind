@@ -21,11 +21,12 @@ module.exports = {
 请只返回 JSON，不要返回其他内容。`,
 
   user: (input, candidates, context = {}) => {
-    const candidateList = candidates.map(c => ({
+    const candidateList = candidates.slice(0, 12).map(c => ({
       name: c.name,
-      description: c.description,
-      triggers: c.triggers,
-      category: c.category
+      description: truncateText(c.description, 220),
+      triggers: Array.isArray(c.triggers) ? c.triggers.slice(0, 8) : [],
+      category: c.category,
+      score: c.score || undefined
     }));
 
     const contextParts = [];
@@ -39,6 +40,16 @@ module.exports = {
       contextParts.push(`当前技能: ${context.currentSkill}`);
     }
 
+    const routeHistory = Array.isArray(context.routeHistory)
+      ? context.routeHistory.filter((hint) => hint?.skill)
+      : [];
+    if (routeHistory.length > 0) {
+      const historyLines = routeHistory
+        .map((hint) => `- ${hint.skill}（历史使用 ${Number(hint.useCount) || 0} 次，相似度 ${Number(hint.similarity) || 0}）`)
+        .join('\n');
+      contextParts.push(`历史学习路由:\n${historyLines}`);
+    }
+
     return `用户输入: "${input}"
 
 ${contextParts.length > 0 ? `上下文:\n${contextParts.join('\n')}\n` : ''}
@@ -49,3 +60,8 @@ ${JSON.stringify(candidateList, null, 2)}
 请选择最合适的技能。`;
   }
 };
+
+function truncateText(value, limit) {
+  const text = String(value || '');
+  return text.length > limit ? `${text.slice(0, limit)}...` : text;
+}
