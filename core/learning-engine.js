@@ -8,6 +8,7 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const eventBus = require('./event-bus');
 const { expandPath } = require('./utils');
+const { writeJsonAtomic } = require('./atomic-file');
 
 function shortId() {
   return randomUUID().slice(0, 8);
@@ -624,7 +625,7 @@ class LearningEngine {
     const recordPath = path.join(this.expandPath(this.learningPath), 'records', record.skill, `${record.id}.json`);
 
     await fs.ensureDir(path.dirname(recordPath));
-    await fs.writeJson(recordPath, record, { spaces: 2 });
+    await writeJsonAtomic(recordPath, record);
 
     // Cache in memory
     if (!this.records[record.skill]) {
@@ -653,7 +654,7 @@ class LearningEngine {
       }
       scenes.lastUpdated = new Date().toISOString();
 
-      await fs.writeJson(scenesPath, scenes, { spaces: 2 });
+      await writeJsonAtomic(scenesPath, scenes);
     });
 
     this.scenes.version = this.scenes.version || '1.0';
@@ -682,7 +683,7 @@ class LearningEngine {
       prefs.lastUpdated = new Date().toISOString();
 
       await fs.ensureDir(path.dirname(prefsPath));
-      await fs.writeJson(prefsPath, prefs, { spaces: 2 });
+      await writeJsonAtomic(prefsPath, prefs);
     });
   }
 
@@ -691,7 +692,7 @@ class LearningEngine {
 
     const existed = await fs.pathExists(recordPath);
     await fs.ensureDir(path.dirname(recordPath));
-    await fs.writeJson(recordPath, record, { spaces: 2 });
+    await writeJsonAtomic(recordPath, record);
 
     if (!this.records[skill]) {
       this.records[skill] = [];
@@ -719,7 +720,7 @@ class LearningEngine {
       next.lastUpdated = new Date().toISOString();
 
       await fs.ensureDir(path.dirname(prefsPath));
-      await fs.writeJson(prefsPath, next, { spaces: 2 });
+      await writeJsonAtomic(prefsPath, next);
     });
   }
 
@@ -1279,7 +1280,7 @@ class LearningEngine {
     await this.writeQueue.run('bindings', async () => {
       const bindingsPath = path.join(this.expandPath(this.learningPath), 'skill-bindings.json');
       this.skillBindings.lastUpdated = new Date().toISOString();
-      await fs.writeJson(bindingsPath, this.skillBindings, { spaces: 2 });
+      await writeJsonAtomic(bindingsPath, this.skillBindings);
     });
   }
 
@@ -1289,7 +1290,7 @@ class LearningEngine {
   async saveResourceBindings() {
     const bindingsPath = path.join(this.expandPath(this.learningPath), 'resource-bindings.json');
     this.resourceBindings.lastUpdated = new Date().toISOString();
-    await fs.writeJson(bindingsPath, this.resourceBindings, { spaces: 2 });
+    await writeJsonAtomic(bindingsPath, this.resourceBindings);
   }
 
   /**
@@ -1300,7 +1301,7 @@ class LearningEngine {
     this.scenes.version = this.scenes.version || '1.0';
     this.scenes.lastUpdated = new Date().toISOString();
     this.scenes.mappings = Array.isArray(this.scenes.mappings) ? this.scenes.mappings : [];
-    await fs.writeJson(scenesPath, this.scenes, { spaces: 2 });
+    await writeJsonAtomic(scenesPath, this.scenes);
   }
 
   /**
@@ -1332,7 +1333,7 @@ class LearningEngine {
       this.stats.lastLearning = new Date().toISOString();
 
       const statsPath = path.join(this.expandPath(this.learningPath), 'stats.json');
-      await fs.writeJson(statsPath, this.stats, { spaces: 2 });
+      await writeJsonAtomic(statsPath, this.stats);
     });
 
     // Award honor points for learning
@@ -1451,7 +1452,7 @@ class LearningEngine {
 
   async saveSemanticIndex() {
     const indexPath = path.join(this.expandPath(this.learningPath), 'semantic-index.json');
-    await fs.writeJson(indexPath, this.semanticIndex, { spaces: 2 });
+    await writeJsonAtomic(indexPath, this.semanticIndex);
   }
 
   async rebuildSemanticIndex(recordsBySkill = null) {
@@ -1589,7 +1590,7 @@ class LearningEngine {
     };
 
     if (options.output) {
-      await fs.writeJson(options.output, exportData, { spaces: 2 });
+      await writeJsonAtomic(options.output, exportData);
     }
 
     return exportData;
@@ -1683,7 +1684,7 @@ class LearningEngine {
     };
 
     if (options.output) {
-      await fs.writeJson(options.output, bundle, { spaces: 2 });
+      await writeJsonAtomic(options.output, bundle);
     }
 
     return bundle;
@@ -1810,7 +1811,7 @@ class LearningEngine {
    */
   async saveStats() {
     const statsPath = path.join(this.expandPath(this.learningPath), 'stats.json');
-    await fs.writeJson(statsPath, this.stats, { spaces: 2 });
+    await writeJsonAtomic(statsPath, this.stats);
   }
 
   async collectRecords() {
@@ -1880,10 +1881,9 @@ class LearningEngine {
           this.records[skill].push(record);
         }
         await fs.ensureDir(path.join(this.expandPath(this.learningPath), 'records', skill));
-        await fs.writeJson(
+        await writeJsonAtomic(
           path.join(this.expandPath(this.learningPath), 'records', skill, `${record.id}.json`),
-          record,
-          { spaces: 2 }
+          record
         );
       }
     }
@@ -1894,7 +1894,7 @@ class LearningEngine {
       if (!prefs || typeof prefs !== 'object') continue;
       const prefsPath = path.join(this.expandPath(this.learningPath), 'records', skill, 'preferences.json');
       await fs.ensureDir(path.dirname(prefsPath));
-      await fs.writeJson(prefsPath, prefs, { spaces: 2 });
+      await writeJsonAtomic(prefsPath, prefs);
     }
   }
 

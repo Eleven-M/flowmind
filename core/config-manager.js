@@ -225,6 +225,7 @@ class ConfigManager {
         autoApply: true,
         confidenceThreshold: 0.7,
         routeConfidenceThreshold: 0.78,
+        entityTtlMs: 30 * 86400000,
         maxRecordsPerSkill: 100,
         storagePath: path.join(this.getHomeDir(), '.flowmind', 'learning'),
         autoPromote: {

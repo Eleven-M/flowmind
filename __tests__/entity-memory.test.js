@@ -213,6 +213,34 @@ describe('entity memory', () => {
     expect(memory.searchEntities('完全无关的词汇')).toEqual([]);
   });
 
+  test('preserves higher-confidence attributes and expires stale entities', async () => {
+    const memory = await freshMemory({ entityTtlMs: 10 });
+    await memory.recordEntities([
+      {
+        type: 'service',
+        name: 'confidence-service',
+        env: 'uat',
+        confidence: 0.9,
+        attributes: { endpoint: 'trusted.example' }
+      }
+    ], 'auto-flow');
+    await memory.recordEntities([
+      {
+        type: 'service',
+        name: 'confidence-service',
+        env: 'uat',
+        confidence: 0.2,
+        attributes: { endpoint: 'weak.example' }
+      }
+    ], 'log-audit');
+
+    const entity = memory.store.entities[0];
+    expect(entity.attributes.endpoint).toBe('trusted.example');
+    expect(entity.observations).toHaveLength(2);
+    entity.expiresAt = new Date(Date.now() - 1).toISOString();
+    expect(memory.searchEntities('confidence-service')).toHaveLength(0);
+  });
+
   test('handles 20 concurrent recordEntities without corruption', async () => {
     const memory = await freshMemory();
 

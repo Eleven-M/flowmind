@@ -10,6 +10,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const { expandPath } = require('./utils');
 const { bigramDice, PersistThrottler } = require('./learning-engine');
+const { writeJsonAtomic } = require('./atomic-file');
 
 const ENTITY_TYPES = new Set(['service', 'trace', 'business']);
 const DEFAULT_MAX_ENTITIES = 500;
@@ -42,6 +43,10 @@ class EntityMemory {
     this.config = config;
     this.writeQueue = writeQueue;
     this.maxEntities = Math.max(1, Number(options.maxEntities) || DEFAULT_MAX_ENTITIES);
+    this.entityTtlMs = Math.max(
+      0,
+      Number(options.entityTtlMs ?? config?.get?.('learning.entityTtlMs', 30 * 86400000)) || 0
+    );
     this.persistThrottleMs = Math.max(
       0,
       Number(
@@ -80,6 +85,7 @@ class EntityMemory {
           entities: Array.isArray(loaded.entities) ? loaded.entities : [],
           lastUpdated: loaded.lastUpdated || null
         };
+        this.pruneExpired();
       } catch (error) {
         this.store = defaultStore();
       }
@@ -119,15 +125,34 @@ class EntityMemory {
             name,
             env: env || null,
             attributes: {},
+            attributeConfidence: {},
+            observations: [],
             stats: { seenCount: 0, firstSeen: now, lastSeen: now },
             sources: []
           };
           this.store.entities.push(entity);
         }
 
-        entity.attributes = { ...entity.attributes, ...(raw.attributes || {}) };
+        entity.attributeConfidence = entity.attributeConfidence || {};
+        entity.observations = Array.isArray(entity.observations) ? entity.observations : [];
+        const confidence = Math.max(0, Math.min(1, Number(raw.confidence) || 0.5));
+        for (const [key, value] of Object.entries(raw.attributes || {})) {
+          if (confidence >= (Number(entity.attributeConfidence[key]) || 0)) {
+            entity.attributes[key] = value;
+            entity.attributeConfidence[key] = confidence;
+          }
+        }
+        entity.observations.push({
+          source: sourceSkill || raw.source || 'unknown',
+          confidence,
+          observedAt: now
+        });
+        entity.observations = entity.observations.slice(-10);
         entity.stats.seenCount = (Number(entity.stats.seenCount) || 0) + 1;
         entity.stats.lastSeen = now;
+        entity.expiresAt = this.entityTtlMs > 0
+          ? new Date(Date.now() + this.entityTtlMs).toISOString()
+          : null;
         if (sourceSkill && !entity.sources.includes(sourceSkill)) {
           entity.sources.push(sourceSkill);
         }
@@ -151,6 +176,7 @@ class EntityMemory {
    * >= 0.5 (+2) / pipelineName includes (+1).
    */
   searchEntities(query, topK = 5) {
+    this.pruneExpired();
     const normalized = String(query || '').toLowerCase().trim();
     if (!normalized) return [];
 
@@ -210,7 +236,15 @@ class EntityMemory {
 
   async writeEntitiesFile() {
     if (!this.entitiesPath) return;
-    await fs.writeJson(this.entitiesPath, this.store, { spaces: 2 });
+    await writeJsonAtomic(this.entitiesPath, this.store);
+  }
+
+  pruneExpired(now = Date.now()) {
+    if (!Array.isArray(this.store.entities)) return;
+    this.store.entities = this.store.entities.filter((entity) => {
+      const expiresAt = Date.parse(entity.expiresAt || 0);
+      return !expiresAt || expiresAt > now;
+    });
   }
 
   evictOverflow() {

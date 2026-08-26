@@ -24,6 +24,7 @@ describe('learning persistence throttling', () => {
   const originalDirectWrite = process.env.FLOWMIND_LEARNING_DIRECT_WRITE;
   let tempHome;
   let writeJsonSpy;
+  let renameSpy;
 
   beforeEach(async () => {
     jest.useFakeTimers();
@@ -32,10 +33,12 @@ describe('learning persistence throttling', () => {
     process.env.FLOWMIND_HOME = tempHome;
     delete process.env.FLOWMIND_LEARNING_DIRECT_WRITE;
     writeJsonSpy = jest.spyOn(fs, 'writeJson');
+    renameSpy = jest.spyOn(fs, 'rename');
   });
 
   afterEach(async () => {
     writeJsonSpy.mockRestore();
+    renameSpy.mockRestore();
     jest.useRealTimers();
     if (originalDirectWrite === undefined) {
       delete process.env.FLOWMIND_LEARNING_DIRECT_WRITE;
@@ -55,7 +58,7 @@ describe('learning persistence throttling', () => {
   }
 
   function writesFor(fileName) {
-    return writeJsonSpy.mock.calls.filter(([target]) => String(target).endsWith(fileName)).length;
+    return writeJsonSpy.mock.calls.filter(([target]) => String(target).includes(fileName)).length;
   }
 
   test('defaults to a 5s debounce that stays off-disk until the timer fires', async () => {
@@ -67,6 +70,7 @@ describe('learning persistence throttling', () => {
       { currentSkill: 'resource-bind' }
     );
     writeJsonSpy.mockClear();
+    renameSpy.mockClear();
 
     await learning.markResourceBindingUsed('bind-1', { skillName: 'log-audit' });
     await learning.markResourceBindingUsed('bind-1', { skillName: 'log-audit' });
@@ -77,6 +81,7 @@ describe('learning persistence throttling', () => {
     expect(beforeAdvance.bindings[0].stats.useCount).toBe(0);
 
     await jest.advanceTimersByTimeAsync(5000);
+    await learning.flushLearningPersists();
 
     expect(writesFor('resource-bindings.json')).toBe(1);
     const persisted = await fs.readJson(bindingsFile(tempHome));
@@ -87,6 +92,7 @@ describe('learning persistence throttling', () => {
     const learning = await freshEngine();
     await learning.learnSkillRoute('review code', 'code-review');
     writeJsonSpy.mockClear();
+    renameSpy.mockClear();
 
     for (let i = 0; i < 5; i++) {
       await learning.matchSkillRoute('review code', ['code-review']);
@@ -94,6 +100,7 @@ describe('learning persistence throttling', () => {
 
     expect(writesFor('skill-bindings.json')).toBe(0);
     await jest.advanceTimersByTimeAsync(5000);
+    await learning.flushLearningPersists();
 
     expect(writesFor('skill-bindings.json')).toBe(1);
     const persisted = await fs.readJson(skillBindingsFile(tempHome));
@@ -108,6 +115,7 @@ describe('learning persistence throttling', () => {
     );
     await learning.learnSkillRoute('review code', 'code-review');
     writeJsonSpy.mockClear();
+    renameSpy.mockClear();
 
     await learning.markResourceBindingUsed('bind-flush', { skillName: 'log-audit' });
     await learning.matchSkillRoute('review code', ['code-review']);
