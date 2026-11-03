@@ -239,8 +239,10 @@ async function collectPackageFiles(rootDir) {
 }
 
 function buildNpmEnv() {
-  const npmCache = process.env.FLOWMIND_NPM_CACHE || path.join('/private/tmp', 'flowmind-npm-cache');
-  const npmHome = process.env.FLOWMIND_NPM_HOME || path.join('/private/tmp', 'flowmind-npm-home');
+  const os = require('os');
+  const tmpBase = process.env.FLOWMIND_NPM_TMP || os.tmpdir();
+  const npmCache = process.env.FLOWMIND_NPM_CACHE || path.join(tmpBase, 'flowmind-npm-cache');
+  const npmHome = process.env.FLOWMIND_NPM_HOME || path.join(tmpBase, 'flowmind-npm-home');
   const npmUserConfig = path.join(npmHome, '.npmrc');
   fs.ensureDirSync(npmHome);
   fs.writeFileSync(npmUserConfig, `cache=${npmCache}\nlogs-dir=${path.join(npmHome, '_logs')}\n`, 'utf-8');
