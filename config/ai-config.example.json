@@ -51,6 +51,12 @@
         "baseUrl": "http://localhost:11434",
         "model": "llama2",
         "temperature": 0.3
+      },
+      "jev": {
+        "enabled": false,
+        "apiKey": "${JEV_API_KEY}",
+        "model": "jev-latest",
+        "baseUrl": "https://api.typesafe.ai/v1"
       }
     },
     "features": {
@@ -59,6 +65,9 @@
       "skillSelection": true,
       "resultSummary": true,
       "learningFeedback": true
+    },
+    "featureProviders": {
+      "skillSelection": "jev"
     }
   }
 }

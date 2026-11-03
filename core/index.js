@@ -26,6 +26,11 @@ const {
 } = require('./result-contract');
 const { attachKnowledgeDepositionCandidates } = require('./knowledge-deposition');
 const { attachFollowUpChain } = require('./automation-chain');
+const {
+  buildOntologyDoctorChecks,
+  buildOntologyInventory,
+  validateOntologyInventory
+} = require('./ontology-inventory');
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1125,6 +1130,23 @@ class FlowMind {
   }
 
   /**
+   * Build the read-only P0 ontology inventory for skills, components,
+   * resources, contracts, and currently observed entities.
+   */
+  getOntologyInventory() {
+    return buildOntologyInventory({
+      skills: this.skills.getAll(),
+      config: this.config,
+      components: this.components,
+      entityStore: this.entityMemory?.store || null
+    });
+  }
+
+  validateOntologyInventory(inventory = null) {
+    return validateOntologyInventory(inventory || this.getOntologyInventory());
+  }
+
+  /**
    * Get AI model status
    * @returns {object}
    */
@@ -1219,7 +1241,7 @@ class FlowMind {
   /**
    * Run system health checks (doctor)
    */
-  async doctor() {
+  async doctor(options = {}) {
     const checks = [];
 
     // 1. Config check
@@ -1299,13 +1321,36 @@ class FlowMind {
       checks.push({ name: 'Learning Storage', status: 'warning', message: e.message });
     }
 
-    const errors = checks.filter((c) => c.status === 'error').length;
-    const warnings = checks.filter((c) => c.status === 'warning').length;
+    let ontologyIssues = [];
+    let ontologyInventory = null;
+    if (options.ontology) {
+      const ontologyChecks = await buildOntologyDoctorChecks(this);
+      checks.push(...ontologyChecks);
+      ontologyInventory = this.getOntologyInventory();
+      ontologyIssues = this.validateOntologyInventory(ontologyInventory).issues;
+    }
+
+    const finalErrors = checks.filter((c) => c.status === 'error').length;
+    const finalWarnings = checks.filter((c) => c.status === 'warning').length;
 
     return {
-      healthy: errors === 0,
+      healthy: finalErrors === 0,
       checks,
-      summary: { total: checks.length, ok: checks.filter((c) => c.status === 'ok').length, warnings, errors }
+      summary: {
+        total: checks.length,
+        ok: checks.filter((c) => c.status === 'ok').length,
+        warnings: finalWarnings,
+        errors: finalErrors
+      },
+      ontology: options.ontology
+        ? {
+            inventory: ontologyInventory,
+            validation: {
+              valid: !ontologyIssues.some((issue) => issue.severity === 'error'),
+              issues: ontologyIssues
+            }
+          }
+        : null
     };
   }
 }

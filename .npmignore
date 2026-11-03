@@ -27,6 +27,10 @@ coverage/
 
 # Claude settings
 .claude/
+.flowmind-release-patterns.local.json
+
+# Local-only project skills. Keep project/business details in FLOWMIND_HOME.
+skills/merchant-query-service/
 
 # Test files
 __tests__/

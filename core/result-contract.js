@@ -2,6 +2,8 @@ function isPlainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value);
 }
 
+const RESULT_CONTRACT_VERSION = '1.1';
+
 function normalizeData(data) {
   if (data === undefined) {
     return {};
@@ -21,11 +23,13 @@ function buildBasePayload(type, skill, message, options = {}) {
     data,
     input,
     timestamp,
+    contractVersion,
     ...rest
   } = options;
 
   const payload = {
     type,
+    contractVersion: contractVersion || RESULT_CONTRACT_VERSION,
     success: type !== 'error',
     skill: skill || undefined,
     message,
@@ -88,6 +92,7 @@ function createLearningResponse(learningType, message, options = {}) {
     data,
     input,
     timestamp,
+    contractVersion,
     ...rest
   } = options;
 
@@ -95,6 +100,7 @@ function createLearningResponse(learningType, message, options = {}) {
 
   return {
     type: 'learning',
+    contractVersion: contractVersion || RESULT_CONTRACT_VERSION,
     success: true,
     learningType,
     record: record === undefined ? null : record,
@@ -171,6 +177,7 @@ function getLearningOutcome(payload) {
 }
 
 module.exports = {
+  RESULT_CONTRACT_VERSION,
   createSkillResult,
   createSkillError,
   createLearningResponse,

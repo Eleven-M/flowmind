@@ -100,7 +100,9 @@ const ProviderToMcp = Object.freeze({
   'redisMonitor:aliyun-redis': 'redis-monitor',
   'apiDoc:yapi': 'yapi-mcp',
   'knowledgeBase:yuque': 'yuque-mcp',
-  'workflow:auto-flow': 'auto-flow',
+  // The product-facing provider is "auto-flow"; the local gateway is
+  // registered as "friday-auto-flow". They are aliases for the same server.
+  'workflow:auto-flow': 'friday-auto-flow',
   'workflow:friday-flow': 'friday-auto-flow',
   'report:auto-report': 'auto-report',
   'serviceGovernance:aliyun-mse': 'aliyun-mse-mcp',

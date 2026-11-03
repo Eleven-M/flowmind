@@ -261,7 +261,7 @@ const SKILL_CONFIG_DEFAULTS = Object.freeze({
     },
     execution: {
       parallel: true,
-      maxConcurrent: 5,
+      maxConcurrent: 4,
       timeout: 3600
     },
     notifications: {

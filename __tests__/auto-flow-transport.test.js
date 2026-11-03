@@ -129,6 +129,43 @@ describe('auto-flow workflow transport resolution (legacy friday-* naming)', () 
 });
 
 describe('ComponentRegistry legacy friday-flow provider', () => {
+  test('treats default auto-flow provider as friday-auto-flow transport alias', async () => {
+    const registry = new ComponentRegistry({
+      get: (key, fallback) => {
+        if (key === 'components') {
+          return {
+            workflow: {
+              default: 'auto-flow',
+              providers: {
+                'auto-flow': {
+                  enabled: true,
+                  mcpServer: 'auto-flow'
+                }
+              }
+            }
+          };
+        }
+        if (key === 'mcpServers') {
+          return {
+            'friday-auto-flow': {
+              url: 'https://gateway.example.com/auto/flow/mcp',
+              type: 'http',
+              headers: { mcp_token: 'registry-token' }
+            }
+          };
+        }
+        return fallback;
+      }
+    });
+
+    await registry.init();
+
+    const adapter = registry.getAdapter('workflow');
+    expect(adapter).toBeTruthy();
+    expect(adapter.providerName).toBe('auto-flow');
+    expect(adapter.getTransportConfig().url).toBe('https://gateway.example.com/auto/flow/mcp');
+  });
+
   test('registers adapter for friday-flow and resolves transport via mcpServers', async () => {
     const registry = new ComponentRegistry({
       get: (key, fallback) => {

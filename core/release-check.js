@@ -63,18 +63,12 @@ function scanPackedFilesForLocalData(packedFiles) {
  * (skillConfig / bindings / source material), never in the distribution.
  */
 const COMPANY_MARKER_PATTERNS = [
-  { name: 'company name', pattern: /aomi|澳觅/i },
-  { name: 'internal gateway', pattern: /mcpgateway/i },
-  { name: 'company business field', pattern: /amountOfSendInfo|takeoutPrice/i },
-  { name: 'internal API route', pattern: /takeout_store_search|comprehensive_search/i },
-  { name: 'company campaign term', pattern: /闪购/ },
-  { name: 'hardcoded webhook token', pattern: /access_token=[A-Za-z0-9_]{16,}/ },
-  { name: 'project target key', pattern: /merchantBackendLog/ }
+  { name: 'hardcoded local path', pattern: /(?:^|[\s'"`(=])\/(?:Users|home)\// },
+  { name: 'hardcoded webhook token', pattern: /access_token=[A-Za-z0-9_]{16,}/ }
 ];
 
-// Legacy provider aliases kept for pre-2.2.0 config compatibility; they are
-// pure name mappings with no company endpoints or credentials.
-const COMPANY_MARKER_ALLOWLIST = ['friday-flow', 'friday-auto-flow'];
+const DEFAULT_COMPANY_MARKER_ALLOWLIST = Object.freeze([]);
+const LOCAL_GUARD_RULES_FILENAME = '.flowmind-release-patterns.local.json';
 
 const SHIPPED_SOURCE_DIRS = [
   'bin',
@@ -90,18 +84,55 @@ const SHIPPED_SOURCE_DIRS = [
   'releases'
 ];
 
-function stripAllowlistedMarkers(content) {
+function normalizeMarkerRules(rules) {
+  if (Array.isArray(rules)) {
+    return { patterns: rules, allowlist: DEFAULT_COMPANY_MARKER_ALLOWLIST };
+  }
+  if (rules && Array.isArray(rules.patterns)) {
+    return {
+      patterns: rules.patterns,
+      allowlist: Array.isArray(rules.allowlist) ? rules.allowlist : DEFAULT_COMPANY_MARKER_ALLOWLIST
+    };
+  }
+  return { patterns: COMPANY_MARKER_PATTERNS, allowlist: DEFAULT_COMPANY_MARKER_ALLOWLIST };
+}
+
+async function loadCompanyMarkerRules(rootDir) {
+  const candidates = [
+    path.join(rootDir, LOCAL_GUARD_RULES_FILENAME),
+    path.join(process.env.FLOWMIND_HOME || path.join(require('os').homedir(), '.flowmind'), LOCAL_GUARD_RULES_FILENAME)
+  ];
+  for (const filePath of candidates) {
+    try {
+      const raw = await fs.readJson(filePath);
+      const patterns = (raw.companyMarkers || []).map((rule) => ({
+        name: String(rule.name),
+        pattern: new RegExp(rule.patternSource, rule.flags || '')
+      }));
+      return {
+        patterns: [...COMPANY_MARKER_PATTERNS, ...patterns],
+        allowlist: Array.isArray(raw.allowlist) ? raw.allowlist : DEFAULT_COMPANY_MARKER_ALLOWLIST
+      };
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+  return { patterns: COMPANY_MARKER_PATTERNS, allowlist: DEFAULT_COMPANY_MARKER_ALLOWLIST };
+}
+
+function stripAllowlistedMarkers(content, allowlist = DEFAULT_COMPANY_MARKER_ALLOWLIST) {
   let stripped = content;
-  for (const marker of COMPANY_MARKER_ALLOWLIST) {
+  for (const marker of allowlist) {
     stripped = stripped.split(marker).join('');
   }
   return stripped;
 }
 
-function scanContentForCompanyMarkers(content, relativePath) {
+function scanContentForCompanyMarkers(content, relativePath, markerRules = null) {
   const findings = [];
-  const stripped = stripAllowlistedMarkers(String(content || ''));
-  for (const rule of COMPANY_MARKER_PATTERNS) {
+  const rules = normalizeMarkerRules(markerRules);
+  const stripped = stripAllowlistedMarkers(String(content || ''), rules.allowlist);
+  for (const rule of rules.patterns) {
     const match = stripped.match(rule.pattern);
     if (match) {
       findings.push({ file: relativePath, issue: rule.name, sample: match[0] });
@@ -132,16 +163,31 @@ async function collectTextFiles(rootDir, relativeDirs = []) {
   return files;
 }
 
-async function scanShippedSourceForCompanyMarkers(rootDir, dirs = SHIPPED_SOURCE_DIRS) {
+async function scanShippedSourceForCompanyMarkers(
+  rootDir,
+  dirs = SHIPPED_SOURCE_DIRS,
+  allowedFiles = null,
+  markerRules = null
+) {
   const findings = [];
+  const rules = normalizeMarkerRules(markerRules);
+  const allowed = allowedFiles
+    ? new Set(
+        (Array.isArray(allowedFiles) ? allowedFiles : [...allowedFiles]).map((filePath) =>
+          path.normalize(String(filePath).replace(/^\.\//, ''))
+        )
+      )
+    : null;
   const files = await collectTextFiles(rootDir, dirs);
   for (const { fullPath, relativePath } of files) {
+    const normalizedPath = path.normalize(relativePath);
+    if (allowed && !allowed.has(normalizedPath)) continue;
     // This module defines the detector patterns themselves; skip the
     // signature file, exactly like an antivirus scanner does.
     if (relativePath === path.join('core', 'release-check.js')) continue;
     const content = await readIfExists(fullPath);
     if (!content) continue;
-    findings.push(...scanContentForCompanyMarkers(content, relativePath));
+    findings.push(...scanContentForCompanyMarkers(content, relativePath, rules));
   }
   return findings;
 }
@@ -311,7 +357,7 @@ async function runReleaseCheck(options = {}) {
   // Also scan the actual package payload for secrets (bounded by size).
   if (packedFiles.ok) {
     for (const packedPath of packedFiles.files) {
-      if (!/\.(?:md|json|ya?ml|txt)$/i.test(packedPath)) continue;
+      if (!/\.(?:md|json|ya?ml|txt|js|jsx|cjs|mjs)$/i.test(packedPath)) continue;
       const fullPath = path.join(rootDir, packedPath);
       const stat = await fs.stat(fullPath).catch(() => null);
       if (!stat || stat.size > 512 * 1024) continue;
@@ -327,7 +373,13 @@ async function runReleaseCheck(options = {}) {
   }
 
   const localDataFindings = packedFiles.ok ? scanPackedFilesForLocalData(packedFiles.files) : [];
-  const companyMarkerFindings = await scanShippedSourceForCompanyMarkers(rootDir);
+  const markerRules = await loadCompanyMarkerRules(rootDir);
+  const companyMarkerFindings = await scanShippedSourceForCompanyMarkers(
+    rootDir,
+    SHIPPED_SOURCE_DIRS,
+    packedFiles.ok ? packedFiles.files : [],
+    markerRules
+  );
 
   const checks = [
     {
@@ -410,10 +462,13 @@ async function runReleaseCheck(options = {}) {
 
 module.exports = {
   runReleaseCheck,
+  collectPackedFiles,
+  loadCompanyMarkerRules,
   scanPackedFilesForLocalData,
   scanContentForCompanyMarkers,
   scanShippedSourceForCompanyMarkers,
   SECRET_PATTERNS,
   LOCAL_DATA_PATTERNS,
-  COMPANY_MARKER_PATTERNS
+  COMPANY_MARKER_PATTERNS,
+  LOCAL_GUARD_RULES_FILENAME
 };

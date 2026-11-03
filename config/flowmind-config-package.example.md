@@ -108,7 +108,7 @@ flowmind config --import config/flowmind-config-package.example.md --dry-run --j
       },
       "execution": {
         "parallel": true,
-        "maxConcurrent": 5,
+        "maxConcurrent": 4,
         "timeout": 3600
       }
     },

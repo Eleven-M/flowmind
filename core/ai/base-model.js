@@ -11,6 +11,11 @@ class BaseModel {
     this.requestTimeout = config.requestTimeout || 30000;
     this.maxRetries = config.maxRetries || 3;
     this.retryDelay = config.retryDelay || 1000;
+    // 通用路由标记：决策模型（如 Jev）会覆盖为 false 并要求显式开启
+    this.supportsChat = true;
+    this.explicitEnableRequired = false;
+    this.disabled = false;
+    this.disabledReason = null;
   }
 
   async init() {

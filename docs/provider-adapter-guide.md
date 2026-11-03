@@ -57,6 +57,42 @@ module.exports = ExampleLogAdapter;
 4. Add tests with fake responses.
 5. Document whether the provider works out of the box or requires external MCP credentials.
 
+## Decision Providers (Explicit Enable Required)
+
+Decision providers such as `jev` do not generate text. They answer typed questions
+(Choice / Score / probability) through an `evaluate()` endpoint and are used only
+for decision features such as `skillSelection`. They never take over until the user
+explicitly enables and configures them:
+
+```json
+{
+  "ai": {
+    "providers": {
+      "jev": {
+        "enabled": true,
+        "apiKey": "${JEV_API_KEY}",
+        "model": "jev-latest"
+      }
+    },
+    "featureProviders": {
+      "skillSelection": "jev"
+    }
+  }
+}
+```
+
+Rules for decision providers:
+
+- Set `explicitEnableRequired = true`. The model manager keeps the provider
+  registered but uninitialized until `enabled === true` and credentials are present.
+- Set `supportsChat = false` so generic chat routing (`answerQuery`, failover)
+  always skips the provider.
+- `featureProviders` routing silently falls back to the default LLM provider when
+  the decision provider is disabled, fails, or returns confidence below
+  `decisionMinConfidence` (default `0.6`).
+- `doctor` and AI status surfaces expose `disabled` and `disabledReason` so users
+  can see why a decision provider is not taking over.
+
 ## Test Checklist
 
 - Missing credentials produce actionable errors.

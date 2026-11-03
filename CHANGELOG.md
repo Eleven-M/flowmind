@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased
+## [2.3.1] - 2026-09-23
+
+### Added
+- Added `jev` decision provider (`core/ai/providers/jev.js`) for typed skill-routing decisions (Choice with confidence and probability distribution)
+- Added feature-level provider routing (`featureProviders`, e.g. `skillSelection: "jev"`) with automatic fallback to the default LLM provider when the decision provider is disabled, fails, or returns low confidence
+- Decision providers stay dormant until explicitly enabled and configured (`providers.jev.enabled = true` + API key); doctor/AI status now expose `disabled` and `disabledReason`
+
+## [2.3.0] - 2026-09-22
+
+### Added
+- Added read-only Ontology P0 inventory for skills, components, resources, MCP servers, result contracts, and entity storage statistics
+- Added `flowmind ontology inventory`, `flowmind ontology validate`, and `flowmind doctor --ontology`
+- Added versioned result and learning contracts (`contractVersion: 1.1`)
+- Added documentation for the staged ontology optimization roadmap
 
 ## [2.2.0] - 2026-08-20
 

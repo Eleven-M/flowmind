@@ -1,6 +1,6 @@
 {
   "name": "flowmind",
-  "version": "2.2.0",
+  "version": "2.3.1",
   "description": "Memory and workflow automation for MCP, Codex, and Claude Code. Reuse repeatable developer operations through skills and explicit feedback.",
   "type": "commonjs",
   "main": "core/index.js",

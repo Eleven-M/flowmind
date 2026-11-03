@@ -12,6 +12,7 @@ const MiMoProvider = require('./providers/mimo');
 const QwenProvider = require('./providers/qwen');
 const ERNIEProvider = require('./providers/ernie');
 const DeepSeekProvider = require('./providers/deepseek');
+const JevProvider = require('./providers/jev');
 const prompts = require('./prompts');
 
 module.exports = {
@@ -25,5 +26,6 @@ module.exports = {
   QwenProvider,
   ERNIEProvider,
   DeepSeekProvider,
+  JevProvider,
   prompts
 };

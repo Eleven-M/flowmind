@@ -12,6 +12,7 @@ const MiMoProvider = require('./providers/mimo');
 const QwenProvider = require('./providers/qwen');
 const ERNIEProvider = require('./providers/ernie');
 const DeepSeekProvider = require('./providers/deepseek');
+const JevProvider = require('./providers/jev');
 const prompts = require('./prompts');
 
 class ModelManager {
@@ -20,6 +21,10 @@ class ModelManager {
     this.providers = new Map();
     this.defaultProvider = config.defaultProvider || 'openai';
     this.defaultModel = config.defaultModel || null;
+    // 特性级路由：featureProviders[feature] 指定决策类 provider（如 jev）
+    this.featureProviders = config.featureProviders || {};
+    // 决策 provider 返回的置信度低于该阈值时回落到默认 LLM provider
+    this.decisionMinConfidence = Number(config.decisionMinConfidence) || 0.6;
     this.features = {
       intentUnderstanding: true,
       parameterExtraction: true,
@@ -102,7 +107,8 @@ class ModelManager {
       mimo: (config) => new MiMoProvider(config),
       qwen: (config) => new QwenProvider(config),
       ernie: (config) => new ERNIEProvider(config),
-      deepseek: (config) => new DeepSeekProvider(config)
+      deepseek: (config) => new DeepSeekProvider(config),
+      jev: (config) => new JevProvider(config)
     };
   }
 
@@ -121,8 +127,33 @@ class ModelManager {
     }
 
     const provider = factory(resolvedConfig);
+
+    // 显式开启类 Provider（如 Jev）：未开启或未配置时不初始化、不接管。
+    // 仍保留在注册表中，便于 doctor / status 展示禁用原因。
+    if (provider.explicitEnableRequired && !provider.isReadyToEnable()) {
+      provider.disabled = true;
+      provider.disabledReason = provider.enabled === true
+        ? 'missing API key'
+        : 'not enabled';
+      this.providers.set(name, provider);
+      return provider;
+    }
+
     await provider.init();
     this.providers.set(name, provider);
+    return provider;
+  }
+
+  /**
+   * 获取指定特性的路由 Provider（如 skillSelection -> jev）。
+   * 仅当 Provider 已启用并初始化时返回；否则返回 null 走默认链路。
+   */
+  _getFeatureProvider(feature) {
+    const name = this.featureProviders?.[feature];
+    if (!name) return null;
+
+    const provider = this.providers.get(name);
+    if (!provider || provider.disabled || !provider.initialized) return null;
     return provider;
   }
 
@@ -252,6 +283,28 @@ class ModelManager {
   async selectSkill(input, candidates, context = {}) {
     if (!this.features.skillSelection) return null;
 
+    // 决策类 Provider（如 Jev）优先：低成本高并发的技能路由
+    const featureProvider = this._getFeatureProvider('skillSelection');
+    if (featureProvider && typeof featureProvider.evaluate === 'function') {
+      try {
+        const selection = await this._cachedCall('skillSelection', {
+          input,
+          candidates: compactSkillCandidates(candidates),
+          context: compactCacheContext(context),
+          featureProvider: featureProvider.name
+        }, async () => this._selectSkillWithDecisionProvider(featureProvider, input, candidates, context));
+
+        if (selection && selection.selectedSkill) {
+          return selection;
+        }
+      } catch (error) {
+        this._warnOnce(
+          this._buildWarningKey(featureProvider, error),
+          `Feature provider (${featureProvider.name}) failed for skillSelection, falling back to LLM providers: ${error.message}`
+        );
+      }
+    }
+
     return this._cachedCallWithFailover('skillSelection', {
       input,
       candidates: compactSkillCandidates(candidates),
@@ -264,6 +317,79 @@ class ModelManager {
       const response = await provider.chat(messages, { responseFormat: { type: 'json_object' } });
       return this._parseJsonResponse(response, 'skillSelection');
     }, 'skillSelection');
+  }
+
+  /**
+   * 通过决策类 Provider（evaluate 语义）选择技能。
+   * 置信度低于 decisionMinConfidence 或选项非法时返回 null，交由上层回落。
+   * @private
+   */
+  async _selectSkillWithDecisionProvider(provider, input, candidates, context = {}) {
+    const options = (Array.isArray(candidates) ? candidates : [])
+      .map((candidate) => ({
+        id: candidate?.name || candidate?.skill || null,
+        label: candidate?.description || candidate?.name || null
+      }))
+      .filter((option) => option.id);
+
+    if (options.length === 0) return null;
+
+    const state = {
+      input,
+      currentSkill: context.currentSkill || null,
+      routeHistory: Array.isArray(context.routeHistory) ? context.routeHistory : []
+    };
+
+    const response = await provider.evaluate(state, [
+      {
+        id: 'selected_skill',
+        type: 'choice',
+        question: 'Which skill best matches the user input?',
+        options
+      }
+    ]);
+
+    const decision = typeof provider.parseDecision === 'function'
+      ? provider.parseDecision(response, 'selected_skill')
+      : this._parseDecisionResponse(response);
+
+    if (!decision || !decision.selected) return null;
+
+    const selectedSkill = String(decision.selected);
+    const validIds = new Set(options.map((option) => option.id));
+    if (!validIds.has(selectedSkill)) return null;
+
+    const confidence = Number(decision.confidence);
+    if (!Number.isFinite(confidence) || confidence < this.decisionMinConfidence) {
+      return null;
+    }
+
+    return {
+      selectedSkill,
+      confidence,
+      source: provider.name || 'decision',
+      probabilities: decision.probabilities || null
+    };
+  }
+
+  /**
+   * 通用决策响应兜底解析（Provider 未提供 parseDecision 时使用）
+   * @private
+   */
+  _parseDecisionResponse(response) {
+    const list = Array.isArray(response?.decisions)
+      ? response.decisions
+      : Array.isArray(response)
+        ? response
+        : [response].filter(Boolean);
+    const decision = list.find((item) => item && typeof item === 'object');
+    if (!decision) return null;
+
+    return {
+      selected: decision.selected ?? decision.answer ?? decision.value ?? decision.choice ?? null,
+      confidence: Number(decision.confidence),
+      probabilities: decision.probabilities || null
+    };
   }
 
   /**
@@ -301,11 +427,11 @@ class ModelManager {
 
     const attemptedProviders = [];
     const defaultProvider = this.getDefaultProvider();
-    if (defaultProvider) {
+    if (defaultProvider && defaultProvider.supportsChat !== false) {
       attemptedProviders.push(defaultProvider);
     }
     for (const [_name, provider] of this.providers) {
-      if (provider && provider.initialized && provider !== defaultProvider) {
+      if (provider && provider.initialized && provider.supportsChat !== false && provider !== defaultProvider) {
         attemptedProviders.push(provider);
       }
     }
@@ -392,7 +518,7 @@ class ModelManager {
   async _callWithFailover(fn, feature) {
     // Try default provider first
     const defaultProvider = this.getDefaultProvider();
-    if (defaultProvider) {
+    if (defaultProvider && defaultProvider.supportsChat !== false) {
       try {
         return await fn(defaultProvider);
       } catch (error) {
@@ -402,7 +528,11 @@ class ModelManager {
 
     // Try other providers; env takeover provider (当前模型工具) gets top failover priority
     const failoverCandidates = [...this.providers.entries()]
-      .filter(([_name, provider]) => provider.initialized && provider !== defaultProvider)
+      .filter(([_name, provider]) => (
+        provider.initialized
+        && provider !== defaultProvider
+        && provider.supportsChat !== false
+      ))
       .sort((a, b) => (b[1].envTakeover ? 1 : 0) - (a[1].envTakeover ? 1 : 0));
 
     for (const [name, provider] of failoverCandidates) {
@@ -431,6 +561,24 @@ class ModelManager {
     }
 
     const value = await this._callWithFailover(fn, feature);
+    if (value !== null && value !== undefined) {
+      this._setCache(key, value);
+    }
+    return value;
+  }
+
+  /**
+   * 不走 provider 链路的特性级缓存调用（用于决策 Provider 直连）
+   * @private
+   */
+  async _cachedCall(feature, payload, compute) {
+    const key = this._buildCacheKey(feature, payload);
+    const cached = this._getCached(key);
+    if (cached !== null && cached !== undefined) {
+      return cached;
+    }
+
+    const value = await compute();
     if (value !== null && value !== undefined) {
       this._setCache(key, value);
     }
@@ -575,6 +723,8 @@ class ModelManager {
         health: providerHealth,
         error: provider.lastError || null,
         lastCheckedAt: provider.lastCheckedAt || null,
+        disabled: provider.disabled === true,
+        disabledReason: provider.disabledReason || null,
         envTakeover: provider.envTakeover === true,
         info: provider.getInfo()
       };

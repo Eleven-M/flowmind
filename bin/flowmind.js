@@ -979,7 +979,7 @@ async function promptSkillDetails(skillName) {
         type: 'number',
         name: 'maxConcurrent',
         message: 'Max concurrent workflow steps:',
-        default: 5,
+        default: 4,
         validate: (value) => (Number.isInteger(Number(value)) && Number(value) > 0 ? true : 'Enter a positive integer')
       },
       {
@@ -1123,7 +1123,7 @@ async function promptSkillDetails(skillName) {
       },
       execution: {
         parallel: Boolean(answers.parallel),
-        maxConcurrent: Number(answers.maxConcurrent) || 5,
+        maxConcurrent: Number(answers.maxConcurrent) || 4,
         timeout: Number(answers.timeout) || 3600
       },
       notifications: {
@@ -2687,6 +2687,81 @@ program
   });
 
 // Skill command (view/modify single skill)
+const ontologyCommand = program
+  .command('ontology')
+  .description('Inspect the read-only FlowMind ontology inventory');
+
+ontologyCommand
+  .command('inventory')
+  .description('List ontology-ready skills, components, resources, contracts, and entities')
+  .option('-j, --json', 'Output as JSON (for tool integration)')
+  .option('-o, --output <file>', 'Write the JSON inventory to a file')
+  .action(async (options) => {
+    try {
+      const fm = await initFlowMind();
+      const inventory = fm.getOntologyInventory();
+
+      if (options.output) {
+        await fs.writeJson(options.output, inventory, { spaces: 2 });
+      }
+
+      if (options.json) {
+        console.log(JSON.stringify(inventory, null, 2));
+        return;
+      }
+
+      console.log(chalk.cyan('\nFlowMind Ontology Inventory\n'));
+      console.log(`  Schema: v${inventory.schemaVersion}`);
+      console.log(`  Contract: v${inventory.contractVersion}`);
+      console.log(`  Skills: ${inventory.summary.skills.ready}/${inventory.summary.skills.total} ready`);
+      console.log(`  Components: ${inventory.summary.components.available}/${inventory.summary.components.total} available`);
+      console.log(`  Resources: ${inventory.summary.resources.configured}/${inventory.summary.resources.total} configured`);
+      console.log(`  Entities: ${inventory.entities.total}`);
+      if (options.output) {
+        console.log(chalk.green(`\n✓ Inventory written to: ${options.output}`));
+      }
+    } catch (error) {
+      console.error(chalk.red('Ontology Inventory Error:'), error.message);
+      process.exitCode = 1;
+    }
+  });
+
+ontologyCommand
+  .command('validate')
+  .description('Validate the ontology inventory structure and P0 contracts')
+  .option('-j, --json', 'Output as JSON (for tool integration)')
+  .action(async (options) => {
+    try {
+      const fm = await initFlowMind();
+      const inventory = fm.getOntologyInventory();
+      const validation = fm.validateOntologyInventory(inventory);
+      const output = {
+        valid: validation.valid,
+        issues: validation.issues,
+        summary: inventory.summary
+      };
+
+      if (options.json) {
+        console.log(JSON.stringify(output, null, 2));
+      } else if (validation.valid) {
+        const warnings = validation.issues.filter((issue) => issue.severity === 'warning').length;
+        console.log(chalk.green('✓ Ontology inventory is valid'));
+        if (warnings > 0) {
+          console.log(chalk.yellow(`${warnings} contract coverage warning(s)`));
+        }
+      } else {
+        console.error(chalk.red('✗ Ontology inventory is invalid'));
+        for (const issue of validation.issues) {
+          console.error(`  [${issue.severity}] ${issue.path}: ${issue.message}`);
+        }
+        process.exitCode = 1;
+      }
+    } catch (error) {
+      console.error(chalk.red('Ontology Validation Error:'), error.message);
+      process.exitCode = 1;
+    }
+  });
+
 const skillCommand = program
   .command('skill <name>')
   .description('View or modify skill configuration')
@@ -4287,10 +4362,11 @@ program
   .command('doctor')
   .description('Run system health checks and diagnostics')
   .option('-j, --json', 'Output as JSON')
+  .option('--ontology', 'Include ontology inventory, entity store, and resource binding checks')
   .action(async (options) => {
     try {
       const fm = await initFlowMind();
-      const result = await fm.doctor();
+      const result = await fm.doctor({ ontology: options.ontology === true });
 
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
@@ -4872,6 +4948,153 @@ program
     await runUpdateCheck();
   });
 
+// ---------------- qserver: 商户/商品场景查询服务 启停 ----------------
+function loadQServerConfig() {
+  const fsSync = require('fs');
+  const cfgPath = path.join(require('os').homedir(), '.flowmind', 'skill-config.json');
+  const fallback = {
+    python: 'python3',
+    script: null,
+    logPath: null,
+    port: 8787,
+    accessKey: '',
+    accessKeyEnv: 'MQS_ACCESS_KEY',
+    startupTimeoutMs: 20000
+  };
+  try {
+    const raw = JSON.parse(fsSync.readFileSync(cfgPath, 'utf-8'));
+    const svc = (((raw || {}).skills || {})['qserver'] || {}).service || {};
+    return {
+      python: svc.python || fallback.python,
+      script: svc.script || fallback.script,
+      logPath: svc.logPath || fallback.logPath,
+      port: svc.port || fallback.port,
+      accessKey: svc.accessKey || fallback.accessKey,
+      accessKeyEnv: svc.accessKeyEnv || fallback.accessKeyEnv,
+      startupTimeoutMs: svc.startupTimeoutMs || fallback.startupTimeoutMs
+    };
+  } catch (_) {
+    return fallback;
+  }
+}
+
+async function qserverHealth(port, timeoutMs = 2500) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: ctrl.signal });
+    return res.ok ? await res.json() : null;
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function getQServerLanHost() {
+  const os = require('os');
+  const nets = os.networkInterfaces();
+  for (const infos of Object.values(nets)) {
+    for (const info of infos || []) {
+      if (info.family === 'IPv4' && !info.internal) {
+        return info.address;
+      }
+    }
+  }
+  return '127.0.0.1';
+}
+
+function qserverDisplayBase(health, port) {
+  if (health && typeof health.url === 'string' && health.url.trim()) {
+    return health.url.trim();
+  }
+  const host = health?.host || health?.ip || getQServerLanHost();
+  return `http://${host}:${port}`;
+}
+
+program
+  .command('qserver [key]')
+  .description('Start / stop a locally configured qserver service. Configure skills.qserver.service.script first.')
+  .option('-p, --port <port>', 'service port (default from skill-config / 8787)')
+  .option('-s, --stop', 'stop the running service')
+  .option('-t, --status', 'show service status only')
+  .option('-f, --foreground', 'run attached in foreground (default: background daemon)')
+  .action(async (key, options) => {
+    const { spawn } = require('child_process');
+    const cfg = loadQServerConfig();
+    const port = parseInt(options.port || cfg.port, 10) || 8787;
+    const health = await qserverHealth(port);
+
+    if (options.status) {
+      if (health) {
+        const base = qserverDisplayBase(health, port);
+        console.log(chalk.green('● qserver 运行中 ') + base + chalk.gray(`  dms=${health.dms} sls=${health.sls}`));
+      } else {
+        console.log(chalk.yellow('○ qserver 未运行'));
+      }
+      return;
+    }
+
+    if (options.stop) {
+      if (!health) {
+        console.log(chalk.yellow('qserver 未在运行'));
+        return;
+      }
+      try {
+        const pids = execSync(`pgrep -f "server.py --port ${port}"`).toString().trim().split('\n').filter(Boolean);
+        for (const pid of pids) process.kill(parseInt(pid, 10), 'SIGTERM');
+        console.log(chalk.green(`已停止 qserver (pid ${pids.join(', ')})`));
+      } catch (_) {
+        console.error(chalk.red(`停止失败，可手工执行: pkill -f "server.py --port ${port}"`));
+      }
+      return;
+    }
+
+    if (health) {
+      const base = qserverDisplayBase(health, port);
+      console.log(chalk.green('qserver 已在运行：') + base + chalk.gray(`  dms=${health.dms} sls=${health.sls}`));
+      return;
+    }
+
+    if (!cfg.script) {
+      console.error(chalk.red('qserver 未配置：请在 ~/.flowmind/skill-config.json 设置 skills.qserver.service.script'));
+      process.exitCode = 1;
+      return;
+    }
+
+    const accessKey = String(key || cfg.accessKey || process.env[cfg.accessKeyEnv] || '').replace(/^-/, '');
+    const args = [cfg.script, '--port', String(port)];
+    if (accessKey) args.push('--key', accessKey);
+    const logPath = cfg.logPath || path.join(path.dirname(cfg.script), 'service.log');
+    const out = fs.openSync(logPath, 'a');
+    const child = spawn(cfg.python, args, {
+      detached: !options.foreground,
+      stdio: options.foreground ? 'inherit' : ['ignore', out, out]
+    });
+
+    if (options.foreground) {
+      child.on('close', (code) => process.exit(code === null ? 1 : code));
+      return;
+    }
+
+    child.unref();
+    const spinner = ora('启动 qserver …').start();
+    const deadline = Date.now() + cfg.startupTimeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 600));
+      const h = await qserverHealth(port);
+      if (h) {
+        const base = qserverDisplayBase(h, port);
+        spinner.succeed(`qserver 已启动: ${base}  (dms=${h.dms} sls=${h.sls})`);
+        console.log(chalk.gray(`  访问口令: ${accessKey || '(未设置，见 service.log 随机口令)'}`));
+        console.log(chalk.gray(`  日志    : ${logPath}`));
+        return;
+      }
+    }
+    spinner.fail(`启动超时（${cfg.startupTimeoutMs}ms），查看日志: ${logPath}`);
+    process.exitCode = 1;
+  });
+
 // Parse arguments
 const knownCommands = new Set([
   'init',
@@ -4881,6 +5104,7 @@ const knownCommands = new Set([
   'learn',
   'scenes',
   'skills',
+  'ontology',
   'skill',
   'resource',
   'res',
@@ -4904,12 +5128,18 @@ const knownCommands = new Set([
   'install',
   'update',
   'check-update',
+  'qserver',
   'help'
 ]);
 const cliArgs = process.argv.slice(2);
 
 if (cliArgs.length > 0 && !cliArgs[0].startsWith('-') && !knownCommands.has(cliArgs[0])) {
   process.argv.splice(2, 0, 'process');
+}
+
+// 兼容 `flowmind qserver -99001`：把 “-<纯数字口令>” 归一化为位置参数
+if (process.argv[2] === 'qserver') {
+  process.argv = process.argv.map((a, i) => (i > 2 && /^-\d+$/.test(a) ? a.slice(1) : a));
 }
 
 program.parse(process.argv);

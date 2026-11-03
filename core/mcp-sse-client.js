@@ -107,8 +107,9 @@ class McpSseClient {
       this.pending.set(id, { resolve, reject, timer: null });
     });
     this.pending.get(id).timer = setTimeout(() => {
-      if (this.pending.delete(id)) {
-        reject(new Error(`MCP SSE request timed out for ${method} after ${this.requestTimeoutMs}ms`));
+      const pending = this.pending.get(id);
+      if (pending && this.pending.delete(id)) {
+        pending.reject(new Error(`MCP SSE request timed out for ${method} after ${this.requestTimeoutMs}ms`));
       }
     }, this.requestTimeoutMs);
 

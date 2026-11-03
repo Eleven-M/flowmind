@@ -51,6 +51,7 @@ async function attemptRequest({ url, headers, tool, args, timeoutMs, serverName 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
         'User-Agent': 'flowmind',
         ...headers
       },
@@ -100,14 +101,29 @@ async function attemptRequest({ url, headers, tool, args, timeoutMs, serverName 
     try {
       payload = JSON.parse(text);
     } catch (parseError) {
-      return {
-        ok: false,
-        retryable: false,
-        error: withCode(
-          new Error(`Invalid MCP response from ${serverName}: ${text.slice(0, 200)}`),
-          'MCP_PARSE_ERROR'
-        )
-      };
+      // Streamable HTTP MCP may return an SSE envelope even when the request
+      // accepts JSON. Extract the message data before treating it as invalid.
+      const dataLines = text.split(/\r?\n/)
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trim())
+        .filter(Boolean);
+      if (dataLines.length) {
+        try {
+          payload = JSON.parse(dataLines[dataLines.length - 1]);
+        } catch (_) {
+          payload = null;
+        }
+      }
+      if (!payload) {
+        return {
+          ok: false,
+          retryable: false,
+          error: withCode(
+            new Error(`Invalid MCP response from ${serverName}: ${text.slice(0, 200)}`),
+            'MCP_PARSE_ERROR'
+          )
+        };
+      }
     }
   }
 

@@ -1,7 +1,15 @@
 const crypto = require('crypto');
 const { isErrorResultPayload } = require('./result-contract');
-const { canonicalSteps, createApprovalToken, previewWorkflow } = require('./dry-run');
+const {
+  canonicalSteps,
+  createApprovalToken,
+  previewWorkflow,
+  normalizeWorkflowSteps,
+  validateWorkflowDag
+} = require('./dry-run');
+
 const WORKFLOW_EXECUTION_AUTHORITY = Symbol('workflow-execution-authority');
+const DEFAULT_MAX_CONCURRENT = 4;
 
 function isWorkflowExecutionAuthorized(context = {}) {
   return context[WORKFLOW_EXECUTION_AUTHORITY] === true;
@@ -11,9 +19,17 @@ function buildExecutionId() {
   return `workflow-${crypto.randomUUID()}`;
 }
 
-function getFailedStepIndex(results = []) {
-  const failed = results.find((step) => step.status === 'failed');
-  return failed ? Math.max(0, Number(failed.order || 1) - 1) : null;
+function resolveMaxConcurrent(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return DEFAULT_MAX_CONCURRENT;
+  }
+  return Math.min(32, Math.floor(parsed));
+}
+
+function appendEvent(events, event) {
+  events.push({ at: new Date().toISOString(), ...event });
+  return events;
 }
 
 async function persistWorkflowHistory(historyStore, executionId, record, patch = null) {
@@ -22,6 +38,13 @@ async function persistWorkflowHistory(historyStore, executionId, record, patch =
     return historyStore.update(executionId, patch).catch(() => null);
   }
   return historyStore.append(record).catch(() => null);
+}
+
+function isDependencySatisfied(nodeStatus, continueOnError) {
+  if (nodeStatus === 'succeeded') return true;
+  // With continueOnError a failed step is treated as satisfied so its
+  // dependents still run, matching the legacy "keep going" semantics.
+  return continueOnError === true && nodeStatus === 'failed';
 }
 
 async function executeWorkflow(chain, options = {}) {
@@ -46,10 +69,62 @@ async function executeWorkflow(chain, options = {}) {
     throw new Error('An initialized FlowMind runtime is required to execute a workflow.');
   }
 
-  const startIndex = Number.isFinite(options.startIndex) ? Math.max(0, options.startIndex) : 0;
-  const initialResults = Array.isArray(options.previousResults) ? [...options.previousResults] : [];
+  const steps = normalizeWorkflowSteps(preview.steps);
+  validateWorkflowDag(steps);
+  const maxConcurrent = resolveMaxConcurrent(options.maxConcurrent);
+  const continueOnError = options.continueOnError === true;
+  const startIndex = Number.isFinite(options.startIndex) ? Math.max(0, Math.floor(options.startIndex)) : 0;
+
+  // Seed state for resume: node-level seeding via previousResults entries
+  // carrying { id, status: 'succeeded' }, plus legacy index-based seeding.
+  const seedResults = Array.isArray(options.previousResults) ? options.previousResults : [];
+  const seedById = new Map();
+  for (const entry of seedResults) {
+    if (entry && entry.id && entry.status === 'succeeded') {
+      seedById.set(String(entry.id), entry);
+    }
+  }
+
+  const state = new Map();
+  for (const step of steps) {
+    const seededById = seedById.get(step.id);
+    const seededByIndex = startIndex > 0 && step.order <= startIndex ? seedResults[step.order - 1] : null;
+    const seeded = seededById || seededByIndex;
+    state.set(step.id, {
+      id: step.id,
+      order: step.order,
+      skill: step.skill,
+      status: seeded ? 'succeeded' : 'pending',
+      result: seeded ? seeded.result : undefined,
+      error: null
+    });
+  }
+
   const historyStore = options.historyStore || null;
-  const results = [...initialResults];
+  const events = [];
+
+  const snapshotResults = () =>
+    steps
+      .map((step) => ({ ...state.get(step.id) }))
+      .filter((entry) => entry.status !== 'pending');
+  const snapshotStepStatus = () =>
+    Object.fromEntries(steps.map((step) => [step.id, state.get(step.id).status]));
+
+  // Serialize history writes through a local chain so parallel step
+  // completions cannot interleave read-modify-write cycles and lose events.
+  let persistChain = Promise.resolve();
+  const queuePersist = () => {
+    if (!historyStore) return;
+    const snapshot = {
+      status: 'running',
+      stepStatus: snapshotStepStatus(),
+      results: snapshotResults(),
+      events: [...events]
+    };
+    persistChain = persistChain.then(() =>
+      persistWorkflowHistory(historyStore, executionId, null, snapshot)
+    );
+  };
 
   await persistWorkflowHistory(historyStore, executionId, {
     executionId,
@@ -59,25 +134,30 @@ async function executeWorkflow(chain, options = {}) {
     status: 'running',
     chain,
     preview: { ...preview, approvalToken: undefined },
+    maxConcurrent,
+    continueOnError,
     startIndex,
-    nextStepIndex: startIndex,
-    results
+    stepStatus: snapshotStepStatus(),
+    events: [...events],
+    results: snapshotResults()
   });
 
-  for (const step of preview.steps.slice(startIndex)) {
-    const actualIndex = step.order - 1;
+  const dependencyResults = (step) =>
+    step.dependsOn.map((id) => state.get(id)?.result).filter((result) => result !== undefined);
+
+  const settleStep = async (step) => {
+    const node = state.get(step.id);
+    node.status = 'running';
+    appendEvent(events, { type: 'step-started', stepId: step.id, skill: step.skill });
+    queuePersist();
+
     const skill = flowmind.skills.get(step.skill);
     if (!skill) {
-      results.push({ order: step.order, skill: step.skill, status: 'failed', error: 'skill-not-found' });
-      await persistWorkflowHistory(historyStore, executionId, null, {
-        status: 'failed',
-        nextStepIndex: actualIndex,
-        results,
-        completedAt: new Date().toISOString(),
-        error: 'skill-not-found'
-      });
-      if (!options.continueOnError) break;
-      continue;
+      node.status = 'failed';
+      node.error = 'skill-not-found';
+      appendEvent(events, { type: 'step-failed', stepId: step.id, skill: step.skill, error: node.error });
+      queuePersist();
+      return;
     }
 
     try {
@@ -85,41 +165,123 @@ async function executeWorkflow(chain, options = {}) {
         ...(options.context || {}),
         executionMode: 'execute',
         workflowExecution: true,
+        previousResults: dependencyResults(step),
         [WORKFLOW_EXECUTION_AUTHORITY]: true
       });
       const failed = isErrorResultPayload(result);
-      results.push({ order: step.order, skill: step.skill, status: failed ? 'failed' : 'succeeded', result });
-      await persistWorkflowHistory(historyStore, executionId, null, {
-        status: failed && !options.continueOnError ? 'failed' : 'running',
-        nextStepIndex: failed ? actualIndex : actualIndex + 1,
-        results
-      });
-      if (failed && !options.continueOnError) break;
+      node.status = failed ? 'failed' : 'succeeded';
+      node.result = result;
+      node.error = failed ? 'skill-reported-error' : null;
     } catch (error) {
-      results.push({ order: step.order, skill: step.skill, status: 'failed', error: error.message });
-      await persistWorkflowHistory(historyStore, executionId, null, {
-        status: 'failed',
-        nextStepIndex: actualIndex,
-        results,
-        error: error.message
-      });
-      if (!options.continueOnError) break;
+      node.status = 'failed';
+      node.error = error.message;
+    }
+
+    appendEvent(events, {
+      type: node.status === 'succeeded' ? 'step-succeeded' : 'step-failed',
+      stepId: step.id,
+      skill: step.skill,
+      error: node.error
+    });
+    queuePersist();
+  };
+
+  // Cascade blocked state to pending steps whose dependencies failed or
+  // were blocked. Independent branches keep running (failure isolation).
+  const cascadeBlocked = () => {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const step of steps) {
+        const node = state.get(step.id);
+        if (node.status !== 'pending') continue;
+        const broken = step.dependsOn.some((dep) => {
+          const depStatus = state.get(dep)?.status;
+          return depStatus === 'failed' || depStatus === 'blocked';
+        });
+        if (broken) {
+          node.status = 'blocked';
+          node.error = 'upstream-failed';
+          appendEvent(events, { type: 'step-blocked', stepId: step.id, skill: step.skill });
+          changed = true;
+        }
+      }
+    }
+  };
+
+  const readySteps = () =>
+    steps.filter((step) => {
+      const node = state.get(step.id);
+      if (node.status !== 'pending') return false;
+      return step.dependsOn.every((dep) =>
+        isDependencySatisfied(state.get(dep)?.status, continueOnError)
+      );
+    });
+
+  const running = new Set();
+  let notifyStepSettled = null;
+  const stepSettled = () => {
+    if (notifyStepSettled) {
+      const notify = notifyStepSettled;
+      notifyStepSettled = null;
+      notify();
+    }
+  };
+
+  // DAG scheduler with a bounded concurrency pool.
+  while (true) {
+    if (!continueOnError) {
+      cascadeBlocked();
+    }
+    for (const step of readySteps()) {
+      if (running.size >= maxConcurrent) break;
+      running.add(step.id);
+      settleStep(step)
+        .catch(() => {})
+        .finally(() => {
+          running.delete(step.id);
+          stepSettled();
+        });
+    }
+    if (running.size === 0) break;
+    await new Promise((resolve) => {
+      notifyStepSettled = resolve;
+    });
+  }
+
+  // Safety sweep: anything still pending is unschedulable.
+  for (const step of steps) {
+    const node = state.get(step.id);
+    if (node.status === 'pending' || node.status === 'running') {
+      node.status = 'blocked';
+      node.error = node.error || 'unschedulable';
+      appendEvent(events, { type: 'step-blocked', stepId: step.id, skill: step.skill });
     }
   }
 
-  const succeeded = results.filter((step) => step.status === 'succeeded').length;
-  const failed = results.filter((step) => step.status === 'failed').length;
-  const nextStepIndex = failed > 0 ? (getFailedStepIndex(results) ?? results.length) : preview.steps.length;
-  const status = failed > 0 ? (results.length === preview.steps.length ? 'failed' : 'partial') : 'succeeded';
-  const resumable = failed > 0 && nextStepIndex < preview.steps.length;
+  const succeeded = steps.filter((step) => state.get(step.id).status === 'succeeded').length;
+  const failed = steps.filter((step) => state.get(step.id).status === 'failed').length;
+  const blocked = steps.filter((step) => state.get(step.id).status === 'blocked').length;
+  const attempted = succeeded + failed;
+  const firstUnfinished = steps.findIndex((step) => {
+    const nodeStatus = state.get(step.id).status;
+    return nodeStatus === 'failed' || nodeStatus === 'blocked';
+  });
+  const nextStepIndex = firstUnfinished >= 0 ? firstUnfinished : steps.length;
+  const status = failed === 0 ? 'succeeded' : attempted === steps.length ? 'failed' : 'partial';
+  const resumable = failed > 0 || blocked > 0;
+  const finalResults = snapshotResults();
 
+  await persistChain;
   await persistWorkflowHistory(historyStore, executionId, null, {
     status,
     resumable,
     nextStepIndex,
+    stepStatus: snapshotStepStatus(),
+    events: [...events],
     completedAt: new Date().toISOString(),
-    summary: { total: preview.steps.length, attempted: results.length, succeeded, failed },
-    results
+    summary: { total: steps.length, attempted, succeeded, failed, blocked },
+    results: finalResults
   });
 
   return {
@@ -128,8 +290,10 @@ async function executeWorkflow(chain, options = {}) {
     status,
     resumable,
     nextStepIndex,
-    summary: { total: preview.steps.length, attempted: results.length, succeeded, failed },
-    results
+    maxConcurrent,
+    summary: { total: steps.length, attempted, succeeded, failed, blocked },
+    stepStatus: snapshotStepStatus(),
+    results: finalResults
   };
 }
 
@@ -163,14 +327,27 @@ async function resumeWorkflow(record, options = {}) {
     };
   }
 
+  // Node-level resume for records produced by the DAG executor (results
+  // entries carry step ids); legacy index-based resume otherwise.
+  const nodeResumable = Array.isArray(record.results) && record.results.some((entry) => entry?.id);
+
   return executeWorkflow(record.chain, {
     ...options,
     dryRun: false,
     executionId: record.executionId,
     approvalToken: options.approvalToken,
-    previousResults: Array.isArray(record.results) ? record.results.slice(0, nextStepIndex) : [],
-    startIndex: nextStepIndex
+    previousResults: Array.isArray(record.results)
+      ? nodeResumable
+        ? record.results
+        : record.results.slice(0, nextStepIndex)
+      : [],
+    startIndex: nodeResumable ? 0 : nextStepIndex
   });
 }
 
-module.exports = { executeWorkflow, isWorkflowExecutionAuthorized, resumeWorkflow };
+module.exports = {
+  executeWorkflow,
+  isWorkflowExecutionAuthorized,
+  resumeWorkflow,
+  DEFAULT_MAX_CONCURRENT
+};

@@ -148,9 +148,11 @@ weights/
 .claude/settings.local.json
 .flowmind-cache
 .flowmindrc
+.flowmind-release-patterns.local.json
 
 # FlowMind 本地数据隔离：learning/RAG 学习数据、资源绑定、实体记忆、
 # 内部资源索引与沉淀文档一律禁止入库（含从 sdd-agent 同步来的材料）
+skills/merchant-query-service/
 learning/
 entities.json
 resource-bindings.json
@@ -164,3 +166,9 @@ project-db-configs.json
 feign-link-map.json
 auto-flow-apis.md
 auto-flow-pipeline-map.json
+.jest-out.log
+.jest-out2.log
+.jest-full.log
+.pkg-check.log
+.test-tmp/
+.npm-cache-tmp/
