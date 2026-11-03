@@ -178,6 +178,12 @@ Comprehensive requirement analysis combining code reality with requirement inten
 | Test Blind Spots | Untested modules have highest upgrade risk |
 | Dependency Coupling | Tight coupling causes cascade changes |
 
+## Parallel Execution（全局唯一 → 维度各自并行 → 结果合并唯一）
+
+用户要求 **≥3 个维度**的综合分析时，六维度互相独立、读不同来源，按维度并行：全局唯一（一份综合报告、一个总评分，主 agent 汇总）→ 每维度一个只读单元并行分析（历史设计原理 / 迭代演进 / 扩展性 / 市场路线 / 需求偏差 / 升级漏洞，各自只读对应来源，返回该维度模板段落不展开长文）→ 合并唯一（主 agent 交叉验证冲突项并调和，产出唯一报告；子单元不出总评分、不单独沉淀知识）。并发 ≤ 4，六维全开时分两批。单一维度请求保持串行。
+
+宿主支持并行子 agent 时按维度并行派发；flowmind 运行时内退化为串行逐维度执行，输出结构不变。
+
 ## Learning Integration
 
 This skill supports FlowMind learning:

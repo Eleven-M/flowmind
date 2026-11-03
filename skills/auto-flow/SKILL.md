@@ -143,6 +143,17 @@ steps:
     action: send-notification
 ```
 
+## Parallel Execution（全局唯一 → 流水线各自并行 → 结果合并唯一）
+
+部署清单解析出 **≥2 个服务**，或用户一次要求部署多个服务时：
+
+1. **全局唯一**：一次部署只有一份部署报告与一个总体状态，由主 agent 汇总；环境以用户指定为准，禁止混环境。
+2. **流水线各自并行**：逐服务解析 pipelineId 并**保留 `{env}-{serviceName}` 前缀校验**（不匹配即拒绝该服务并说明原因）；优先 `flowStartBatchPipelineRun` 批量启动，或并发调用 `flowStartPipelineRun`（≤4 路）；状态按 runId 并行轮询互不阻塞。
+3. **结果合并唯一**：全部到终态后汇总各服务三阶段耗时与产物镜像 → 唯一部署报告（成功/部分成功/失败 + 失败阶段与日志入口）→ 执行记录统一写一次。
+4. **失败隔离**：单服务失败不阻塞其他服务；同服务禁止并行两条流水线，只能串行重试（`flowRetryPipelineJobRun`）。
+
+宿主支持并行子 agent 时按服务并行派发与轮询；flowmind 运行时内以 `flowStartBatchPipelineRun` + 并发状态查询实现，输出结构不变。
+
 ## Learning Integration
 
 This skill supports FlowMind learning:
@@ -213,7 +224,7 @@ FlowMind:
     },
     "execution": {
       "parallel": true,
-      "maxConcurrent": 5,
+      "maxConcurrent": 4,
       "timeout": 3600
     },
     "notifications": {

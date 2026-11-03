@@ -7,12 +7,23 @@ const SkillLoader = require('../core/skill-loader');
 const scaffold = require('../core/skill-scaffold');
 const {
   runReleaseCheck,
+  loadCompanyMarkerRules,
   scanPackedFilesForLocalData,
   scanContentForCompanyMarkers,
   scanShippedSourceForCompanyMarkers
 } = require('../core/release-check');
 
 const REPO_ROOT = path.join(__dirname, '..');
+const PROJECT_MARKER_RULES = {
+  patterns: [
+    { name: 'company name', pattern: /acme-corp|example-corp/i },
+    { name: 'company business field', pattern: /internalPriceField|legacyCostField/i },
+    { name: 'internal API route', pattern: /internal_legacy_search/i },
+    { name: 'hardcoded local path', pattern: /(?:^|[\s'"`(=])\/(?:Users|home)\// },
+    { name: 'hardcoded webhook token', pattern: /access_token=[A-Za-z0-9_]{16,}/ }
+  ],
+  allowlist: ['friday-flow', 'friday-auto-flow']
+};
 
 describe('local data isolation (git/npm)', () => {
   let tempHome;
@@ -154,7 +165,13 @@ describe('local data isolation (git/npm)', () => {
     expect(flagged.get('.npmrc')).toBe('npm config with credentials');
     expect(flagged.get('flowmind-learnings.json')).toBe('flowmind export bundle');
     // Clean distribution files stay unflagged.
-    for (const clean of ['core/index.js', 'skills/log-audit/index.js', 'bin/flowmind.js', 'docs/usage.md', 'mcp/server.js']) {
+    for (const clean of [
+      'core/index.js',
+      'skills/log-audit/index.js',
+      'bin/flowmind.js',
+      'docs/usage.md',
+      'mcp/server.js'
+    ]) {
       expect(flagged.has(clean)).toBe(false);
     }
   });
@@ -167,25 +184,43 @@ describe('local data isolation (git/npm)', () => {
   });
 
   test('company markers in skill content are flagged, allowlisted aliases are not', () => {
-    expect(scanContentForCompanyMarkers('查询 aomi-takeout 服务', 'skills/demo/index.js')).toEqual([
-      expect.objectContaining({ file: 'skills/demo/index.js', issue: 'company name' })
-    ]);
-    expect(scanContentForCompanyMarkers('字段 amountOfSendInfo 为空', 'skills/demo/SKILL.md')).toEqual([
-      expect.objectContaining({ issue: 'company business field' })
-    ]);
-    expect(scanContentForCompanyMarkers('webhook?access_token=abcdef0123456789abcd', 'skills/demo/SKILL.md')).toEqual([
-      expect.objectContaining({ issue: 'hardcoded webhook token' })
-    ]);
+    expect(
+      scanContentForCompanyMarkers('查询 acme-corp-takeout 服务', 'skills/demo/index.js', PROJECT_MARKER_RULES)
+    ).toEqual([expect.objectContaining({ file: 'skills/demo/index.js', issue: 'company name' })]);
+    expect(
+      scanContentForCompanyMarkers('字段 internalPriceField 为空', 'skills/demo/SKILL.md', PROJECT_MARKER_RULES)
+    ).toEqual([expect.objectContaining({ issue: 'company business field' })]);
+    expect(
+      scanContentForCompanyMarkers(
+        'webhook?access_token=abcdef0123456789abcd',
+        'skills/demo/SKILL.md',
+        PROJECT_MARKER_RULES
+      )
+    ).toEqual([expect.objectContaining({ issue: 'hardcoded webhook token' })]);
+    expect(
+      scanContentForCompanyMarkers('spawn(python, "/Users/demo/project/server.py")', 'bin/cli.js', PROJECT_MARKER_RULES)
+    ).toEqual([expect.objectContaining({ issue: 'hardcoded local path' })]);
     // Legacy provider aliases are compatibility name mappings, allowed.
-    expect(scanContentForCompanyMarkers('provider friday-flow / mcp friday-auto-flow', 'core/compat.js')).toEqual([]);
+    expect(
+      scanContentForCompanyMarkers(
+        'provider friday-flow / mcp friday-auto-flow',
+        'core/compat.js',
+        PROJECT_MARKER_RULES
+      )
+    ).toEqual([]);
     // Generic skill content stays clean.
     expect(scanContentForCompanyMarkers('const price = sku.price;', 'skills/demo/index.js')).toEqual([]);
   });
 
-  test('the shipped repository currently passes the generic-skill-scan gate', async () => {
-    const findings = await scanShippedSourceForCompanyMarkers(REPO_ROOT);
+  test('the npm pack list currently passes the generic-skill-scan gate', async () => {
+    const { collectPackedFiles } = require('../core/release-check');
+    const packed = await collectPackedFiles(REPO_ROOT);
+    expect(packed.ok).toBe(true);
+    const markerRules = await loadCompanyMarkerRules(REPO_ROOT);
+    const findings = await scanShippedSourceForCompanyMarkers(REPO_ROOT, undefined, packed.files, markerRules);
     expect(findings).toEqual([]);
-  });
+    expect(packed.files).not.toContain('skills/merchant-query-service/SKILL.md');
+  }, 30000);
 
   test('scanShippedSourceForCompanyMarkers detects company content in a temp tree', async () => {
     const root = path.join(tempHome, 'shipped-root');
@@ -193,9 +228,9 @@ describe('local data isolation (git/npm)', () => {
     await fs.writeFile(path.join(root, 'skills', 'demo-skill', 'SKILL.md'), '# generic skill\n');
     await fs.ensureDir(path.join(root, 'core'));
     await fs.writeFile(path.join(root, 'core', 'compat.js'), 'module.exports = { friday-flow: 1 };\n');
-    await fs.writeFile(path.join(root, 'skills', 'leak.md'), '字段 takeout_store_search 命中\n');
+    await fs.writeFile(path.join(root, 'skills', 'leak.md'), '字段 internal_legacy_search 命中\n');
 
-    const findings = await scanShippedSourceForCompanyMarkers(root);
+    const findings = await scanShippedSourceForCompanyMarkers(root, undefined, null, PROJECT_MARKER_RULES);
     expect(findings).toEqual([
       expect.objectContaining({ file: path.join('skills', 'leak.md'), issue: 'internal API route' })
     ]);

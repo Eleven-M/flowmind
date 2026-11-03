@@ -233,7 +233,9 @@ function createWorkflowClient(context) {
 function resolveMcpServerTransport(context, mcpServerName) {
   if (!mcpServerName) return null;
   const mcpServers = context?.flowmind?.config?.get?.('mcpServers', {}) || {};
-  const serverConfig = mcpServers[mcpServerName];
+  // "auto-flow" and "friday-auto-flow" are aliases for the same local gateway.
+  const serverConfig = mcpServers[mcpServerName] ||
+    (mcpServerName === 'auto-flow' ? mcpServers['friday-auto-flow'] : null);
   if (!serverConfig) return null;
   return {
     url: serverConfig.url || serverConfig.address || serverConfig.endpoint || null,
@@ -333,7 +335,7 @@ function buildWorkflowDefinitionSummary(skillSettings = {}) {
     summary: 'Prepared a YAML workflow template',
     format: 'YAML workflow definition',
     parallel: skillSettings.execution?.parallel !== false,
-    maxConcurrent: skillSettings.execution?.maxConcurrent || 5,
+    maxConcurrent: skillSettings.execution?.maxConcurrent || 4,
     timeout: skillSettings.execution?.timeout || 3600,
     example: {
       name: 'My Workflow',
@@ -750,7 +752,7 @@ async function executeStatus(workflow, params, input, context = {}) {
   } else if (params.pipelineId) {
     reportProgress(context, 'fetch-runs', 60, `Listing runs for pipeline ${params.pipelineId}`);
     execution = await workflow.client.listPipelineRuns(params.pipelineId, {
-      env: params.environment
+      ...compactObject({ env: params.environment })
     });
   } else {
     reportProgress(context, 'fetch-pipelines', 60, 'Listing pipelines for status query');

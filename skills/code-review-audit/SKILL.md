@@ -73,6 +73,14 @@ Three-dimensional code review: security audit, design compliance, and constraint
 | medium | ≤15 files, API/DB/Redis | + performance, caching, exceptions |
 | full | >15 files, cross-module | All constraints |
 
+## Parallel Execution（全局唯一 → 各自并行 → 结果合并唯一）
+
+**多仓库并行**（一次审核 ≥2 个仓库/MR）：全局唯一（一份汇总报告、一个总结论）→ 每仓库一个只读审查单元并行执行（各自做范围判定 micro/small/medium/full，返回严重度统计 + 高/中危明细）→ 合并唯一（主 agent 聚合、识别跨仓库一致性问题如同错误码号段/公共依赖/契约不对齐并统一定级；跨仓库交叉问题只在合并步产生）。
+
+**单仓库三维并行**（≥30 文件或 full 范围的大 MR）：安全审查 / 设计合规 / 强制约束 三路只读单元并行，各自只加载本维度约束段；主 agent 合并去重定级，同一问题多维度命中按最高严重度合并。不满足规模时保持串行逐维。
+
+所有并行单元均 readonly，只输出报告不修改代码。并发 ≤ 4。宿主不支持并行子 agent 时退化为串行，输出结构不变。
+
 ## Learning Integration
 
 This skill supports FlowMind learning:

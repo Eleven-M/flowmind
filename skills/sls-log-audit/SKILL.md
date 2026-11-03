@@ -138,6 +138,14 @@ guesses a region.
 5. **样本与窗口**：`reverse:true` 只取最新 N 条，结论需标注样本量与时间窗；同一 corrId 的
    请求/响应需成对核验，避免把请求日志当响应证据。
 
+## Parallel Execution（全局唯一 → 各自并行 → 结果合并唯一）
+
+**多服务链路并行**：一次排查涉及 ≥2 个服务时——全局唯一（一份链路结论、一张端到端链路图，主 agent 汇总）→ 每服务一个只读单元并行采集（本服务 logstore + 网关耗时，返回一行式结构化片段，原始日志不回传）→ 合并唯一（按时间轴拼接、瓶颈定位、唯一根因结论；本地留存只由主 agent 执行一次）。每个单元只查被分配的 endpoint/logstore，禁止跨环境拼接指标。
+
+**基线证据分片并行**（压测/性能基线批量采集）：按 时间窗 × 关键词 × 环境 分片（>4 路分批），每分片独立 `queryLogs`（`line ≤ 100`），原始 response 直接落盘 evidence 分片文件不进主上下文；主 agent 汇总产出唯一基线报告并更新索引一次。分片失败不阻塞其他分片，标注「未采集 + 原因」。
+
+宿主支持并行子 agent 时按上述单元并行派发（并发 ≤ 4）；flowmind 运行时内至少用 Promise.all 并发执行各单元的查询，输出结构不变。
+
 ## Learning Integration
 
 This skill supports FlowMind learning:

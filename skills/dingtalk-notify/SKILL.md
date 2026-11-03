@@ -90,7 +90,10 @@ Rules:
   `**↑ +320 ms**` or `**↓ -180 ms**`.
 - Separate evidence from inference. State sample size, exclusions, and uncertainty instead of presenting a small sample as a definitive result.
 - Do not include local-machine test environment noise in the final push unless the user explicitly asks for it. Report only release-relevant verification status.
-- Use the demand number as the message title, for example `需求 1234 评估报告`; never use a product/framework title such as `FlowMind 报告`.
+- Use the demand number as the message title, for example `需求 1234 评估报告`; never use a product/framework title such as `FlowMind 报告`. 【技改】类设计规格等同需求编号（并非唯一，以文档标题区分），标题用「【技改】xxx 评估报告」。
+- 推送正文禁止工具来源信息：不得出现「flowmind」或任何生成工具署名（如「本报告由 xx 自动生成」），报告只保留业务内容本身。
+- 段落条目按需输出：只写与本次变更相关的验证结果；未联动数据源不逐条写「未联动：…」，
+  仅当证据缺口影响结论时一句话说明；普通代码变更不写回滚类条目（见 release-inspection 比对原则 5/6）。
 - Always send the `markdown` payload type. Do not downgrade evaluation reports to DingTalk `text`; the body must retain Markdown headings, bold labels, line breaks, and field tables.
 - Preserve line breaks in the report body. Never normalize all whitespace with `\s` because that removes newlines required by DingTalk Markdown.
 
