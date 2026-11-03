@@ -314,7 +314,8 @@ describe('flowmind CLI config commands', () => {
     expect(plist).toContain('<string>/tmp/flowmind-home</string>');
   });
 
-  test('browser-service install --dry-run writes a user launch agent plist', async () => {
+  const isMacOS = process.platform === 'darwin';
+  (isMacOS ? test : test.skip)('browser-service install --dry-run writes a user launch agent plist', async () => {
     const tempHome = path.join(os.tmpdir(), `flowmind-browser-service-${Date.now()}`);
     await fs.ensureDir(tempHome);
 
