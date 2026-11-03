@@ -35,7 +35,8 @@ describe('dashboard result highlights', () => {
 
     expect(summary).toEqual(expect.objectContaining({
       skill: 'change-impact-review',
-      time: '09:02:03',
+      // Derived from the same timestamp so the assertion is timezone-independent.
+      time: new Date('2026-07-07T01:02:03.000Z').toTimeString().substring(0, 8),
       message: 'Impact review completed for 2 file(s). Risk: medium',
       statusLine: expect.stringContaining('risk=medium'),
       retryHints: expect.arrayContaining([

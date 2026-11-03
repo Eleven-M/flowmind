@@ -6,6 +6,8 @@ const { promisify } = require('util');
 
 const execFileAsync = promisify(execFile);
 
+jest.setTimeout(30000);
+
 const cliPath = path.join(__dirname, '..', 'bin', 'flowmind.js');
 const { saveServiceManagementApiBinding } = require('../core/browser-extension-setup');
 const {

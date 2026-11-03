@@ -1,4 +1,5 @@
 const path = require('path');
+const os = require('os');
 const ComponentRegistry = require('../core/component-registry');
 const FlowMind = require('../core');
 const SkillLoader = require('../core/skill-loader');
@@ -1271,7 +1272,7 @@ describe('skills and registry integration', () => {
   });
 
   test('yapi-sync-interface imports an OpenAPI file through the adapter', async () => {
-    const filePath = '/private/tmp/flowmind-openapi-import.json';
+    const filePath = path.join(os.tmpdir(), 'flowmind-openapi-import.json');
     const fs = require('fs-extra');
     await fs.writeJson(filePath, { openapi: '3.0.0', paths: {} });
     const importSwagger = jest.fn().mockResolvedValue({ status: 'ok', runId: 'run-1' });
@@ -1289,7 +1290,7 @@ describe('skills and registry integration', () => {
   });
 
   test('yuque-sync-design executes document sync through the adapter with a concise summary', async () => {
-    const filePath = '/private/tmp/flowmind-design-sync-test.md';
+    const filePath = path.join(os.tmpdir(), 'flowmind-design-sync-test.md');
     const fs = require('fs-extra');
     await fs.writeFile(filePath, '# New Feature\n\nBody content.');
 
@@ -1470,7 +1471,7 @@ describe('skills and registry integration', () => {
 
   test('code-review applies global severity and custom rule settings', async () => {
     const fs = require('fs-extra');
-    const filePath = '/private/tmp/flowmind-code-review-test.js';
+    const filePath = path.join(os.tmpdir(), 'flowmind-code-review-test.js');
     await fs.writeFile(filePath, [
       'console.log("demo")',
       'eval("1+1")'
@@ -1539,8 +1540,8 @@ describe('skills and registry integration', () => {
 
   test('archive-change materializes files only in execute mode', async () => {
     const fs = require('fs-extra');
-    const sourceDir = `/private/tmp/flowmind-archive-source-${Date.now()}`;
-    const archiveRoot = `/private/tmp/flowmind-archive-target-${Date.now()}`;
+    const sourceDir = path.join(os.tmpdir(), `flowmind-archive-source-${Date.now()}`);
+    const archiveRoot = path.join(os.tmpdir(), `flowmind-archive-target-${Date.now()}`);
     await fs.ensureDir(sourceDir);
     await fs.writeFile(`${sourceDir}/README.md`, '# Demo');
     await fs.writeFile(`${sourceDir}/package.json`, '{}');
@@ -1582,7 +1583,7 @@ describe('skills and registry integration', () => {
 
   test('project-review respects global check toggles and thresholds', async () => {
     const fs = require('fs-extra');
-    const tempDir = '/private/tmp/flowmind-project-review';
+    const tempDir = path.join(os.tmpdir(), 'flowmind-project-review');
     await fs.ensureDir(tempDir);
     await fs.writeJson(path.join(tempDir, 'package.json'), {
       name: 'demo-project',
@@ -1615,7 +1616,7 @@ describe('skills and registry integration', () => {
 
   test('auto-flow uses the configured workflow map path before falling back to defaults', async () => {
     const fs = require('fs-extra');
-    const tempDir = '/private/tmp/flowmind-auto-flow-map';
+    const tempDir = path.join(os.tmpdir(), 'flowmind-auto-flow-map');
     await fs.ensureDir(tempDir);
     await fs.writeJson(path.join(tempDir, 'auto-flow-pipeline-map.json'), {
       'retail-manager': {
