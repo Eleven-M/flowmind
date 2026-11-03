@@ -7,16 +7,29 @@
 FlowMind turns common developer operations into skills: load local knowledge, query logs, review code, check design rules, and reuse what it learns from your corrections.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![npm version](https://img.shields.io/npm/v/flowmind.svg)](https://www.npmjs.com/package/flowmind)
+[![GitHub source](https://img.shields.io/badge/source-GitHub%20%28primary%29-181717?logo=github)](https://github.com/Eleven-M/flowmind)
+[![npm version (frozen)](https://img.shields.io/badge/npm-v2.3.1%20frozen-orange)](https://www.npmjs.com/package/flowmind)
 [![npm downloads](https://img.shields.io/npm/dw/flowmind.svg)](https://www.npmjs.com/package/flowmind)
 
 [中文](README_CN.md) | [Integration](docs/integration-guide.md) | [Skills](docs/skills-catalog.md) | [Security](SECURITY.md) | [Changelog](CHANGELOG.md)
+
+> **Where development happens:** FlowMind is developed in the open on GitHub — this repository is the single source of truth. The npm `flowmind` package is a frozen snapshot (v2.3.1); new releases are published here first.
 
 </div>
 
 ---
 
 ## Install
+
+From GitHub (primary, always current):
+
+```bash
+git clone https://github.com/Eleven-M/flowmind.git
+cd flowmind && npm install && npm run build
+./bin/flowmind.js doctor
+```
+
+From npm (frozen snapshot v2.3.1):
 
 ```bash
 npm install -g flowmind
@@ -125,6 +138,29 @@ Manual config example: [config/workbuddy-mcp-config.example.json](config/workbud
 
 FlowMind can run without an AI provider for deterministic local analysis and demos. Real log, database, document, and deployment skills need the matching MCP resources or adapters configured.
 
+## Decision Provider Routing
+
+FlowMind 2.3.1 adds explicit decision-provider routing for skill selection. Decision providers such as `jev` answer typed choice questions and never take over chat or completion calls. They remain dormant until you enable them and provide credentials:
+
+```json
+{
+  "ai": {
+    "providers": {
+      "jev": {
+        "enabled": true,
+        "apiKey": "${JEV_API_KEY}",
+        "model": "jev-latest"
+      }
+    },
+    "featureProviders": {
+      "skillSelection": "jev"
+    }
+  }
+}
+```
+
+If the decision provider is disabled, fails, or has low confidence, FlowMind falls back to the default LLM provider. See the [provider adapter guide](docs/provider-adapter-guide.md).
+
 ## Automatic Learning
 
 FlowMind stores explicit corrections as local reusable state:
@@ -156,6 +192,7 @@ If `FLOWMIND_HOME` is not set, it uses your user home directory. Files that may 
 
 - Full integration guide: [docs/integration-guide.md](docs/integration-guide.md)
 - Skill catalog: [docs/skills-catalog.md](docs/skills-catalog.md)
+- Provider adapter guide: [docs/provider-adapter-guide.md](docs/provider-adapter-guide.md)
 - Security model: [docs/security-model.md](docs/security-model.md)
 - Release history: [CHANGELOG.md](CHANGELOG.md)
 

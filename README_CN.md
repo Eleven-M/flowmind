@@ -7,16 +7,29 @@
 FlowMind 把常用开发动作沉淀成 skill：加载本地知识、查询日志、审核代码、校验设计规范，并把你的纠正自动学习成下次可复用的偏好。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![npm version](https://img.shields.io/npm/v/flowmind.svg)](https://www.npmjs.com/package/flowmind)
+[![GitHub source](https://img.shields.io/badge/source-GitHub%20%28primary%29-181717?logo=github)](https://github.com/Eleven-M/flowmind)
+[![npm version (frozen)](https://img.shields.io/badge/npm-v2.3.1%20frozen-orange)](https://www.npmjs.com/package/flowmind)
 [![npm downloads](https://img.shields.io/npm/dw/flowmind.svg)](https://www.npmjs.com/package/flowmind)
 
 [English](README.md) | [集成指南](docs/integration-guide.zh-CN.md) | [技能目录](docs/skills-catalog.md) | [安全说明](SECURITY.md) | [更新记录](CHANGELOG.md)
+
+> **开发主场：** FlowMind 在 GitHub 开放开发，本仓库是唯一事实来源。npm 上的 `flowmind` 包为冻结快照（v2.3.1），新版本将优先发布在本仓库。
 
 </div>
 
 ---
 
 ## 安装
+
+从 GitHub 安装（主要渠道，始终最新）：
+
+```bash
+git clone https://github.com/Eleven-M/flowmind.git
+cd flowmind && npm install && npm run build
+./bin/flowmind.js doctor
+```
+
+从 npm 安装（冻结快照 v2.3.1）：
 
 ```bash
 npm install -g flowmind
@@ -122,8 +135,34 @@ flowmind install workbuddy --config /absolute/path/to/workbuddy-mcp.json
 | 本地分析设计规范和代码流程 | `flowmind analyze "总结本地设计和代码流程" --offline` |
 | 校验数据逻辑 | `flowmind process --skill data-logic-validation "检查订单数据一致性"` |
 | 执行受保护工作流 | `flowmind workflow --chain follow-up-chain.json` |
+| 查看 Skill / 组件 / 资源 / 契约清单 | `flowmind ontology inventory --json` |
+| 校验本体资产清单 | `flowmind ontology validate` |
+| 带 Ontology 健康检查 | `flowmind doctor --ontology` |
 
 FlowMind 的 demo 和本地确定性分析不依赖 AI provider。真实日志、数据库、文档、部署等 skill 需要配置对应 MCP 资源或 adapter。
+
+## 决策 Provider 路由
+
+FlowMind 2.3.1 新增面向 skill 选择的决策 provider 路由。`jev` 这类决策 provider 只回答类型化选择题，不会接管 chat 或 completion 调用；只有显式启用并提供凭证后才会生效：
+
+```json
+{
+  "ai": {
+    "providers": {
+      "jev": {
+        "enabled": true,
+        "apiKey": "${JEV_API_KEY}",
+        "model": "jev-latest"
+      }
+    },
+    "featureProviders": {
+      "skillSelection": "jev"
+    }
+  }
+}
+```
+
+当决策 provider 未启用、调用失败或置信度过低时，FlowMind 会自动回退到默认 LLM provider。详情见 [provider 适配指南](docs/provider-adapter-guide.md)。
 
 ## 自动学习
 
@@ -156,6 +195,8 @@ FLOWMIND_HOME/.flowmind
 
 - 完整集成指南：[docs/integration-guide.zh-CN.md](docs/integration-guide.zh-CN.md)
 - Skill 能力矩阵：[docs/skills-catalog.md](docs/skills-catalog.md)
+- Provider 适配指南：[docs/provider-adapter-guide.md](docs/provider-adapter-guide.md)
+- Ontology P0 与后续路线：[docs/ontology-optimization.md](docs/ontology-optimization.md)
 - 安全模型：[docs/security-model.md](docs/security-model.md)
 - 版本记录：[CHANGELOG.md](CHANGELOG.md)
 
