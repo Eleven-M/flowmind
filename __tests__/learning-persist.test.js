@@ -259,7 +259,7 @@ describe('matchResourceBinding scoring quality', () => {
     expect(isWeakAlias('uat')).toBe(true);
     expect(isWeakAlias('生产')).toBe(true);
     expect(isWeakAlias('api')).toBe(true);
-    expect(isWeakAlias('aomi-takeout')).toBe(false);
+    expect(isWeakAlias('acme-takeout')).toBe(false);
     expect(isWeakAlias('uat-sls')).toBe(false);
     expect(isWeakAlias('')).toBe(true);
   });
@@ -279,8 +279,8 @@ describe('matchResourceBinding scoring quality', () => {
     await learning.saveResourceBinding(
       {
         id: 'bind-service',
-        business: 'aomi-takeout',
-        aliases: ['aomi-takeout'],
+        business: 'acme-takeout',
+        aliases: ['acme-takeout'],
         componentType: 'apiDoc',
         provider: 'yapi'
       },
@@ -298,18 +298,18 @@ describe('matchResourceBinding scoring quality', () => {
     await learning.saveResourceBinding(
       {
         id: 'bind-fuzzy',
-        business: 'aomi-takeout',
-        aliases: ['aomi-takeout'],
+        business: 'acme-takeout',
+        aliases: ['acme-takeout'],
         componentType: 'logService',
         provider: 'aliyun-sls'
       },
       { currentSkill: 'resource-bind' }
     );
 
-    // Typo: "amoi-takeout" instead of "aomi-takeout".
-    const matched = await learning.matchResourceBinding('查 amoi-takeout 服务日志', 'log-audit');
+    // Typo: "acme-takeuot" instead of "acme-takeout".
+    const matched = await learning.matchResourceBinding('查 acme-takeuot 服务日志', 'log-audit');
     expect(matched?.id).toBe('bind-fuzzy');
-    expect(bigramDice('aomi-takeout', '查 amoi-takeout 服务日志')).toBeGreaterThanOrEqual(0.5);
+    expect(bigramDice('acme-takeout', '查 acme-takeuot 服务日志')).toBeGreaterThanOrEqual(0.5);
   });
 
   test('bestScore=0 without a promoted preference returns null', async () => {
@@ -419,11 +419,11 @@ describe('getRouteHistoryHint', () => {
 
   test('returns similar routes for available skills without mutating stats', async () => {
     const learning = await freshEngine();
-    await learning.learnSkillRoute('查询 uat-aomi-takeout pipeline', 'auto-flow');
-    await learning.learnSkillRoute('查询 uat-aomi-takeout 状态', 'auto-flow-status');
+    await learning.learnSkillRoute('查询 uat-acme-takeout pipeline', 'auto-flow');
+    await learning.learnSkillRoute('查询 uat-acme-takeout 状态', 'auto-flow-status');
     await learning.learnSkillRoute('查询 完全不同的东西', 'log-audit');
 
-    const hints = learning.getRouteHistoryHint('查询 uat-aomi-takeout 的流水线', ['auto-flow', 'auto-flow-status']);
+    const hints = learning.getRouteHistoryHint('查询 uat-acme-takeout 的流水线', ['auto-flow', 'auto-flow-status']);
     expect(hints.length).toBeGreaterThan(0);
     expect(hints[0]).toEqual(
       expect.objectContaining({
@@ -440,15 +440,15 @@ describe('getRouteHistoryHint', () => {
 
   test('filters by intent family and respects the limit', async () => {
     const learning = await freshEngine();
-    await learning.learnSkillRoute('部署 uat-aomi-takeout 服务', 'auto-flow');
-    await learning.learnSkillRoute('查询 uat-aomi-takeout pipeline', 'auto-flow');
+    await learning.learnSkillRoute('部署 uat-acme-takeout 服务', 'auto-flow');
+    await learning.learnSkillRoute('查询 uat-acme-takeout pipeline', 'auto-flow');
 
-    const hints = learning.getRouteHistoryHint('查询 uat-aomi-takeout 的流水线', ['auto-flow'], 3);
+    const hints = learning.getRouteHistoryHint('查询 uat-acme-takeout 的流水线', ['auto-flow'], 3);
     expect(hints).toHaveLength(1);
     expect(hints[0].skill).toBe('auto-flow');
 
     expect(learning.getRouteHistoryHint('完全无关', ['auto-flow'])).toEqual([]);
-    expect(learning.getRouteHistoryHint('查询 uat-aomi-takeout 的流水线', ['other-skill'])).toEqual([]);
+    expect(learning.getRouteHistoryHint('查询 uat-acme-takeout 的流水线', ['other-skill'])).toEqual([]);
   });
 });
 

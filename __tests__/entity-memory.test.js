@@ -65,9 +65,9 @@ describe('entity memory', () => {
       [
         {
           type: 'service',
-          name: 'aomi-takeout',
+          name: 'acme-takeout',
           env: 'uat',
-          attributes: { pipelineIds: ['12345'], pipelineName: 'uat-aomi-takeout' }
+          attributes: { pipelineIds: ['12345'], pipelineName: 'uat-acme-takeout' }
         }
       ],
       'auto-flow'
@@ -79,16 +79,16 @@ describe('entity memory', () => {
     expect(persisted.entities).toHaveLength(1);
     expect(persisted.entities[0]).toEqual(
       expect.objectContaining({
-        id: 'service|aomi-takeout|uat',
+        id: 'service|acme-takeout|uat',
         type: 'service',
-        name: 'aomi-takeout',
+        name: 'acme-takeout',
         env: 'uat',
         sources: ['auto-flow']
       })
     );
     expect(persisted.entities[0].attributes).toEqual({
       pipelineIds: ['12345'],
-      pipelineName: 'uat-aomi-takeout'
+      pipelineName: 'uat-acme-takeout'
     });
     expect(persisted.entities[0].stats).toEqual(
       expect.objectContaining({ seenCount: 1, firstSeen: expect.any(String), lastSeen: expect.any(String) })
@@ -102,9 +102,9 @@ describe('entity memory', () => {
       [
         {
           type: 'service',
-          name: 'aomi-takeout',
+          name: 'acme-takeout',
           env: 'uat',
-          attributes: { pipelineIds: ['1'], pipelineName: 'uat-aomi-takeout' }
+          attributes: { pipelineIds: ['1'], pipelineName: 'uat-acme-takeout' }
         }
       ],
       'auto-flow'
@@ -113,13 +113,13 @@ describe('entity memory', () => {
       [
         {
           type: 'service',
-          name: 'aomi-takeout',
+          name: 'acme-takeout',
           env: 'uat',
           attributes: { pipelineIds: ['2'], logstore: 'uat_reg_log' }
         },
         {
           type: 'service',
-          name: 'aomi-takeout',
+          name: 'acme-takeout',
           env: 'test',
           attributes: { pipelineIds: ['3'] }
         }
@@ -129,12 +129,12 @@ describe('entity memory', () => {
 
     expect(memory.store.entities).toHaveLength(2);
 
-    const uat = memory.store.entities.find((entity) => entity.id === 'service|aomi-takeout|uat');
+    const uat = memory.store.entities.find((entity) => entity.id === 'service|acme-takeout|uat');
     expect(uat.stats.seenCount).toBe(2);
-    expect(uat.attributes).toEqual({ pipelineIds: ['2'], pipelineName: 'uat-aomi-takeout', logstore: 'uat_reg_log' });
+    expect(uat.attributes).toEqual({ pipelineIds: ['2'], pipelineName: 'uat-acme-takeout', logstore: 'uat_reg_log' });
     expect(uat.sources.sort()).toEqual(['auto-flow', 'log-audit']);
 
-    const test = memory.store.entities.find((entity) => entity.id === 'service|aomi-takeout|test');
+    const test = memory.store.entities.find((entity) => entity.id === 'service|acme-takeout|test');
     expect(test.stats.seenCount).toBe(1);
   });
 
@@ -183,9 +183,9 @@ describe('entity memory', () => {
       [
         {
           type: 'service',
-          name: 'aomi-takeout',
+          name: 'acme-takeout',
           env: 'uat',
-          attributes: { pipelineName: 'uat-aomi-takeout', pipelineIds: ['9'] }
+          attributes: { pipelineName: 'uat-acme-takeout', pipelineIds: ['9'] }
         },
         {
           type: 'service',
@@ -203,12 +203,12 @@ describe('entity memory', () => {
       'auto-flow'
     );
 
-    const includesHits = memory.searchEntities('列出 aomi-takeout 的流水线');
-    expect(includesHits[0]).toEqual(expect.objectContaining({ name: 'aomi-takeout', score: expect.any(Number) }));
+    const includesHits = memory.searchEntities('列出 acme-takeout 的流水线');
+    expect(includesHits[0]).toEqual(expect.objectContaining({ name: 'acme-takeout', score: expect.any(Number) }));
 
     // Bigram path: typo'd input that still shares most character pairs.
-    const bigramHits = memory.searchEntities('查一下 amoi-takeout 的日志');
-    expect(bigramHits.map((hit) => hit.name)).toContain('aomi-takeout');
+    const bigramHits = memory.searchEntities('查一下 acme-takeuot 的日志');
+    expect(bigramHits.map((hit) => hit.name)).toContain('acme-takeout');
 
     expect(memory.searchEntities('完全无关的词汇')).toEqual([]);
   });
@@ -250,7 +250,7 @@ describe('entity memory', () => {
           [
             {
               type: 'service',
-              name: 'aomi-takeout',
+              name: 'acme-takeout',
               env: 'uat',
               attributes: { pipelineIds: [String(i)] }
             }
@@ -275,7 +275,7 @@ describe('entity memory', () => {
     expect(memory.persistThrottleMs).toBe(60000);
 
     await memory.recordEntities(
-      [{ type: 'service', name: 'aomi-takeout', env: 'uat', attributes: { pipelineIds: ['7'] } }],
+      [{ type: 'service', name: 'acme-takeout', env: 'uat', attributes: { pipelineIds: ['7'] } }],
       'auto-flow'
     );
 
@@ -285,13 +285,13 @@ describe('entity memory', () => {
     await memory.flush();
     const persisted = await fs.readJson(entitiesPath());
     expect(persisted.entities).toHaveLength(1);
-    expect(persisted.entities[0].name).toBe('aomi-takeout');
+    expect(persisted.entities[0].name).toBe('acme-takeout');
   });
 
   test('reloads persisted entities on init', async () => {
     const memory = await freshMemory();
     await memory.recordEntities(
-      [{ type: 'service', name: 'aomi-takeout', env: 'uat', attributes: { pipelineIds: ['7'] } }],
+      [{ type: 'service', name: 'acme-takeout', env: 'uat', attributes: { pipelineIds: ['7'] } }],
       'auto-flow'
     );
 
@@ -301,8 +301,8 @@ describe('entity memory', () => {
     await reloaded.init();
 
     expect(reloaded.store.entities).toHaveLength(1);
-    expect(reloaded.searchEntities('aomi-takeout')[0]).toEqual(
-      expect.objectContaining({ name: 'aomi-takeout', env: 'uat' })
+    expect(reloaded.searchEntities('acme-takeout')[0]).toEqual(
+      expect.objectContaining({ name: 'acme-takeout', env: 'uat' })
     );
   });
 });
@@ -321,10 +321,10 @@ describe('extractEntitiesFromResult', () => {
           services: [
             {
               source: 'local-map',
-              serviceName: 'aomi-takeout',
+              serviceName: 'acme-takeout',
               environment: 'uat',
               pipelineId: '1001',
-              pipelineName: 'uat-aomi-takeout'
+              pipelineName: 'uat-acme-takeout'
             }
           ]
         }
@@ -335,9 +335,9 @@ describe('extractEntitiesFromResult', () => {
     expect(entities).toEqual([
       {
         type: 'service',
-        name: 'aomi-takeout',
+        name: 'acme-takeout',
         env: 'uat',
-        attributes: { pipelineIds: ['1001'], pipelineName: 'uat-aomi-takeout' }
+        attributes: { pipelineIds: ['1001'], pipelineName: 'uat-acme-takeout' }
       }
     ]);
   });
@@ -352,8 +352,8 @@ describe('extractEntitiesFromResult', () => {
         execution: {
           action: 'list',
           items: [
-            { pipelineName: 'uat-aomi-takeout', pipelineId: 2001, service: null, env: null },
-            { pipelineName: 'prod-aomi-takeout', pipelineId: 2002, service: null, env: null },
+            { pipelineName: 'uat-acme-takeout', pipelineId: 2001, service: null, env: null },
+            { pipelineName: 'prod-acme-takeout', pipelineId: 2002, service: null, env: null },
             { pipelineName: 'no-env-prefix', pipelineId: null }
           ]
         }
@@ -364,15 +364,15 @@ describe('extractEntitiesFromResult', () => {
     expect(entities).toEqual([
       {
         type: 'service',
-        name: 'aomi-takeout',
+        name: 'acme-takeout',
         env: 'uat',
-        attributes: { pipelineIds: ['2001'], pipelineName: 'uat-aomi-takeout' }
+        attributes: { pipelineIds: ['2001'], pipelineName: 'uat-acme-takeout' }
       },
       {
         type: 'service',
-        name: 'aomi-takeout',
+        name: 'acme-takeout',
         env: 'prod',
-        attributes: { pipelineIds: ['2002'], pipelineName: 'prod-aomi-takeout' }
+        attributes: { pipelineIds: ['2002'], pipelineName: 'prod-acme-takeout' }
       }
     ]);
   });
@@ -386,7 +386,7 @@ describe('extractEntitiesFromResult', () => {
         provider: 'aliyun-sls',
         queryParams: {
           traceId: '96a8f1cd42b4eed9',
-          service: 'aomi-takeout',
+          service: 'acme-takeout',
           query: '* and "96a8f1cd42b4eed9"'
         },
         resolution: {
@@ -406,11 +406,11 @@ describe('extractEntitiesFromResult', () => {
       type: 'trace',
       name: '96a8f1cd42b4eed9',
       env: 'uat',
-      attributes: { service: 'aomi-takeout', project: 'k8s-log-uat' }
+      attributes: { service: 'acme-takeout', project: 'k8s-log-uat' }
     });
     expect(service).toEqual({
       type: 'service',
-      name: 'aomi-takeout',
+      name: 'acme-takeout',
       env: 'uat',
       attributes: {
         logstore: 'uat_reg_log',
@@ -519,7 +519,7 @@ describe('log-audit consumes entity memory for SLS resolution', () => {
       content: [{ type: 'text', text: JSON.stringify({ logs: [] }) }]
     });
 
-    const result = await logAudit.execute('查询uat环境 aomi-takeout 服务的日志', {
+    const result = await logAudit.execute('查询uat环境 acme-takeout 服务的日志', {
       componentRegistry: {
         getAdapter: () => ({
           providerName: 'aliyun-sls',
@@ -531,7 +531,7 @@ describe('log-audit consumes entity memory for SLS resolution', () => {
       relatedEntities: [
         {
           type: 'service',
-          name: 'aomi-takeout',
+          name: 'acme-takeout',
           env: 'uat',
           attributes: {
             project: 'k8s-log-uat',
@@ -560,7 +560,7 @@ describe('log-audit consumes entity memory for SLS resolution', () => {
       content: [{ type: 'text', text: JSON.stringify({ logs: [] }) }]
     });
 
-    await logAudit.execute('查询uat环境 aomi-takeout 服务的日志', {
+    await logAudit.execute('查询uat环境 acme-takeout 服务的日志', {
       componentRegistry: {
         getAdapter: () => ({
           providerName: 'aliyun-sls',
@@ -571,7 +571,7 @@ describe('log-audit consumes entity memory for SLS resolution', () => {
       relatedEntities: [
         {
           type: 'service',
-          name: 'aomi-takeout',
+          name: 'acme-takeout',
           env: 'prod',
           attributes: {
             project: 'k8s-log-prod',

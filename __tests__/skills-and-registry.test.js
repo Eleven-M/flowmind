@@ -718,7 +718,7 @@ describe('skills and registry integration', () => {
     });
 
     await logAudit.execute(
-      'env=pts logstore=pts-log 查询当前最近5分钟 aomi-takeout-restful-api 的请求耗时分布、慢请求Top、错误率80%左右原因；统计ERROR日志、HTTP状态码/业务错误码分布，判断是业务错误还是超时/降级/fallback/熔断',
+      'env=pts logstore=pts-log 查询当前最近5分钟 acme-takeout-restful-api 的请求耗时分布、慢请求Top、错误率80%左右原因；统计ERROR日志、HTTP状态码/业务错误码分布，判断是业务错误还是超时/降级/fallback/熔断',
       {
         componentRegistry: {
           getAdapter: () => ({
@@ -735,8 +735,8 @@ describe('skills and registry integration', () => {
       logstore: 'pts-log',
       service: undefined,
       level: 'ERROR',
-      keyword: 'aomi-takeout-restful-api',
-      query: 'level: ERROR and "aomi-takeout-restful-api"'
+      keyword: 'acme-takeout-restful-api',
+      query: 'level: ERROR and "acme-takeout-restful-api"'
     }));
   });
 
